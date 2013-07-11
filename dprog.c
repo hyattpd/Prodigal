@@ -123,7 +123,7 @@ int dprog(struct _node *nod, int nn, struct _training *tinf, int flag) {
 void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
                       int flag) {
   struct _node *n1 = &(nod[p1]), *n2 = &(nod[p2]), *n3;
-  int i, cod = 0, left = n1->ndx, right = n2->ndx, bnd, ovlp = 0, maxfr = -1;
+  int i, left = n1->ndx, right = n2->ndx, bnd, ovlp = 0, maxfr = -1;
   double score = 0.0, scr_mod = 0.0, maxval;
 
   /***********************/
@@ -158,7 +158,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
           n2->type == STOP) {
     if(n2->stop_val >= n1->ndx) return;
     if(n1->ndx % 3 != n2->ndx % 3) return;
-    cod = 1; right += 2;
+    right += 2;
     if(flag == 0) scr_mod = tinf->bias[0]*n1->gc_score[0] +
                   tinf->bias[1]*n1->gc_score[1] + tinf->bias[2]*n1->gc_score[2];
     else if(flag == 1) score = n1->cscore + n1->sscore;
@@ -169,7 +169,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
           n2->type != STOP) {
     if(n1->stop_val <= n2->ndx) return;
     if(n1->ndx % 3 != n2->ndx % 3) return;
-    cod = 1; left -= 2;
+    left -= 2;
     if(flag == 0) scr_mod = tinf->bias[0]*n2->gc_score[0] +
                   tinf->bias[1]*n2->gc_score[1] + tinf->bias[2]*n2->gc_score[2];
     else if(flag == 1) score = n2->cscore + n2->sscore;
@@ -246,7 +246,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
     if(n2->stop_val >= n1->ndx) return;
     if(n1->star_ptr[n2->ndx%3] == -1) return;
     n3 = &(nod[n1->star_ptr[n2->ndx%3]]);
-    left = n3->ndx; right += 2; cod = 1;
+    left = n3->ndx; right += 2;
     if(flag == 0) scr_mod = tinf->bias[0]*n3->gc_score[0] +
                   tinf->bias[1]*n3->gc_score[1] + tinf->bias[2]*n3->gc_score[2];
     else if(flag == 1) score = n3->cscore + n3->sscore +
@@ -259,7 +259,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
     if(n1->stop_val <= n2->ndx) return;
     if(n2->star_ptr[n1->ndx%3] == -1) return;
     n3 = &(nod[n2->star_ptr[n1->ndx%3]]);
-    left -= 2; right = n3->ndx; cod = 1;
+    left -= 2; right = n3->ndx;
     if(flag == 0) scr_mod = tinf->bias[0]*n3->gc_score[0] +
                   tinf->bias[1]*n3->gc_score[1] + tinf->bias[2]*n3->gc_score[2];
     else if(flag == 1) score = n3->cscore + n3->sscore +

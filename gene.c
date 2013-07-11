@@ -23,10 +23,10 @@
 /* Copies genes from the dynamic programming to a final array */
 
 int add_genes(struct _gene *glist, struct _node *nod, int dbeg) {
-  int path, pos, ctr;
+  int path, ctr;
 
   if(dbeg == -1) return 0;
-  path = dbeg; ctr = 0; pos = -1;  
+  path = dbeg; ctr = 0;
   while(nod[path].traceb != -1) path = nod[path].traceb;
 
   while(path != -1) {
