@@ -1,0 +1,141 @@
+VERSION 2.60
+
+* Minor Output Changes:  There are some output changes in this version.  See
+below for more details.
+* Added a confidence score to the output, representing the % likelihood the
+gene is real. (conf=99.99;, etc.)
+* Redid the training for metagenomic gene prediction and added more weights
+and rules.  Upped the number of training files to 50.
+* Eliminated the sampling phase of metagenomic prediction and replaced it with
+running on all training files within a given range of GC content.
+* Fixed a bug where Prodigal incorrectly reported "Piped input detected..."
+when there was no piped input.
+* Changed the output function not to replace header names unless the header
+is empty (formerly replaced headers <4 letters in length).
+* Changed the output function to report the first word of headers in GFF/
+Genbank outputs as is, without checking for GFF3 characters that need to be
+escaped.
+* Eliminated the sequence number from the protein translation/mrna outputs.
+* Fixed a bug in protein translation where N's in the nucleotide sequence
+were being translated to P's instead of X's.
+
+VERSION 2.50
+
+* In GFF output, changed "type=ATG" to "start_type=ATG" to fix a bug where
+BioPerl's GFF parser couldn't parse the Prodigal GFF output due to a conflict
+with this tag.
+* Fixed a problem with genes being truncated early in small contigs when they
+should run off the edges.
+* Fixed a problem with multiple overlapping genes running off edges.
+* Reduced the number of metagenomic bins from 8 to 6, which reduces the
+running time of the metagenomic program.  This was found not to lose any
+significant accuracy.
+* Redid the metagenomic clustering using a different methodology and wound up
+with 39 training files instead of 30.
+* Added rules to increase sensitivity in draft/metagenomic fragments.
+* Added rules to reduce false positives of negative coding genes in metagenomic
+fragments.
+
+VERSION 2.00
+
+* Added metagenomic genefinding routines to Prodigal, accessible via the -p
+meta option.
+* Substantial Output Changes:  A definition line is now printed before each set
+of CDS entries, and a '//' is printed after each set of CDS.  Detailed
+information is now printed in /note fields, and in the attributes field of GFF.
+For more information, see the README file.
+* GFF3 Support:  The GFF output is now 9 columns (gff version 3).
+* Argument Change:  The '-f' option now specifies output format type (formerly
+this was done by '-o').
+* New Options:  -i, -o for input/output files, -p for metagenomic/single genome
+modes, -d to write DNA sequence of genes to a file, -q to run quietly.
+* Built multiple FASTA handling into the base program (draft_prodigal.pl
+script is no longer needed).
+* Changed existing rules and added new ones specifically to handle large
+numbers of small contigs (and genes that run off the edges of them).
+* Fixed bugs in the add_nodes function and cleaned it up.
+
+Output is no longer in the same format as 1.0-1.20.
+Some command line options have changed from 1.0-1.20.
+
+VERSION 1.20
+
+* Moderately improved start site prediction by adding an upstream
+scoring system for the -1/-2 positions and the -15 to -45 positions.
+* Added a routine to correct starts of rarer types (TTG in E. coli, etc.)
+that win via every other parameter (coding, RBS, and upstream score).
+* Reduced the minimum gene size for genes running off edges to 50bp.  This
+should help in identifying fragmented genes in draft or metagenomic data.
+* Added more detailed information to the starts file, including ATG/GTG/TTG
+usage, the RBS bin and spacer distance, and the new upstream composition
+score.
+* Added a '-n' option to force the program not to use the SD motif finder.  
+(This can be useful if you suspect the organism uses a motif like AAGAGG and 
+you would like to get to the AAG/etc. motifs which will be missed by the SD 
+finder.  It is also useful to get very specific RBS motifs and spacers in
+the starts file).
+* Added gene.c/h files containing a data structure for final gene models
+(exported from the dynamic programming).  Moved printing of translations and
+gene models to this data structure.
+* Added GFF output specifiable with the '-o gff' option.
+* Fixed a bug where running with a training file and without a training file
+produced different results (this elusive bug has existed since 1.0).
+* Modifed intergenic score weighting and fixed some minor bugs with this
+function.
+* Fixed some bugs that only occurred when compiled for Windows.
+* Modified draft_prodigal.pl to catch signals and generally run more robustly.
+
+Starts files are no longer in the same format as 1.0-1.10.
+Training files for 1.0-1.10 are NOT compatible with 1.20+.
+
+VERSION 1.10
+
+* Added support for multiple FASTA input via a wrapper script called
+"draft_prodigal".  Requires Perl 5.
+* Added an alternative start scoring model that automatically discovers RBS
+motifs and builds a model from upstream regions.  This model was found to
+perform slightly worse in SD genomes than the existing code, and it also takes
+twice as long, so we only use it when a genome is determined not to use the SD
+motif.
+* Fixed a bug in parsing Genbank files where the parser did not understand lines
+with "[gap 100] Extend Ns" etc. in them.
+
+Training files for 1.0-1.05 are NOT compatible with 1.10+.
+
+VERSION 1.05
+
+* Added support for exclusion of RNA regions from gene modeling via masking such
+objects in the sequence with n's and using the '-m' option to make Prodigal
+recognize them as such.
+
+VERSION 1.04
+
+* Modified Prodigal to allow genes to run off edges.  (User can disallow this
+with the -c option).
+* Allowed Prodigal to run on any size sequences if using data from a training
+file.
+
+VERSION 1.03
+
+* Fixed a bug where Prodigal didn't handle Windows C/R's in sequence input.
+* Modified the start trainer to function better in the absence (or scarcity) of
+good genes to train on.
+
+VERSION 1.02
+
+* Added protein translation support via -a flag.
+* Added full translation table support via -g flag and removed the -n option.
+* Fixed a bug that caused prodigal to hang occasionally (involving 4 consecutive
+overlapping genes in the dynamic programming model).
+
+Training files for version 1.01 are NOT compatible with version 1.02+.
+
+VERSION 1.01
+
+* Reduced the number of false positives by fixing a bug in the
+eliminate_bad_genes routine that was causing genes not to be omitted.
+* Increased the accuracy of the RBS scorer slightly by creating more bins based
+on distance and motifs and ordering then slightly differently.
+* Fixed a bug in the dynamic programming model in zero gene cases.
+
+Training files for version 1.0 are NOT compatible with version 1.01.
