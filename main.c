@@ -40,7 +40,7 @@ int copy_standard_input_to_file(char *, int);
 int main(int argc, char *argv[]) {
 
   int rv, slen, nn, ng, i, ipath, *gc_frame, do_training, output, max_phase;
-  int closed, do_mask, nmask, force_nonsd, user_tt, is_meta, num_seq, quiet;
+  int closed, force_nonsd, user_tt, is_meta, num_seq, quiet;
   int piped, max_slen, fnum;
   double max_score, gc, low, high;
   unsigned char *seq, *rseq, *useq;
@@ -54,7 +54,6 @@ int main(int argc, char *argv[]) {
   struct _gene *genes;
   struct _training tinf;
   struct _metagenomic_bin meta[NUM_META];
-  mask mlist[MAX_MASKS];
 
   /* Allocate memory and initialize variables */
   seq = (unsigned char *)malloc(MAX_SEQ/4*sizeof(unsigned char));
@@ -82,7 +81,7 @@ int main(int argc, char *argv[]) {
     }
     memset(meta[i].tinf, 0, sizeof(struct _training));
   }
-  nn = 0; slen = 0; ipath = 0; ng = 0; nmask = 0;
+  nn = 0; slen = 0; ipath = 0; ng = 0;
   user_tt = 0; is_meta = 0; num_seq = 0; quiet = 0;
   max_phase = 0; max_score = -100.0;
   train_file = NULL; do_training = 0;
@@ -90,7 +89,7 @@ int main(int argc, char *argv[]) {
   start_ptr = stdout; trans_ptr = stdout; nuc_ptr = stdout;
   input_file = NULL; output_file = NULL; piped = 0;
   input_ptr = stdin; output_ptr = stdout; max_slen = 0;
-  output = 0; closed = 0; do_mask = 0; force_nonsd = 0;
+  output = 0; closed = 0; force_nonsd = 0;
 
   /* Filename for input copy if needed */
   pid = getpid();
@@ -122,8 +121,6 @@ int main(int argc, char *argv[]) {
       closed = 1;
     else if(strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "-Q") == 0)
       quiet = 1;
-    else if(strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "-M") == 0)
-      do_mask = 1;
     else if(strcmp(argv[i], "-n") == 0 || strcmp(argv[i], "-N") == 0)
       force_nonsd = 1;
     else if(strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "-H") == 0) help();
@@ -296,8 +293,7 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Request:  Single Genome, Phase:  Training\n");
       fprintf(stderr, "Reading in the sequence(s) to train..."); 
     }
-    slen = read_seq_training(input_ptr, seq, useq, &(tinf.gc), do_mask, mlist,
-                             &nmask);
+    slen = read_seq_training(input_ptr, seq, useq, &(tinf.gc));
     if(slen == 0) {
       fprintf(stderr, "\n\nSequence read failed (file must be Fasta, ");
       fprintf(stderr, "Genbank, or EMBL format).\n\n");
@@ -336,7 +332,7 @@ int main(int argc, char *argv[]) {
       }
       max_slen = slen;
     }
-    nn = add_nodes(seq, rseq, slen, nodes, closed, mlist, nmask, &tinf);
+    nn = add_nodes(seq, rseq, slen, nodes, closed, &tinf);
     qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
     if(quiet == 0) {
       fprintf(stderr, "%d nodes\n", nn); 
@@ -433,7 +429,7 @@ int main(int argc, char *argv[]) {
     memset(rseq, 0, (slen/4+1)*sizeof(unsigned char));
     memset(useq, 0, (slen/8+1)*sizeof(unsigned char));
     memset(nodes, 0, nn*sizeof(struct _node));
-    nn = 0; slen = 0; ipath = 0; nmask = 0;
+    nn = 0; slen = 0; ipath = 0;
   }
 
   /* Initialize the training files for a metagenomic request */
@@ -460,7 +456,7 @@ int main(int argc, char *argv[]) {
   sprintf(cur_header, "Prodigal_Seq_1");
   sprintf(new_header, "Prodigal_Seq_2");
   while((slen = next_seq_multi(input_ptr, seq, useq, &num_seq, &gc, 
-         do_mask, mlist, &nmask, cur_header, new_header)) != -1) {
+         cur_header, new_header)) != -1) {
     rcom_seq(seq, rseq, useq, slen);
     if(slen == 0) {
       fprintf(stderr, "\nSequence read failed (file must be Fasta, ");
@@ -491,7 +487,7 @@ int main(int argc, char *argv[]) {
         Find all the potential starts and stops, sort them, and create a 
         comprehensive list of nodes for dynamic programming.
       ***********************************************************************/
-      nn = add_nodes(seq, rseq, slen, nodes, closed, mlist, nmask, &tinf);
+      nn = add_nodes(seq, rseq, slen, nodes, closed, &tinf);
       qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
 
       /***********************************************************************
@@ -536,8 +532,7 @@ int main(int argc, char *argv[]) {
         if(i == 0 || meta[i].tinf->trans_table != 
            meta[i-1].tinf->trans_table) {
           memset(nodes, 0, nn*sizeof(struct _node));
-          nn = add_nodes(seq, rseq, slen, nodes, closed, mlist, nmask, 
-                         meta[i].tinf);
+          nn = add_nodes(seq, rseq, slen, nodes, closed, meta[i].tinf);
           qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
         }
         if(meta[i].tinf->gc < low || meta[i].tinf->gc > high) continue;  
@@ -557,8 +552,7 @@ int main(int argc, char *argv[]) {
 
       /* Recover the nodes for the best of the runs */
       memset(nodes, 0, nn*sizeof(struct _node));
-      nn = add_nodes(seq, rseq, slen, nodes, closed, mlist, nmask,
-                       meta[max_phase].tinf);
+      nn = add_nodes(seq, rseq, slen, nodes, closed, meta[max_phase].tinf);
       qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
       score_nodes(seq, rseq, slen, nodes, nn, meta[max_phase].tinf, closed,
                   is_meta);
@@ -589,7 +583,7 @@ int main(int argc, char *argv[]) {
     memset(rseq, 0, (slen/4+1)*sizeof(unsigned char));
     memset(useq, 0, (slen/8+1)*sizeof(unsigned char));
     memset(nodes, 0, nn*sizeof(struct _node));
-    nn = 0; slen = 0; ipath = 0; nmask = 0;
+    nn = 0; slen = 0; ipath = 0;
     strcpy(cur_header, new_header);
     sprintf(new_header, "Prodigal_Seq_%d\n", num_seq+1);
   }
@@ -631,8 +625,8 @@ void usage(char *msg) {
   fprintf(stderr, "\n%s\n", msg);
   fprintf(stderr, "\nUsage:  prodigal [-a trans_file] [-c] [-d nuc_file]");
   fprintf(stderr, " [-f output_type]\n");
-  fprintf(stderr, "                 [-g tr_table] [-h] [-i input_file] [-m]");
-  fprintf(stderr, " [-n] [-o output_file]\n");
+  fprintf(stderr, "                 [-g tr_table] [-h] [-i input_file] [-n]");
+  fprintf(stderr, " [-o output_file]\n");
   fprintf(stderr, "                 [-p mode] [-q] [-s start_file]");
   fprintf(stderr, " [-t training_file] [-v]\n");
   fprintf(stderr, "\nDo 'prodigal -h' for more information.\n\n");
@@ -642,8 +636,8 @@ void usage(char *msg) {
 void help() {
   fprintf(stderr, "\nUsage:  prodigal [-a trans_file] [-c] [-d nuc_file]");
   fprintf(stderr, " [-f output_type]\n");
-  fprintf(stderr, "                 [-g tr_table] [-h] [-i input_file] [-m]");
-  fprintf(stderr, " [-n] [-o output_file]\n");
+  fprintf(stderr, "                 [-g tr_table] [-h] [-i input_file] [-n]");
+  fprintf(stderr, " [-o output_file]\n");
   fprintf(stderr, "                 [-p mode] [-q] [-s start_file]");
   fprintf(stderr, " [-t training_file] [-v]\n");
   fprintf(stderr, "\n         -a:  Write protein translations to the selected ");
@@ -659,9 +653,6 @@ void help() {
   fprintf(stderr, "         -h:  Print help menu and exit.\n");
   fprintf(stderr, "         -i:  Specify input file (default reads from ");
   fprintf(stderr, "stdin).\n");
-  fprintf(stderr, "         -m:  Treat runs of n's as masked sequence and do");
-  fprintf(stderr, " not build genes across \n");
-  fprintf(stderr, "              them.\n");
   fprintf(stderr, "         -n:  Bypass the Shine-Dalgarno trainer and force");
   fprintf(stderr, " the program to scan\n");
   fprintf(stderr, "              for motifs.\n");

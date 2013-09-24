@@ -26,8 +26,7 @@
 *******************************************************************************/
 
 int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
-              *nodes, int closed, mask *mlist, int nm, struct _training
-              *tinf) {
+              *nodes, int closed, struct _training *tinf) {
   int i, nn = 0, last[3], saw_start[3], min_dist[3];
   int slmod = 0;
 
@@ -56,7 +55,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     if(last[i%3] >= slen) continue;
      
     if(is_start(seq, i, tinf) == 1 && is_atg(seq, i)==1 && ((last[i%3]-i+3)
-            >= min_dist[i%3]) && cross_mask(i, last[i%3], mlist, nm) == 0) {
+            >= min_dist[i%3])) {
       nodes[nn].ndx = i; 
       nodes[nn].type = ATG; 
       saw_start[i%3] = 1;
@@ -64,7 +63,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
       nodes[nn++].strand = 1;
     }
     else if(is_start(seq, i, tinf) == 1 && is_gtg(seq, i)==1 && ((last[i%3]-i+3)
-            >= min_dist[i%3]) && cross_mask(i, last[i%3], mlist, nm) == 0) {
+            >= min_dist[i%3])) {
       nodes[nn].ndx = i; 
       nodes[nn].type = GTG; 
       saw_start[i%3] = 1;
@@ -72,15 +71,14 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
       nodes[nn++].strand = 1;
     }
     else if(is_start(seq, i, tinf) == 1 && is_ttg(seq, i)==1 && ((last[i%3]-i+3)
-            >= min_dist[i%3]) && cross_mask(i, last[i%3], mlist, nm) == 0) {
+            >= min_dist[i%3])) {
       nodes[nn].ndx = i; 
       nodes[nn].type = TTG; 
       saw_start[i%3] = 1;
       nodes[nn].stop_val = last[i%3]; 
       nodes[nn++].strand = 1;
     }
-    else if(i <= 2 && closed == 0 && ((last[i%3]-i) > MIN_EDGE_GENE) &&
-            cross_mask(i, last[i%3], mlist, nm) == 0) {
+    else if(i <= 2 && closed == 0 && ((last[i%3]-i) > MIN_EDGE_GENE)) {
       nodes[nn].ndx = i; 
       nodes[nn].type = ATG; 
       saw_start[i%3] = 1;
@@ -123,8 +121,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     if(last[i%3] >= slen) continue;
 
     if(is_start(rseq, i, tinf) == 1 && is_atg(rseq, i)==1 && ((last[i%3]-i+3)
-       >= min_dist[i%3]) && cross_mask(slen-last[i%3]-1, slen-i-1, mlist, nm) ==
-       0) {
+       >= min_dist[i%3])) {
       nodes[nn].ndx = slen - i - 1; 
       nodes[nn].type = ATG; 
       saw_start[i%3] = 1;
@@ -132,8 +129,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
       nodes[nn++].strand = -1;
     }
     else if(is_start(rseq, i, tinf) == 1 && is_gtg(rseq, i)==1 && 
-            ((last[i%3]-i+3) >= min_dist[i%3]) && cross_mask(slen-last[i%3]-1,
-            slen-i-1, mlist, nm) == 0) {
+            ((last[i%3]-i+3) >= min_dist[i%3])) {
       nodes[nn].ndx = slen - i - 1; 
       nodes[nn].type = GTG; 
       saw_start[i%3] = 1;
@@ -141,16 +137,14 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
       nodes[nn++].strand = -1;
     }
     else if(is_start(rseq, i, tinf) == 1 && is_ttg(rseq, i)==1 && 
-            ((last[i%3]-i+3) >= min_dist[i%3]) && cross_mask(slen-last[i%3]-1,
-            slen-i-1, mlist, nm) == 0) {
+            ((last[i%3]-i+3) >= min_dist[i%3])) {
       nodes[nn].ndx = slen - i - 1; 
       nodes[nn].type = TTG; 
       saw_start[i%3] = 1;
       nodes[nn].stop_val = slen-last[i%3]-1; 
       nodes[nn++].strand = -1;
     }
-    else if(i <= 2 && closed == 0 && ((last[i%3]-i) > MIN_EDGE_GENE) &&
-            cross_mask(slen-last[i%3]-1, slen-i-1, mlist, nm) == 0) {
+    else if(i <= 2 && closed == 0 && ((last[i%3]-i) > MIN_EDGE_GENE)) {
       nodes[nn].ndx = slen - i - 1; 
       nodes[nn].type = ATG; 
       saw_start[i%3] = 1;
@@ -1544,16 +1538,6 @@ void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
   }
   fprintf(fh, "\n");
   qsort(nod, nn, sizeof(struct _node), &compare_nodes);
-}
-
-/* Checks to see if a node boundary crosses a mask */
-int cross_mask(int x, int y, mask *mlist, int nm) {
-  int i;
-  for(i = 0; i < nm; i++) {
-    if(y < mlist[i].begin || x > mlist[i].end) continue;
-    return 1;
-  }
-  return 0;
 }
 
 /* Return the minimum of two numbers */

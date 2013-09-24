@@ -73,7 +73,7 @@ struct _node {
 };
 
 int add_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
-              mask *, int, struct _training *);
+              struct _training *);
 void reset_node_scores(struct _node *, int);
 int compare_nodes(const void *, const void *);
 int stopcmp_nodes(const void *, const void *);
@@ -117,8 +117,6 @@ void update_motif_counts(double [4][4][4096], double *, unsigned char *,
 
 void write_start_file(FILE *, struct _node *, int, struct _training *, int,
                       int, int, char *, char *, char *);
-
-int cross_mask(int, int, mask *, int);
 
 double dmax(double, double);
 double dmin(double, double);

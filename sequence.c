@@ -30,10 +30,10 @@
 *******************************************************************************/
 
 int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq, 
-                      double *gc, int do_mask, mask *mlist, int *nm) {
+                      double *gc) {
   char line[MAX_LINE+1];
   int hdr = 0, fhdr = 0, bctr = 0, len = 0, wrn = 0;
-  int gc_cont = 0, mask_beg = -1;
+  int gc_cont = 0;
   unsigned int i, gapsize = 0;
 
   line[MAX_LINE] = '\0';
@@ -69,21 +69,6 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
       }
       for(i = 0; i < strlen(line); i++) {
         if(line[i] < 'A' || line[i] > 'z') continue;
-        if(do_mask == 1 && mask_beg != -1 && line[i] != 'N' && line[i] != 'n') {
-          if(len - mask_beg >= MASK_SIZE) {
-            if(*nm == MAX_MASKS) {
-              fprintf(stderr, "Error: saw too many regions of 'N''s in the ");
-              fprintf(stderr, "sequence.\n"); 
-              exit(52);
-            }
-            mlist[*nm].begin = mask_beg;
-            mlist[*nm].end = len-1;
-            (*nm)++;
-          }
-          mask_beg = -1;
-        }
-        if(do_mask == 1 && mask_beg == -1 && (line[i] == 'N' || line[i] == 'n'))
-          mask_beg = len;
         if(line[i] == 'g' || line[i] == 'G') { set(seq, bctr); gc_cont++; }
         else if(line[i] == 't' || line[i] == 'T') {
           set(seq, bctr);
@@ -120,11 +105,10 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
 /* This routine reads in the next sequence in a FASTA/GB/EMBL file */
 
 int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
-                   int *sctr, double *gc, int do_mask, mask *mlist, int *nm,
-                   char *cur_hdr, char *new_hdr) {
+                   int *sctr, double *gc, char *cur_hdr, char *new_hdr) {
   char line[MAX_LINE+1];
   int reading_seq = 0, genbank_end = 0, bctr = 0, len = 0, wrn = 0;
-  int gc_cont = 0, mask_beg = -1;
+  int gc_cont = 0;
   unsigned int i, gapsize = 0;
 
   sprintf(new_hdr, "Prodigal_Seq_%d", *sctr+2);
@@ -180,21 +164,6 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
       }
       for(i = 0; i < strlen(line); i++) {
         if(line[i] < 'A' || line[i] > 'z') continue;
-        if(do_mask == 1 && mask_beg != -1 && line[i] != 'N' && line[i] != 'n') {
-          if(len - mask_beg >= MASK_SIZE) {
-            if(*nm == MAX_MASKS) {
-              fprintf(stderr, "Error: saw too many regions of 'N''s in the ");
-              fprintf(stderr, "sequence.\n"); 
-              exit(55);
-            }
-            mlist[*nm].begin = mask_beg;
-            mlist[*nm].end = len-1;
-            (*nm)++;
-          }
-          mask_beg = -1;
-        }
-        if(do_mask == 1 && mask_beg == -1 && (line[i] == 'N' || line[i] == 'n'))
-          mask_beg = len;
         if(line[i] == 'g' || line[i] == 'G') { set(seq, bctr); gc_cont++; }
         else if(line[i] == 't' || line[i] == 'T') {
           set(seq, bctr);

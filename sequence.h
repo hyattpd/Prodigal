@@ -31,23 +31,15 @@
 #define MAX_SEQ 32000000
 #define MAX_LINE 10000
 #define WINDOW 120
-#define MASK_SIZE 50
-#define MAX_MASKS 5000
 #define ATG 0
 #define GTG 1
 #define TTG 2
 #define STOP 3
 #define ACCEPT "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:^*$@!+_?-|"
 
-typedef struct _mask {
-  int begin;
-  int end;
-} mask;
-
-int read_seq_training(FILE *, unsigned char *, unsigned char *, double *, int,
-                      mask *, int *);
+int read_seq_training(FILE *, unsigned char *, unsigned char *, double *);
 int next_seq_multi(FILE *, unsigned char *, unsigned char *, int *, double *,
-                   int, mask *, int *, char *, char *);
+                   char *, char *);
 void rcom_seq(unsigned char *, unsigned char *, unsigned char *, int);
 
 void calc_short_header(char *header, char *short_header, int);
@@ -57,11 +49,6 @@ int is_c(unsigned char *, int);
 int is_g(unsigned char *, int);
 int is_t(unsigned char *, int);
 int is_n(unsigned char *, int);
-int is_gc(unsigned char *, int);
-
-int is_stop(unsigned char *, int, struct _training *);
-int is_start(unsigned char *, int, struct _training *);
-int is_atg(unsigned char *, int);
 int is_gtg(unsigned char *, int);
 int is_ttg(unsigned char *, int);
 
