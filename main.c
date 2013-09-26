@@ -1,6 +1,6 @@
 /*******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2011 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2013 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -20,14 +20,15 @@
 
 #include <sys/stat.h>
 #include <unistd.h>
+#include <ctype.h>
 #include "sequence.h"
 #include "metagenomic.h"
 #include "node.h"
 #include "dprog.h"
 #include "gene.h"
 
-#define VERSION "2.60"
-#define DATE "October, 2011"
+#define VERSION "3.0-devel/Oct13"
+#define DATE "October, 2013"
 
 #define MIN_SINGLE_GENOME 20000
 #define IDEAL_SINGLE_GENOME 100000
@@ -39,9 +40,11 @@ int copy_standard_input_to_file(char *, int);
 
 int main(int argc, char *argv[]) {
 
-  int rv, slen, nn, ng, i, ipath, *gc_frame, do_training, output, max_phase;
-  int closed, force_nonsd, user_tt, is_meta, num_seq, quiet;
+  int rv, slen, nn, ng, i, j, ipath, *gc_frame, output, max_phase;
+  int closed, user_tt, num_seq, cross_gaps, quiet;
   int piped, max_slen, fnum;
+  int mode; /* 0 = normal, 1 = training, 2 = anonymous/metagenomic */
+  int force_nonsd = 0, is_meta = 0; /* deprecated and slated for removal PDH */
   double max_score, gc, low, high;
   unsigned char *seq, *rseq, *useq;
   char *train_file, *start_file, *trans_file, *nuc_file; 
@@ -81,15 +84,15 @@ int main(int argc, char *argv[]) {
     }
     memset(meta[i].tinf, 0, sizeof(struct _training));
   }
-  nn = 0; slen = 0; ipath = 0; ng = 0;
-  user_tt = 0; is_meta = 0; num_seq = 0; quiet = 0;
+  nn = 0; slen = 0; ipath = 0; ng = 0; cross_gaps = 0;
+  user_tt = 0; mode = 0; num_seq = 0; quiet = 0;
   max_phase = 0; max_score = -100.0;
-  train_file = NULL; do_training = 0;
+  train_file = NULL;
   start_file = NULL; trans_file = NULL; nuc_file = NULL;
   start_ptr = stdout; trans_ptr = stdout; nuc_ptr = stdout;
   input_file = NULL; output_file = NULL; piped = 0;
   input_ptr = stdin; output_ptr = stdout; max_slen = 0;
-  output = 0; closed = 0; force_nonsd = 0;
+  output = 0; closed = 0;
 
   /* Filename for input copy if needed */
   pid = getpid();
@@ -108,48 +111,70 @@ int main(int argc, char *argv[]) {
 
   /* Parse the command line arguments */
   for(i = 1; i < argc; i++) {
-    if(i == argc-1 && (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0
-       || strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "-A") == 0 ||
-       strcmp(argv[i], "-g") == 0 || strcmp(argv[i], "-g") == 0 ||
-       strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "-F") == 0 ||
-       strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "-S") == 0 ||
-       strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "-I") == 0 ||
-       strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "-O") == 0 ||
-       strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "-P") == 0))
-      usage("-a/-f/-g/-i/-o/-p/-s options require parameters.");
-    else if(strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "-C") == 0)
+    for(j = 0; j < strlen(argv[i]); j++) argv[i][j] = tolower(argv[i][j]);
+  }
+  for(i = 1; i < argc; i++) {
+    if((i == argc-1 || argv[i+1][0] == '-') && 
+       (strcmp(argv[i], "-t") == 0 || 
+       strcmp(argv[i], "--training_file") == 0 ||
+       strcmp(argv[i], "-a") == 0 || 
+       strcmp(argv[i], "--protein_file") == 0 ||
+       strcmp(argv[i], "-d") == 0 || 
+       strcmp(argv[i], "--mrna_file") == 0 ||
+       strcmp(argv[i], "-g") == 0 || 
+       strcmp(argv[i], "--trans_table") == 0 ||
+       strcmp(argv[i], "-f") == 0 || 
+       strcmp(argv[i], "--output_format") == 0 ||
+       strcmp(argv[i], "-s") == 0 || 
+       strcmp(argv[i], "--start_file") == 0 ||
+       strcmp(argv[i], "-i") == 0 || 
+       strcmp(argv[i], "--input_file") == 0 ||
+       strcmp(argv[i], "-o") == 0 || 
+       strcmp(argv[i], "--output_file") == 0 ||
+       strcmp(argv[i], "-m") == 0 || 
+       strcmp(argv[i], "--mode") == 0))
+      usage("-a/-d/-f/-g/-i/-o/-p/-s/-t options require valid parameters.");
+    else if(strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--nopartial") == 0)
       closed = 1;
-    else if(strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "-Q") == 0)
+    else if(strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0)
       quiet = 1;
-    else if(strcmp(argv[i], "-n") == 0 || strcmp(argv[i], "-N") == 0)
-      force_nonsd = 1;
-    else if(strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "-H") == 0) help();
-    else if(strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "-V") == 0) version();
-    else if(strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "-A") == 0) {
+    else if(strcmp(argv[i], "-n") == 0 || strcmp(argv[i], "--nogaps") == 0)
+      cross_gaps = 1;
+    else if(strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) 
+      help();
+    else if(strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) 
+      version();
+    else if(strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--protein_file") 
+            == 0) {
       trans_file = argv[i+1];
       i++;
     }
-    else if(strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "-d") == 0) {
+    else if(strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--mrna_file") == 0) {
       nuc_file = argv[i+1];
       i++;
     }
-    else if(strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "-I") == 0) {
+    else if(strcmp(argv[i], "-i") == 0 || 
+            strcmp(argv[i], "--input_file") == 0) {
       input_file = argv[i+1];
       i++;
     }
-    else if(strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "-O") == 0) {
+    else if(strcmp(argv[i], "-o") == 0 || 
+            strcmp(argv[i], "--output_file") == 0) {
       output_file = argv[i+1];
       i++;
     }
-    else if(strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "-S") == 0) {
+    else if(strcmp(argv[i], "-s") == 0 || 
+            strcmp(argv[i], "--start_file") == 0) {
       start_file = argv[i+1];
       i++;
     }
-    else if(strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0) {
+    else if(strcmp(argv[i], "-t") == 0 || 
+            strcmp(argv[i], "--training_file") == 0) {
       train_file = argv[i+1];
       i++;
     }
-    else if(strcmp(argv[i], "-g") == 0 || strcmp(argv[i], "-G") == 0) {
+    else if(strcmp(argv[i], "-g") == 0 || 
+            strcmp(argv[i], "--trans_table") == 0) {
       tinf.trans_table = atoi(argv[i+1]);
       if(tinf.trans_table < 1 || tinf.trans_table > 23 || tinf.trans_table == 7
          || tinf.trans_table == 8 || (tinf.trans_table >= 17 && tinf.trans_table
@@ -158,31 +183,30 @@ int main(int argc, char *argv[]) {
       user_tt = tinf.trans_table;
       i++;
     }
-    else if(strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "-P") == 0) {
-      if(argv[i+1][0] == '0' || argv[i+1][0] == 's' || argv[i+1][0] ==
-              'S') is_meta = 0;
-      else if(argv[i+1][0] == '1' || argv[i+1][0] == 'm' || argv[i+1][0] ==
-              'M') is_meta = 1; 
-      else usage("Invalid meta/single genome type specified.");
+    else if(strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--mode") == 0) {
+      if(argv[i+1][0] == 'n') mode = 0;
+      else if(argv[i+1][0] == 't') mode = 1; 
+      else if(argv[i+1][0] == 'a') mode = 2; 
+      else usage("Invalid mode specified (should be normal, train, or anon).");
       i++;
     }
-    else if(strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "-F") == 0) {
-      if(strncmp(argv[i+1], "0", 1) == 0 || strcmp(argv[i+1], "gbk") == 0 ||
-         strcmp(argv[i+1], "GBK") == 0)
+    else if(strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--output_format") 
+            == 0) {
+      if(strncmp(argv[i+1], "0", 1) == 0 || strcmp(argv[i+1], "gbk") == 0)
         output = 0;
-      else if(strncmp(argv[i+1], "1", 1) == 0 || strcmp(argv[i+1], "gca") == 0
-              || strcmp(argv[i+1], "GCA") == 0)
+      else if(strncmp(argv[i+1], "1", 1) == 0 || strcmp(argv[i+1], "gca") == 0)
         output = 1;
-      else if(strncmp(argv[i+1], "2", 1) == 0 || strcmp(argv[i+1], "sco") == 0
-              || strcmp(argv[i+1], "SCO") == 0)
+      else if(strncmp(argv[i+1], "2", 1) == 0 || strcmp(argv[i+1], "sco") == 0)
         output = 2;
-      else if(strncmp(argv[i+1], "3", 1) == 0 || strcmp(argv[i+1], "gff") == 0
-              || strcmp(argv[i+1], "GFF") == 0)
+      else if(strncmp(argv[i+1], "3", 1) == 0 || strcmp(argv[i+1], "gff") == 0)
         output = 3;
       else usage("Invalid output format specified.");
       i++;
     }
-    else usage("Unknown option.");
+    else {
+      fprintf(stderr, "Unknown option '%s'.", argv[i]);
+      usage("");
+    }
   }
 
   /* Print header */
@@ -193,46 +217,30 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Doug Hyatt, Loren Hauser, et al.     \n");
     fprintf(stderr, "-------------------------------------\n");
   }
+  if(mode == 0) fprintf(stderr, "Mode: Normal, Phase: Training\n");
+  else if(mode == 1) fprintf(stderr, "Mode: Training, Phase: Training\n");
+  else if(mode == 2) fprintf(stderr, "Mode: Anonymous, Phase: Training\n");
 
-  /* Read in the training file (if specified) */
-  if(train_file != NULL) {
-    if(is_meta == 1) {
-      fprintf(stderr, "\nError: cannot specify metagenomic sequence with a");
-      fprintf(stderr, " training file.\n");
-      exit(2);
-    } 
-    rv = read_training_file(train_file, &tinf);
-    if(rv == 1) do_training = 1;
-    else {
-      if(force_nonsd == 1) { 
-        fprintf(stderr, "\nError: cannot force non-SD finder with a training");
-        fprintf(stderr, " file already created!\n"); exit(3);
-      }
-      if(quiet == 0)
-        fprintf(stderr, "Reading in training data from file %s...", train_file);
-      if(user_tt > 0 && user_tt != tinf.trans_table) { 
-        fprintf(stderr, "\n\nWarning: user-specified translation table does");
-        fprintf(stderr, "not match the one in the specified training file! \n\n");
-      }
-      if(rv == -1) { 
-        fprintf(stderr, "\n\nError: training file did not read correctly!\n"); 
-        exit(4); 
-      }
-      if(quiet == 0) {
-        fprintf(stderr, "done!\n"); 
-        fprintf(stderr, "-------------------------------------\n");
-      }
-    }
-  }
-
-  /* Determine where standard input is coming from and react accordingly */
-  if(is_meta == 0 && train_file == NULL && input_file == NULL) {
+  /* If we're in normal mode and not reading from a training file, */
+  /* then we have to make two passes over the sequence.  Since we  */
+  /* rewind after the first pass (something Windows can't do to    */
+  /* stdin), we copy stdin to a temp file so that we can rewind it */
+  /* in Windows. If there's nothing present on stdin, we print     */
+  /* the help message and exit. */
+  if(mode == 0 && train_file == NULL && input_file == NULL) {
     fnum = fileno(stdin);
     if(fstat(fnum, &fbuf) == -1) {
       fprintf(stderr, "\nError: can't fstat standard input.\n\n");
-      exit(5);
+      exit(4);
     }
-    if(S_ISCHR(fbuf.st_mode)) help();
+    if(S_ISCHR(fbuf.st_mode)) {
+      if(argc == 1) help();
+      else {
+        fprintf(stderr, "\nError: options specified but no input ");
+        fprintf(stderr, "detected.\n\n");
+        exit(4);
+      }
+    }
     else if(S_ISREG(fbuf.st_mode)) { /* do nothing */ }
     else if(S_ISFIFO(fbuf.st_mode)) {
       piped = 1;
@@ -241,6 +249,28 @@ int main(int argc, char *argv[]) {
         exit(5);
       }
       input_file = input_copy;
+    }
+  }
+
+  /* Read in the training file (if specified) */
+  if(train_file != NULL) {
+    if(mode != 0) usage("Can only specify training file in normal mode."); 
+    if(quiet == 0)
+      fprintf(stderr, "Reading in training data from file %s...", train_file);
+    rv = read_training_file(train_file, &tinf);
+    if(rv == -1) { 
+      fprintf(stderr, "\n\nError: training file did not read correctly!\n"); 
+      exit(2); 
+    }
+    if(quiet == 0) {
+      fprintf(stderr, "done!\n"); 
+      fprintf(stderr, "-------------------------------------\n");
+    }
+    if(user_tt > 0 && user_tt != tinf.trans_table) { 
+      fprintf(stderr, "\nError: user-specified translation table doesn't match");
+      fprintf(stderr, " the specified\ntraining file! ");
+      fprintf(stderr, "(user: %d, training file: %d)\n", user_tt, tinf.trans_table);
+      exit(3);
     }
   }
 
@@ -287,10 +317,8 @@ int main(int argc, char *argv[]) {
     Single Genome Training:  Read in the sequence(s) and perform the
     training on them.
   ***************************************************************************/
-  if(is_meta == 0 && (do_training == 1 || (do_training == 0 && train_file == 
-     NULL))) {
+  if(mode == 1 || (mode == 0 && train_file == NULL)) {
     if(quiet == 0) {
-      fprintf(stderr, "Request:  Single Genome, Phase:  Training\n");
       fprintf(stderr, "Reading in the sequence(s) to train..."); 
     }
     slen = read_seq_training(input_ptr, seq, useq, &(tinf.gc));
@@ -310,7 +338,7 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "\n\nWarning:  ideally Prodigal should be given at");
       fprintf(stderr, " least %d bases for ", IDEAL_SINGLE_GENOME);
       fprintf(stderr, "training.\nYou may get better results with the ");
-      fprintf(stderr, "-p meta option.\n\n");
+      fprintf(stderr, "'-m anon' option.\n\n");
     }
     rcom_seq(seq, rseq, useq, slen);
     if(quiet == 0) {
@@ -368,9 +396,7 @@ int main(int argc, char *argv[]) {
     }
     record_overlapping_starts(nodes, nn, &tinf, 0);
     ipath = dprog(nodes, nn, &tinf, 0);
-    if(quiet == 0) {
-      fprintf(stderr, "done!\n"); 
-    }
+    if(quiet == 0) fprintf(stderr, "done!\n");
 
     /***********************************************************************
       Gather dicodon statistics for the training set.  Score the entire set
@@ -381,9 +407,7 @@ int main(int argc, char *argv[]) {
     }
     calc_dicodon_gene(&tinf, seq, rseq, slen, nodes, ipath);
     raw_coding_score(seq, rseq, slen, nodes, nn, &tinf);
-    if(quiet == 0) {
-      fprintf(stderr, "done!\n"); 
-    }
+    if(quiet == 0) fprintf(stderr, "done!\n");
 
     /***********************************************************************
       Determine if this organism uses Shine-Dalgarno or not and score the 
@@ -397,16 +421,14 @@ int main(int argc, char *argv[]) {
     determine_sd_usage(&tinf);
     if(force_nonsd == 1) tinf.uses_sd = 0;
     if(tinf.uses_sd == 0) train_starts_nonsd(seq, rseq, slen, nodes, nn, &tinf);
-    if(quiet == 0) {
-      fprintf(stderr, "done!\n"); 
-    }
+    if(quiet == 0) fprintf(stderr, "done!\n");
 
     /* If training specified, write the training file and exit. */
-    if(do_training == 1) {
+    if(mode == 1) {
       if(quiet == 0) {
-        fprintf(stderr, "Writing data to training file %s...", train_file);
+        fprintf(stderr, "Writing data to training file %s...", output_file);
       }
-      rv = write_training_file(train_file, &tinf);
+      rv = write_training_file(output_file, &tinf);
       if(rv != 0) { 
         fprintf(stderr, "\nError: could not write training file!\n"); 
         exit(12); 
@@ -433,10 +455,9 @@ int main(int argc, char *argv[]) {
   }
 
   /* Initialize the training files for a metagenomic request */
-  else if(is_meta == 1) {
+  else if(mode == 2) {
     if(quiet == 0) {
-      fprintf(stderr, "Request:  Metagenomic, Phase:  Training\n");
-      fprintf(stderr, "Initializing training files...");
+      fprintf(stderr, "Initializing preset training files...");
     }
     initialize_metagenomic_bins(meta);
     if(quiet == 0) {
@@ -447,9 +468,9 @@ int main(int argc, char *argv[]) {
 
   /* Print out header for gene finding phase */
   if(quiet == 0) {
-    if(is_meta == 1) 
-      fprintf(stderr, "Request:  Metagenomic, Phase:  Gene Finding\n");
-    else fprintf(stderr, "Request:  Single Genome, Phase:  Gene Finding\n");
+    if(mode == 2) 
+      fprintf(stderr, "Mode: Anonymous, Phase: Gene Finding\n");
+    else fprintf(stderr, "Mode: Normal, Phase: Gene Finding\n");
   }
 
   /* Read and process each sequence in the file in succession */
@@ -481,7 +502,7 @@ int main(int argc, char *argv[]) {
     /* Calculate short header for this sequence */
     calc_short_header(cur_header, short_header, num_seq);
 
-    if(is_meta == 0) { /* Single Genome Version */
+    if(mode != 2) { /* Single Genome Version */
 
       /***********************************************************************
         Find all the potential starts and stops, sort them, and create a 
@@ -521,7 +542,7 @@ int main(int argc, char *argv[]) {
     }
 
     else { /* Metagenomic Version */
-
+is_meta = 1;  /* deprecated slated for removal PDH */
       low = 0.88495*gc - 0.0102337;
       if(low > 0.65) low = 0.65;
       high = 0.86596*gc + .1131991;
@@ -622,51 +643,62 @@ void version() {
 }
 
 void usage(char *msg) {
-  fprintf(stderr, "\n%s\n", msg);
-  fprintf(stderr, "\nUsage:  prodigal [-a trans_file] [-c] [-d nuc_file]");
-  fprintf(stderr, " [-f output_type]\n");
-  fprintf(stderr, "                 [-g tr_table] [-h] [-i input_file] [-n]");
-  fprintf(stderr, " [-o output_file]\n");
-  fprintf(stderr, "                 [-p mode] [-q] [-s start_file]");
-  fprintf(stderr, " [-t training_file] [-v]\n");
+  fprintf(stderr, "%s\n", msg);
+  fprintf(stderr, "\nUsage:  prodigal [-a protein_file] [-c] [-d mrna_file]");
+  fprintf(stderr, " [-f out_format]\n");
+  fprintf(stderr, "                 [-g tr_table] [-h] [-i input_file]");
+  fprintf(stderr, " [-m mode] [-n]\n");
+  fprintf(stderr, "                 [-o output_file] [-q] [-s start_file]");
+  fprintf(stderr, " [-t train_file]\n                 [-v]\n");
   fprintf(stderr, "\nDo 'prodigal -h' for more information.\n\n");
   exit(15);
 }
 
 void help() {
-  fprintf(stderr, "\nUsage:  prodigal [-a trans_file] [-c] [-d nuc_file]");
-  fprintf(stderr, " [-f output_type]\n");
-  fprintf(stderr, "                 [-g tr_table] [-h] [-i input_file] [-n]");
-  fprintf(stderr, " [-o output_file]\n");
-  fprintf(stderr, "                 [-p mode] [-q] [-s start_file]");
-  fprintf(stderr, " [-t training_file] [-v]\n");
-  fprintf(stderr, "\n         -a:  Write protein translations to the selected ");
-  fprintf(stderr, "file.\n");
-  fprintf(stderr, "         -c:  Closed ends.  Do not allow genes to run off ");
-  fprintf(stderr, "edges.\n");
-  fprintf(stderr, "         -d:  Write nucleotide sequences of genes to the ");
-  fprintf(stderr, "selected file.\n");
-  fprintf(stderr, "         -f:  Select output format (gbk, gff, or sco).  ");
-  fprintf(stderr, "Default is gbk.\n");
-  fprintf(stderr, "         -g:  Specify a translation table to use (default");
-  fprintf(stderr, " 11).\n");
-  fprintf(stderr, "         -h:  Print help menu and exit.\n");
-  fprintf(stderr, "         -i:  Specify input file (default reads from ");
-  fprintf(stderr, "stdin).\n");
-  fprintf(stderr, "         -n:  Bypass the Shine-Dalgarno trainer and force");
-  fprintf(stderr, " the program to scan\n");
-  fprintf(stderr, "              for motifs.\n");
-  fprintf(stderr, "         -o:  Specify output file (default writes to ");
-  fprintf(stderr, "stdout).\n");
-  fprintf(stderr, "         -p:  Select procedure (single or meta).  Default");
-  fprintf(stderr, " is single.\n");
-  fprintf(stderr, "         -q:  Run quietly (suppress normal stderr output).\n");
-  fprintf(stderr, "         -s:  Write all potential genes (with scores) to");
-  fprintf(stderr, " the selected file.\n");
-  fprintf(stderr, "         -t:  Write a training file (if none exists); ");
-  fprintf(stderr, "otherwise, read and use\n");
-  fprintf(stderr, "              the specified training file.\n");
-  fprintf(stderr, "         -v:  Print version number and exit.\n\n");
+  fprintf(stderr, "\nUsage:  prodigal [-a protein_file] [-c] [-d mrna_file]");
+  fprintf(stderr, " [-f out_format]\n");
+  fprintf(stderr, "                 [-g tr_table] [-h] [-i input_file]");
+  fprintf(stderr, " [-m mode] [-n]\n");
+  fprintf(stderr, "                 [-o output_file] [-q] [-s start_file]");
+  fprintf(stderr, " [-t train_file]\n                 [-v]\n");
+  fprintf(stderr, "\nGene Modeling Parameters\n\n");
+  fprintf(stderr, "  -m, --mode:           Specify mode (normal, train, or anon).\n");
+  fprintf(stderr, "                          normal:   Single genome, any number of\n");
+  fprintf(stderr, "                                    sequences. (Default)\n");
+  fprintf(stderr, "                          train:    Do only training.  Input should\n");
+  fprintf(stderr, "                                    be multiple FASTA of one or more\n");
+  fprintf(stderr, "                                    closely related genomes.  Output\n");
+  fprintf(stderr, "                                    is a training file.\n");
+  fprintf(stderr, "                          anon:     Anonymous sequences, whose genome\n");
+  fprintf(stderr, "                                    is unknown, i.e. metagenomic data\n");
+  fprintf(stderr, "                                    or sequences too short (<100kb) to\n");
+  fprintf(stderr, "                                    train on reliably.\n");
+  fprintf(stderr, "  -g, --trans_table:    Specify a translation table to use\n");
+  fprintf(stderr, "                          11:  Standard Bac/Arch Code (Default)\n");
+  fprintf(stderr, "                          4:   Mycoplasma/Spiroplasma\n");
+  fprintf(stderr, "  -c, --nopartial:      Closed ends.  Do not allow partial genes\n");
+  fprintf(stderr, "                        (genes that run off edges or into gaps.)\n");
+  fprintf(stderr, "  -n, --nogaps:         Do not treat runs of N's as gaps.  This option\n");
+  fprintf(stderr, "                        will build gene models that span runs of N's.\n");
+  fprintf(stderr, "  -t, --training_file:  Read and use the specified training file\n");
+  fprintf(stderr, "                        instead of training on the input sequence(s)\n");
+  fprintf(stderr, "                        (Only usable in normal mode.)\n");
+  fprintf(stderr, "\nInput/Output Parameters\n\n");
+  fprintf(stderr, "  -i, --input_file:     Specify input file (default stdin).\n");
+  fprintf(stderr, "  -o, --output_file:    Specify output file (default stdout).\n");
+  fprintf(stderr, "  -a, --protein_file:   Write protein translations to the named file.\n");
+  fprintf(stderr, "  -d, --mrna_file:      Write nucleotide sequences of genes to the\n");
+  fprintf(stderr, "                        named file.\n");
+  fprintf(stderr, "  -s, --start_file:     Write all potential genes (with scores) to the\n");
+  fprintf(stderr, "                        named file.\n");
+  fprintf(stderr, "  -f, --output_format:  Specify output format (gbk, gff, or sco).\n");
+  fprintf(stderr, "                          gff:  GFF format (Default)\n");
+  fprintf(stderr, "                          gbk:  Genbank-like format\n");
+  fprintf(stderr, "                          sco:  Simple coordinate output\n");
+  fprintf(stderr, "  -q, --quiet:          Run quietly (suppress normal stderr output).\n");
+  fprintf(stderr, "\nOther Parameters\n\n");
+  fprintf(stderr, "  -h, --help:     Print help menu and exit.\n");
+  fprintf(stderr, "  -v, --version:  Print version number and exit.\n\n");
   exit(0);
 }
 

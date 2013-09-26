@@ -1,6 +1,6 @@
 /*******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2011 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2013 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -41,6 +41,7 @@ int read_seq_training(FILE *, unsigned char *, unsigned char *, double *);
 int next_seq_multi(FILE *, unsigned char *, unsigned char *, int *, double *,
                    char *, char *);
 void rcom_seq(unsigned char *, unsigned char *, unsigned char *, int);
+void overwrite_gaps_with_stops(unsigned char *, unsigned char *, int);
 
 void calc_short_header(char *header, char *short_header, int);
 
@@ -49,6 +50,11 @@ int is_c(unsigned char *, int);
 int is_g(unsigned char *, int);
 int is_t(unsigned char *, int);
 int is_n(unsigned char *, int);
+int is_gc(unsigned char *, int);
+
+int is_stop(unsigned char *, int, struct _training *);
+int is_start(unsigned char *, int, struct _training *);
+int is_atg(unsigned char *, int);
 int is_gtg(unsigned char *, int);
 int is_ttg(unsigned char *, int);
 

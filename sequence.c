@@ -1,6 +1,6 @@
 /*******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2011 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2013 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -218,6 +218,30 @@ void rcom_seq(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
     if(test(useq, i) == 1) {
       toggle(rseq, slen-1-i*2); 
       toggle(rseq, slen-2-i*2);
+    }
+  }
+}
+
+/* Traverse a sequence looking for gaps of 12 or more ambiguous */
+/* characters and replace them with TTAATTAATTAA to force stops */
+/* in all six frames. */
+
+void overwrite_gaps_with_stops(unsigned char *seq, unsigned char *useq,
+                               int len) {
+  int i, j, slen=len*2, count = 0;
+  for(i = 0; i < slen; i++) {
+    if(test(useq, i) == 1) count = 0;
+    else {
+      count++;
+      if(count == 12) {
+        for(j = i-11; j <= i; j+=4) {
+          set(seq, j*2); set(seq, j*2+1);
+          set(seq, j*2+2); set(seq, j*2+3);
+          clear(seq, j*2+4); clear(seq, j*2+5);
+          clear(seq, j*2+6); clear(seq, j*2+7);
+        }   
+        count = 0;
+      }
     }
   }
 }
