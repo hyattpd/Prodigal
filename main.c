@@ -40,7 +40,7 @@ int copy_standard_input_to_file(char *, int);
 
 int main(int argc, char *argv[]) {
 
-  int rv, slen, nn, ng, i, j, ipath, *gc_frame, output, max_phase;
+  int rv, slen, nn, ng, i, j, ipath, *gc_frame, outfmt, max_phase;
   int closed, user_tt, num_seq, cross_gaps, quiet;
   int piped, max_slen, fnum;
   int mode; /* 0 = normal, 1 = training, 2 = anonymous/metagenomic */
@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
   start_ptr = stdout; trans_ptr = stdout; nuc_ptr = stdout;
   input_file = NULL; output_file = NULL; piped = 0;
   input_ptr = stdin; output_ptr = stdout; max_slen = 0;
-  output = 0; closed = 0;
+  outfmt = 3; closed = 0;
 
   /* Filename for input copy if needed */
   pid = getpid();
@@ -193,13 +193,13 @@ int main(int argc, char *argv[]) {
     else if(strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--output_format") 
             == 0) {
       if(strncmp(argv[i+1], "0", 1) == 0 || strcmp(argv[i+1], "gbk") == 0)
-        output = 0;
+        outfmt = 0;
       else if(strncmp(argv[i+1], "1", 1) == 0 || strcmp(argv[i+1], "gca") == 0)
-        output = 1;
+        outfmt = 1;
       else if(strncmp(argv[i+1], "2", 1) == 0 || strcmp(argv[i+1], "sco") == 0)
-        output = 2;
+        outfmt = 2;
       else if(strncmp(argv[i+1], "3", 1) == 0 || strcmp(argv[i+1], "gff") == 0)
-        output = 3;
+        outfmt = 3;
       else usage("Invalid output format specified.");
       i++;
     }
@@ -321,7 +321,7 @@ int main(int argc, char *argv[]) {
     if(quiet == 0) {
       fprintf(stderr, "Reading in the sequence(s) to train..."); 
     }
-    slen = read_seq_training(input_ptr, seq, useq, &(tinf.gc));
+    slen = read_seq_training(input_ptr, seq, useq, &(tinf.gc), closed);
     if(slen == 0) {
       fprintf(stderr, "\n\nSequence read failed (file must be Fasta, ");
       fprintf(stderr, "Genbank, or EMBL format).\n\n");
@@ -530,7 +530,7 @@ int main(int argc, char *argv[]) {
       }
 
       /* Output the genes */
-      print_genes(output_ptr, genes, ng, nodes, slen, output, num_seq, 0, NULL,
+      print_genes(output_ptr, genes, ng, nodes, slen, outfmt, num_seq, 0, NULL,
                   &tinf, cur_header, short_header, VERSION);
       fflush(output_ptr);
       if(trans_ptr != stdout)
@@ -587,7 +587,7 @@ is_meta = 1;  /* deprecated slated for removal PDH */
       }
 
       /* Output the genes */
-      print_genes(output_ptr, genes, ng, nodes, slen, output, num_seq, 1,
+      print_genes(output_ptr, genes, ng, nodes, slen, outfmt, num_seq, 1,
                   meta[max_phase].desc, meta[max_phase].tinf, cur_header, 
                   short_header, VERSION);
       fflush(output_ptr);
@@ -669,10 +669,10 @@ void help() {
   fprintf(stderr, "                                    be multiple FASTA of one or more\n");
   fprintf(stderr, "                                    closely related genomes.  Output\n");
   fprintf(stderr, "                                    is a training file.\n");
-  fprintf(stderr, "                          anon:     Anonymous sequences, whose genome\n");
-  fprintf(stderr, "                                    is unknown, i.e. metagenomic data\n");
-  fprintf(stderr, "                                    or sequences too short (<100kb) to\n");
-  fprintf(stderr, "                                    train on reliably.\n");
+  fprintf(stderr, "                          anon:     Anonymous sequences, analyze using\n");
+  fprintf(stderr, "                                    preset training files, ideal for\n");
+  fprintf(stderr, "                                    metagenomic data or single short\n");
+  fprintf(stderr, "                                    sequences.\n");
   fprintf(stderr, "  -g, --trans_table:    Specify a translation table to use\n");
   fprintf(stderr, "                          11:  Standard Bac/Arch Code (Default)\n");
   fprintf(stderr, "                          4:   Mycoplasma/Spiroplasma\n");

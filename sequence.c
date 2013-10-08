@@ -22,15 +22,15 @@
 
 /*******************************************************************************
   Read the sequence for training purposes.  If we encounter multiple
-  sequences, we insert TTAATTAATTAA between each one to force stops in all
-  six frames.  When we hit MAX_SEQ bp, we stop and return what we've got so
+  sequences, we insert gaps in between each one to allow training on partial
+  genes.  When we hit MAX_SEQ bp, we stop and return what we've got so
   far for training.  This routine reads in FASTA, and has a very 'loose' 
   Genbank and Embl parser, but, to be safe, FASTA should generally be 
   preferred.
 *******************************************************************************/
 
 int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq, 
-                      double *gc) {
+                      double *gc, int closed) {
   char line[MAX_LINE+1];
   int hdr = 0, fhdr = 0, bctr = 0, len = 0, wrn = 0;
   int gc_cont = 0;
@@ -47,9 +47,9 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
     if(line[0] == '>' || (line[0] == 'S' && line[1] == 'Q') ||
        (strlen(line) > 6 && strncmp(line, "ORIGIN", 6) == 0)) {
       hdr = 1;
-      if(fhdr > 0) {
-        for(i = 0; i < 12; i++) {
-          if(i%4 == 0 || i%4 == 1) { set(seq, bctr); set(seq, bctr+1); }
+      if(fhdr > 0 && closed == 0) {
+        for(i = 0; i < 10; i++) {
+          set(useq, len);
           bctr+=2; len++;
         }
       }
@@ -92,9 +92,9 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
       break;
     }
   }
-  if(fhdr > 1) {
-    for(i = 0; i < 12; i++) {
-      if(i%4 == 0 || i%4 == 1) { set(seq, bctr); set(seq, bctr+1); }
+  if(fhdr > 1 && closed == 0) {
+    for(i = 0; i < 10; i++) {
+      set(useq, len);
       bctr+=2; len++;
     }
   }
@@ -218,30 +218,6 @@ void rcom_seq(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
     if(test(useq, i) == 1) {
       toggle(rseq, slen-1-i*2); 
       toggle(rseq, slen-2-i*2);
-    }
-  }
-}
-
-/* Traverse a sequence looking for gaps of 12 or more ambiguous */
-/* characters and replace them with TTAATTAATTAA to force stops */
-/* in all six frames. */
-
-void overwrite_gaps_with_stops(unsigned char *seq, unsigned char *useq,
-                               int len) {
-  int i, j, slen=len*2, count = 0;
-  for(i = 0; i < slen; i++) {
-    if(test(useq, i) == 1) count = 0;
-    else {
-      count++;
-      if(count == 12) {
-        for(j = i-11; j <= i; j+=4) {
-          set(seq, j*2); set(seq, j*2+1);
-          set(seq, j*2+2); set(seq, j*2+3);
-          clear(seq, j*2+4); clear(seq, j*2+5);
-          clear(seq, j*2+6); clear(seq, j*2+7);
-        }   
-        count = 0;
-      }
     }
   }
 }

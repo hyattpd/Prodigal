@@ -54,26 +54,11 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     }
     if(last[i%3] >= slen) continue;
      
-    if(is_start(seq, i, tinf) == 1 && is_atg(seq, i)==1 && ((last[i%3]-i+3)
-            >= min_dist[i%3])) {
+    if(is_start(seq, i, tinf) == 1 && ((last[i%3]-i+3) >= min_dist[i%3])) {
       nodes[nn].ndx = i; 
-      nodes[nn].type = ATG; 
-      saw_start[i%3] = 1;
-      nodes[nn].stop_val = last[i%3]; 
-      nodes[nn++].strand = 1;
-    }
-    else if(is_start(seq, i, tinf) == 1 && is_gtg(seq, i)==1 && ((last[i%3]-i+3)
-            >= min_dist[i%3])) {
-      nodes[nn].ndx = i; 
-      nodes[nn].type = GTG; 
-      saw_start[i%3] = 1;
-      nodes[nn].stop_val = last[i%3]; 
-      nodes[nn++].strand = 1;
-    }
-    else if(is_start(seq, i, tinf) == 1 && is_ttg(seq, i)==1 && ((last[i%3]-i+3)
-            >= min_dist[i%3])) {
-      nodes[nn].ndx = i; 
-      nodes[nn].type = TTG; 
+      if(is_atg(seq, i) == 1) nodes[nn].type = ATG; 
+      else if(is_gtg(seq, i) == 1) nodes[nn].type = GTG; 
+      else if(is_ttg(seq, i) == 1) nodes[nn].type = TTG; 
       saw_start[i%3] = 1;
       nodes[nn].stop_val = last[i%3]; 
       nodes[nn++].strand = 1;
@@ -120,26 +105,11 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     }
     if(last[i%3] >= slen) continue;
 
-    if(is_start(rseq, i, tinf) == 1 && is_atg(rseq, i)==1 && ((last[i%3]-i+3)
-       >= min_dist[i%3])) {
+    if(is_start(rseq, i, tinf) == 1 && ((last[i%3]-i+3) >= min_dist[i%3])) {
       nodes[nn].ndx = slen - i - 1; 
-      nodes[nn].type = ATG; 
-      saw_start[i%3] = 1;
-      nodes[nn].stop_val = slen-last[i%3]-1; 
-      nodes[nn++].strand = -1;
-    }
-    else if(is_start(rseq, i, tinf) == 1 && is_gtg(rseq, i)==1 && 
-            ((last[i%3]-i+3) >= min_dist[i%3])) {
-      nodes[nn].ndx = slen - i - 1; 
-      nodes[nn].type = GTG; 
-      saw_start[i%3] = 1;
-      nodes[nn].stop_val = slen-last[i%3]-1; 
-      nodes[nn++].strand = -1;
-    }
-    else if(is_start(rseq, i, tinf) == 1 && is_ttg(rseq, i)==1 && 
-            ((last[i%3]-i+3) >= min_dist[i%3])) {
-      nodes[nn].ndx = slen - i - 1; 
-      nodes[nn].type = TTG; 
+      if(is_atg(rseq, i) == 1) nodes[nn].type = ATG; 
+      else if(is_gtg(rseq, i) == 1) nodes[nn].type = GTG; 
+      else if(is_ttg(rseq, i) == 1) nodes[nn].type = TTG; 
       saw_start[i%3] = 1;
       nodes[nn].stop_val = slen-last[i%3]-1; 
       nodes[nn++].strand = -1;
