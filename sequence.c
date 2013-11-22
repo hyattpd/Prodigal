@@ -256,23 +256,24 @@ int is_n(unsigned char *useq, int n) {
 
 int is_stop(unsigned char *seq, int n, struct _training *tinf) {
 
-  /* TAG */
+  /* TAG: Not a stop in genetic codes 6, 15, 16, and 22 */
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
     if(tinf->trans_table == 6 || tinf->trans_table == 15 ||
        tinf->trans_table == 16 || tinf->trans_table == 22) return 0;
     return 1;
   }
 
-  /* TGA */
+  /* TGA: Not a stop in genetic codes 2-5, 9-10, 13-14, 21, 24-25 */
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
     if((tinf->trans_table >= 2 && tinf->trans_table <= 5) ||
        tinf->trans_table == 9 || tinf->trans_table == 10 ||
        tinf->trans_table == 13 || tinf->trans_table == 14 ||
-       tinf->trans_table == 21) return 0;
+       tinf->trans_table == 21 || tinf->trans_table == 24 ||
+       tinf->trans_table == 25) return 0;
     return 1;
   }
 
-  /* TAA */
+  /* TAA: Not a stop in genetic codes 6 and 14 */
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
     if(tinf->trans_table == 6 || tinf->trans_table == 14) return 0;
     return 1;
@@ -295,28 +296,28 @@ int is_stop(unsigned char *seq, int n, struct _training *tinf) {
   return 0;
 }
 
+/* Prodigal only supports ATG/GTG/TTG starts as 'standard' possibilities. */
+/* Some genetic codes have other initiation codons listed, but we do not  */
+/* support these. */
 int is_start(unsigned char *seq, int n, struct _training *tinf) {
 
-  /* ATG */
+  /* ATG: Always a start codon */
   if(is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) return 1;
 
-  /* Codes that only use ATG */
-  if(tinf->trans_table == 6 || tinf->trans_table == 10 ||
-     tinf->trans_table == 14 || tinf->trans_table == 15 ||
-     tinf->trans_table == 16 || tinf->trans_table == 22) return 0;
-
-  /* GTG */
+  /* GTG: Start codon in 2/4/5/9/11/13/21/23/24/25 */
   if(is_g(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table == 1 || tinf->trans_table == 3 ||
-       tinf->trans_table == 12 || tinf->trans_table == 22) return 0;
-    return 1;
+    if(tinf->trans_table == 2 || tinf->trans_table == 4 ||
+       tinf->trans_table == 5 || tinf->trans_table == 9 ||
+       tinf->trans_table == 11 || tinf->trans_table == 13 ||
+       tinf->trans_table == 21 || tinf->trans_table == 23 ||
+       tinf->trans_table == 24 || tinf->trans_table == 25) return 1;
   }
 
-  /* TTG */
+  /* TTG: Start codon in 4/5/11/13/24/25 */
   if(is_t(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table < 4 || tinf->trans_table == 9 ||
-       tinf->trans_table >= 21) return 0;
-    return 1;
+    if(tinf->trans_table == 4 || tinf->trans_table == 5 ||
+       tinf->trans_table == 11 || tinf->trans_table == 13 ||
+       tinf->trans_table == 24 || tinf->trans_table == 25) return 1;
   }
 
   /* We do not handle other initiation codons */
@@ -377,14 +378,17 @@ char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
   }
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
     if(tinf->trans_table == 6 || tinf->trans_table == 15) return 'Q';
-    if(tinf->trans_table == 22) return 'L';
+    if(tinf->trans_table == 16 || tinf->trans_table == 22) return 'L';
   }
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_t(seq, n+2) == 1)
     return 'C';
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_c(seq, n+2) == 1)
     return 'C';
-  if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_a(seq, n+2) == 1)
+  if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
+    if(tinf->trans_table == 10) return 'C';
+    if(tinf->trans_table == 25) return 'G';
     return 'W';
+  }
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_g(seq, n+2) == 1)
     return 'W';
   if(is_c(seq, n) == 1 && is_t(seq, n+1) == 1 && is_t(seq, n+2) == 1) {
@@ -442,11 +446,18 @@ char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
     return 'S';
   if(is_a(seq, n) == 1 && is_g(seq, n+1) == 1 && is_c(seq, n+2) == 1)
     return 'S';
-  if(is_a(seq, n) == 1 && is_g(seq, n+1) == 1 && (is_a(seq, n+2) == 1 ||
-     is_g(seq, n+2) == 1)) {
+  if(is_a(seq, n) == 1 && is_g(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
+    if(tinf->trans_table == 13) return 'G';
+    if(tinf->trans_table == 5 || tinf->trans_table == 9 ||
+       tinf->trans_table == 14 || tinf->trans_table == 21 ||
+       tinf->trans_table == 24) return 'S';
+    return 'R';
+  }
+  if(is_a(seq, n) == 1 && is_g(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
     if(tinf->trans_table == 13) return 'G';
     if(tinf->trans_table == 5 || tinf->trans_table == 9 ||
        tinf->trans_table == 14 || tinf->trans_table == 21) return 'S';
+    if(tinf->trans_table == 24) return 'K';
     return 'R';
   }
   if(is_g(seq, n) == 1 && is_t(seq, n+1) == 1) return 'V';
@@ -569,6 +580,12 @@ int *calc_most_gc_frame(unsigned char *seq, int slen) {
   return gp;
 }
 
+/* Auto-detect the translation table of this sequence */
+int detect_translation_table(unsigned char *seq, unsigned char *rseq,
+                             int slen) {
+  /* tmp return 11 until this function is written */
+  return 11;
+}
 
 /* Converts a word of size len to a number */
 int mer_ndx(int len, unsigned char *seq, int pos) {

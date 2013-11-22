@@ -35,7 +35,6 @@
 #define GTG 1
 #define TTG 2
 #define STOP 3
-#define ACCEPT "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:^*$@!+_?-|"
 
 int read_seq_training(FILE *, unsigned char *, unsigned char *, double *, int);
 int next_seq_multi(FILE *, unsigned char *, unsigned char *, int *, double *,
@@ -66,6 +65,7 @@ char amino_letter(int);
 int rframe(int, int);
 int max_fr(int, int, int);
 
+int detect_translation_table(unsigned char *, unsigned char *, int);
 int *calc_most_gc_frame(unsigned char *, int);
 
 int mer_ndx(int, unsigned char *, int);

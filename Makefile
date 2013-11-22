@@ -25,7 +25,7 @@ SRC=	main.c \
 	gene.c \
 	dprog.c \
 	node.c \
-	metagenomic.c \
+	anonymous.c \
 	sequence.c \
 	training.c \
 	bitmap.c

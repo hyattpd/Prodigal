@@ -22,13 +22,13 @@
 #include <unistd.h>
 #include <ctype.h>
 #include "sequence.h"
-#include "metagenomic.h"
+#include "anonymous.h"
 #include "node.h"
 #include "dprog.h"
 #include "gene.h"
 
-#define VERSION "3.0-devel/Oct13"
-#define DATE "October, 2013"
+#define VERSION "3.0-devel/Nov2013"
+#define DATE "November, 2013"
 
 #define MIN_SINGLE_GENOME 20000
 #define IDEAL_SINGLE_GENOME 100000
@@ -41,10 +41,10 @@ int copy_standard_input_to_file(char *, int);
 int main(int argc, char *argv[]) {
 
   int rv, slen, nn, ng, i, j, ipath, *gc_frame, outfmt, max_phase;
-  int closed, user_tt, num_seq, cross_gaps, quiet;
+  int closed, num_seq, cross_gaps, quiet;
   int piped, max_slen, fnum;
   int mode; /* 0 = normal, 1 = training, 2 = anonymous/metagenomic */
-  int force_nonsd = 0, is_meta = 0; /* deprecated and slated for removal PDH */
+  int force_nonsd = 0, is_anon = 0; /* deprecated and slated for removal PDH */
   double max_score, gc, low, high;
   unsigned char *seq, *rseq, *useq;
   char *train_file, *start_file, *trans_file, *nuc_file; 
@@ -56,7 +56,7 @@ int main(int argc, char *argv[]) {
   struct _node *nodes;
   struct _gene *genes;
   struct _training tinf;
-  struct _metagenomic_bin meta[NUM_META];
+  struct _preset_genome_bin presets[NUM_PRESET_GENOME];
 
   /* Allocate memory and initialize variables */
   seq = (unsigned char *)malloc(MAX_SEQ/4*sizeof(unsigned char));
@@ -74,25 +74,25 @@ int main(int argc, char *argv[]) {
   memset(genes, 0, MAX_GENES*sizeof(struct _gene));
   memset(&tinf, 0, sizeof(struct _training));
 
-  for(i = 0; i < NUM_META; i++) {
-    memset(&meta[i], 0, sizeof(struct _metagenomic_bin));
-    strcpy(meta[i].desc, "None");
-    meta[i].tinf = (struct _training *)malloc(sizeof(struct _training));
-    if(meta[i].tinf == NULL) {
+  for(i = 0; i < NUM_PRESET_GENOME; i++) {
+    memset(&presets[i], 0, sizeof(struct _preset_genome_bin));
+    strcpy(presets[i].desc, "None");
+    presets[i].tinf = (struct _training *)malloc(sizeof(struct _training));
+    if(presets[i].tinf == NULL) {
       fprintf(stderr, "\nError: Malloc failed on training structure.\n\n"); 
       exit(1);
     }
-    memset(meta[i].tinf, 0, sizeof(struct _training));
+    memset(presets[i].tinf, 0, sizeof(struct _training));
   }
   nn = 0; slen = 0; ipath = 0; ng = 0; cross_gaps = 0;
-  user_tt = 0; mode = 0; num_seq = 0; quiet = 0;
+  mode = 0; num_seq = 0; quiet = 0;
   max_phase = 0; max_score = -100.0;
   train_file = NULL;
   start_file = NULL; trans_file = NULL; nuc_file = NULL;
   start_ptr = stdout; trans_ptr = stdout; nuc_ptr = stdout;
   input_file = NULL; output_file = NULL; piped = 0;
   input_ptr = stdin; output_ptr = stdout; max_slen = 0;
-  outfmt = 3; closed = 0;
+  outfmt = -1; closed = 0;
 
   /* Filename for input copy if needed */
   pid = getpid();
@@ -107,7 +107,7 @@ int main(int argc, char *argv[]) {
     for 99% of genomes.  This problem may be revisited in future versions.
   ***************************************************************************/
   tinf.st_wt = 4.35;
-  tinf.trans_table = 11;
+  tinf.trans_table = -1;
 
   /* Parse the command line arguments */
   for(i = 1; i < argc; i++) {
@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
        strcmp(argv[i], "--output_file") == 0 ||
        strcmp(argv[i], "-m") == 0 || 
        strcmp(argv[i], "--mode") == 0))
-      usage("-a/-d/-f/-g/-i/-o/-p/-s/-t options require valid parameters.");
+      usage("-a/-d/-f/-g/-i/-m/-o/-s/-t options require valid parameters.");
     else if(strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--nopartial") == 0)
       closed = 1;
     else if(strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0)
@@ -176,11 +176,10 @@ int main(int argc, char *argv[]) {
     else if(strcmp(argv[i], "-g") == 0 || 
             strcmp(argv[i], "--trans_table") == 0) {
       tinf.trans_table = atoi(argv[i+1]);
-      if(tinf.trans_table < 1 || tinf.trans_table > 23 || tinf.trans_table == 7
+      if(tinf.trans_table < 0 || tinf.trans_table > 25 || tinf.trans_table == 7
          || tinf.trans_table == 8 || (tinf.trans_table >= 17 && tinf.trans_table
          <= 20))
         usage("Invalid translation table specified.");
-      user_tt = tinf.trans_table;
       i++;
     }
     else if(strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--mode") == 0) {
@@ -200,6 +199,8 @@ int main(int argc, char *argv[]) {
         outfmt = 2;
       else if(strncmp(argv[i+1], "3", 1) == 0 || strcmp(argv[i+1], "gff") == 0)
         outfmt = 3;
+      else if(strncmp(argv[i+1], "4", 1) == 0 || strcmp(argv[i+1], "sqn") == 0)
+        outfmt = 4;
       else usage("Invalid output format specified.");
       i++;
     }
@@ -221,6 +222,20 @@ int main(int argc, char *argv[]) {
   else if(mode == 1) fprintf(stderr, "Mode: Training, Phase: Training\n");
   else if(mode == 2) fprintf(stderr, "Mode: Anonymous, Phase: Training\n");
 
+  /* Training mode can't have output format specified. */
+  if(mode == 1 && outfmt != -1) {
+    fprintf(stderr, "\nError: can't specify output format in training mode.\n");
+    exit(17);
+  }
+  /* Anonymous mode can't have a specified value for genetic code. */
+  /* Nor can normal mode if using a training file. */
+  if((mode == 2 || (mode == 0 && train_file != NULL)) && 
+     tinf.trans_table != -1) {
+    fprintf(stderr, "\nError: can't specify translation table in anonymous");
+    fprintf(stderr, " mode.\n");
+    exit(3);
+  }
+  
   /* If we're in normal mode and not reading from a training file, */
   /* then we have to make two passes over the sequence.  Since we  */
   /* rewind after the first pass (something Windows can't do to    */
@@ -254,7 +269,9 @@ int main(int argc, char *argv[]) {
 
   /* Read in the training file (if specified) */
   if(train_file != NULL) {
-    if(mode != 0) usage("Can only specify training file in normal mode."); 
+    if(mode != 0) {
+      usage("\nError: Can only specify training file in normal mode.");
+    }
     if(quiet == 0)
       fprintf(stderr, "Reading in training data from file %s...", train_file);
     rv = read_training_file(train_file, &tinf);
@@ -265,12 +282,6 @@ int main(int argc, char *argv[]) {
     if(quiet == 0) {
       fprintf(stderr, "done!\n"); 
       fprintf(stderr, "-------------------------------------\n");
-    }
-    if(user_tt > 0 && user_tt != tinf.trans_table) { 
-      fprintf(stderr, "\nError: user-specified translation table doesn't match");
-      fprintf(stderr, " the specified\ntraining file! ");
-      fprintf(stderr, "(user: %d, training file: %d)\n", user_tt, tinf.trans_table);
-      exit(3);
     }
   }
 
@@ -330,7 +341,7 @@ int main(int argc, char *argv[]) {
     if(slen < MIN_SINGLE_GENOME) {
       fprintf(stderr, "\n\nError:  Sequence must be %d", MIN_SINGLE_GENOME);
       fprintf(stderr, " characters (only %d read).\n(Consider", slen);
-      fprintf(stderr, " running with the -p meta option or finding");
+      fprintf(stderr, " running with the -m anon option or finding");
       fprintf(stderr, " more contigs from the same genome.)\n\n");
       exit(10);
     }
@@ -344,6 +355,15 @@ int main(int argc, char *argv[]) {
     if(quiet == 0) {
       fprintf(stderr, "%d bp seq created, %.2f pct GC\n", slen, tinf.gc*100.0);
     }
+
+    /***********************************************************************
+      Scan the sequence and deduce what translation table it uses.
+    ***********************************************************************/
+    if(tinf.trans_table == -1) {
+      if(quiet == 0) fprintf(stderr, "Detecting translation table...");
+      tinf.trans_table = detect_translation_table(seq, rseq, slen);
+      if(quiet == 0) fprintf(stderr, "table %d selected.\n", tinf.trans_table);
+    } 
 
     /***********************************************************************
       Find all the potential starts and stops, sort them, and create a 
@@ -360,7 +380,7 @@ int main(int argc, char *argv[]) {
       }
       max_slen = slen;
     }
-    nn = add_nodes(seq, rseq, slen, nodes, closed, &tinf);
+    nn = add_nodes(seq, rseq, slen, nodes, closed, cross_gaps, &tinf);
     qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
     if(quiet == 0) {
       fprintf(stderr, "%d nodes\n", nn); 
@@ -454,12 +474,12 @@ int main(int argc, char *argv[]) {
     nn = 0; slen = 0; ipath = 0;
   }
 
-  /* Initialize the training files for a metagenomic request */
+  /* Initialize the training files for an anonymous request */
   else if(mode == 2) {
     if(quiet == 0) {
       fprintf(stderr, "Initializing preset training files...");
     }
-    initialize_metagenomic_bins(meta);
+    initialize_preset_genome_bins(presets);
     if(quiet == 0) {
       fprintf(stderr, "done!\n");
       fprintf(stderr, "-------------------------------------\n");
@@ -508,14 +528,14 @@ int main(int argc, char *argv[]) {
         Find all the potential starts and stops, sort them, and create a 
         comprehensive list of nodes for dynamic programming.
       ***********************************************************************/
-      nn = add_nodes(seq, rseq, slen, nodes, closed, &tinf);
+      nn = add_nodes(seq, rseq, slen, nodes, closed, cross_gaps, &tinf);
       qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
 
       /***********************************************************************
         Second dynamic programming, using the dicodon statistics as the
         scoring function.                                
       ***********************************************************************/
-      score_nodes(seq, rseq, slen, nodes, nn, &tinf, closed, is_meta);
+      score_nodes(seq, rseq, slen, nodes, nn, &tinf, closed, is_anon);
       if(start_ptr != stdout) 
         write_start_file(start_ptr, nodes, nn, &tinf, num_seq, slen, 0, NULL,
                          VERSION, cur_header);
@@ -541,45 +561,45 @@ int main(int argc, char *argv[]) {
                               &tinf, num_seq, short_header);
     }
 
-    else { /* Metagenomic Version */
-is_meta = 1;  /* deprecated slated for removal PDH */
+    else { /* Anonymous (Metagenomic) Version */
+is_anon = 1;  /* deprecated slated for removal PDH */
       low = 0.88495*gc - 0.0102337;
       if(low > 0.65) low = 0.65;
       high = 0.86596*gc + .1131991;
       if(high < 0.35) high = 0.35;
 
       max_score = -100.0;
-      for(i = 0; i < NUM_META; i++) { 
-        if(i == 0 || meta[i].tinf->trans_table != 
-           meta[i-1].tinf->trans_table) {
+      for(i = 0; i < NUM_PRESET_GENOME; i++) { 
+        if(i == 0 || presets[i].tinf->trans_table != 
+           presets[i-1].tinf->trans_table) {
           memset(nodes, 0, nn*sizeof(struct _node));
-          nn = add_nodes(seq, rseq, slen, nodes, closed, meta[i].tinf);
+          nn = add_nodes(seq, rseq, slen, nodes, closed, cross_gaps, presets[i].tinf);
           qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
         }
-        if(meta[i].tinf->gc < low || meta[i].tinf->gc > high) continue;  
+        if(presets[i].tinf->gc < low || presets[i].tinf->gc > high) continue;  
         reset_node_scores(nodes, nn);
-        score_nodes(seq, rseq, slen, nodes, nn, meta[i].tinf, closed, is_meta);
-        record_overlapping_starts(nodes, nn, meta[i].tinf, 1);
-        ipath = dprog(nodes, nn, meta[i].tinf, 1);
+        score_nodes(seq, rseq, slen, nodes, nn, presets[i].tinf, closed, is_anon);
+        record_overlapping_starts(nodes, nn, presets[i].tinf, 1);
+        ipath = dprog(nodes, nn, presets[i].tinf, 1);
         if(nodes[ipath].score > max_score) {
           max_phase = i;
           max_score = nodes[ipath].score;
-          eliminate_bad_genes(nodes, ipath, meta[i].tinf);
+          eliminate_bad_genes(nodes, ipath, presets[i].tinf);
           ng = add_genes(genes, nodes, ipath);
-          tweak_final_starts(genes, ng, nodes, nn, meta[i].tinf);
-          record_gene_data(genes, ng, nodes, meta[i].tinf, num_seq);
+          tweak_final_starts(genes, ng, nodes, nn, presets[i].tinf);
+          record_gene_data(genes, ng, nodes, presets[i].tinf, num_seq);
         }
       }    
 
       /* Recover the nodes for the best of the runs */
       memset(nodes, 0, nn*sizeof(struct _node));
-      nn = add_nodes(seq, rseq, slen, nodes, closed, meta[max_phase].tinf);
+      nn = add_nodes(seq, rseq, slen, nodes, closed, cross_gaps, presets[max_phase].tinf);
       qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
-      score_nodes(seq, rseq, slen, nodes, nn, meta[max_phase].tinf, closed,
-                  is_meta);
+      score_nodes(seq, rseq, slen, nodes, nn, presets[max_phase].tinf, closed,
+                  is_anon);
       if(start_ptr != stdout) 
-        write_start_file(start_ptr, nodes, nn, meta[max_phase].tinf, 
-                         num_seq, slen, 1, meta[max_phase].desc, VERSION,
+        write_start_file(start_ptr, nodes, nn, presets[max_phase].tinf, 
+                         num_seq, slen, 1, presets[max_phase].desc, VERSION,
                          cur_header);
 
       if(quiet == 0) {
@@ -588,15 +608,15 @@ is_meta = 1;  /* deprecated slated for removal PDH */
 
       /* Output the genes */
       print_genes(output_ptr, genes, ng, nodes, slen, outfmt, num_seq, 1,
-                  meta[max_phase].desc, meta[max_phase].tinf, cur_header, 
+                  presets[max_phase].desc, presets[max_phase].tinf, cur_header, 
                   short_header, VERSION);
       fflush(output_ptr);
       if(trans_ptr != stdout)
         write_translations(trans_ptr, genes, ng, nodes, seq, rseq, useq, slen,
-                           meta[max_phase].tinf, num_seq, short_header);
+                           presets[max_phase].tinf, num_seq, short_header);
       if(nuc_ptr != stdout)
         write_nucleotide_seqs(nuc_ptr, genes, ng, nodes, seq, rseq, useq, slen,
-                              meta[max_phase].tinf, num_seq, short_header);
+                              presets[max_phase].tinf, num_seq, short_header);
     }
 
     /* Reset all the sequence/dynamic programming variables */
@@ -620,7 +640,7 @@ is_meta = 1;  /* deprecated slated for removal PDH */
   if(useq != NULL) free(useq);
   if(nodes != NULL) free(nodes);
   if(genes != NULL) free(genes);
-  for(i = 0; i < NUM_META; i++) if(meta[i].tinf != NULL) free(meta[i].tinf);
+  for(i = 0; i < NUM_PRESET_GENOME; i++) if(presets[i].tinf != NULL) free(presets[i].tinf);
 
   /* Close all the filehandles and exit */
   if(input_ptr != stdin) fclose(input_ptr);
@@ -674,8 +694,10 @@ void help() {
   fprintf(stderr, "                                    metagenomic data or single short\n");
   fprintf(stderr, "                                    sequences.\n");
   fprintf(stderr, "  -g, --trans_table:    Specify a translation table to use\n");
-  fprintf(stderr, "                          11:  Standard Bac/Arch Code (Default)\n");
-  fprintf(stderr, "                          4:   Mycoplasma/Spiroplasma\n");
+  fprintf(stderr, "                          0:    Auto-detect (Default)\n");
+  fprintf(stderr, "                          11:   Standard Bacterial/Archaeal\n");
+  fprintf(stderr, "                          4:    Mycoplasma/Spiroplasma\n");
+  fprintf(stderr, "                          #:    Other genetic codes 1-25\n");
   fprintf(stderr, "  -c, --nopartial:      Closed ends.  Do not allow partial genes\n");
   fprintf(stderr, "                        (genes that run off edges or into gaps.)\n");
   fprintf(stderr, "  -n, --nogaps:         Do not treat runs of N's as gaps.  This option\n");
@@ -691,9 +713,10 @@ void help() {
   fprintf(stderr, "                        named file.\n");
   fprintf(stderr, "  -s, --start_file:     Write all potential genes (with scores) to the\n");
   fprintf(stderr, "                        named file.\n");
-  fprintf(stderr, "  -f, --output_format:  Specify output format (gbk, gff, or sco).\n");
+  fprintf(stderr, "  -f, --output_format:  Specify output format (gbk, gff, sqn, or sco).\n");
   fprintf(stderr, "                          gff:  GFF format (Default)\n");
   fprintf(stderr, "                          gbk:  Genbank-like format\n");
+  fprintf(stderr, "                          sqn:  Sequin feature table format\n");
   fprintf(stderr, "                          sco:  Simple coordinate output\n");
   fprintf(stderr, "  -q, --quiet:          Run quietly (suppress normal stderr output).\n");
   fprintf(stderr, "\nOther Parameters\n\n");

@@ -72,7 +72,7 @@ struct _node {
   int elim;            /* If set to 1, eliminate this gene from the model */
 };
 
-int add_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
+int add_nodes(unsigned char *, unsigned char *, int, struct _node *, int, int,
               struct _training *);
 void reset_node_scores(struct _node *, int);
 int compare_nodes(const void *, const void *);

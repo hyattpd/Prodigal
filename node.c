@@ -26,7 +26,7 @@
 *******************************************************************************/
 
 int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
-              *nodes, int closed, struct _training *tinf) {
+              *nodes, int closed, int cross_gaps, struct _training *tinf) {
   int i, nn = 0, last[3], saw_start[3], min_dist[3];
   int slmod = 0;
 
