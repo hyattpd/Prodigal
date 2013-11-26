@@ -111,7 +111,9 @@ int main(int argc, char *argv[]) {
 
   /* Parse the command line arguments */
   for(i = 1; i < argc; i++) {
-    for(j = 0; j < strlen(argv[i]); j++) argv[i][j] = tolower(argv[i][j]);
+    if(argv[i][0] == '-')
+      for(j = 0; j < strlen(argv[i]); j++) 
+        argv[i][j] = tolower(argv[i][j]);
   }
   for(i = 1; i < argc; i++) {
     if((i == argc-1 || argv[i+1][0] == '-') && 
@@ -238,10 +240,11 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Doug Hyatt, Loren Hauser, et al.     \n");
     fprintf(stderr, "-------------------------------------\n");
   }
-  if(mode == 0) fprintf(stderr, "Mode: Normal, Phase: Training\n");
-  else if(mode == 1) fprintf(stderr, "Mode: Training, Phase: Training\n");
-  else if(mode == 2) fprintf(stderr, "Mode: Anonymous, Phase: Training\n");
-
+  if(quiet == 0) {
+    if(mode == 0) fprintf(stderr, "Mode: Normal, Phase: Training\n");
+    else if(mode == 1) fprintf(stderr, "Mode: Training, Phase: Training\n");
+    else if(mode == 2) fprintf(stderr, "Mode: Anonymous, Phase: Training\n");
+  }
   
   /* If we're in normal mode and not reading from a training file, */
   /* then we have to make two passes over the sequence.  Since we  */

@@ -583,8 +583,46 @@ int *calc_most_gc_frame(unsigned char *seq, int slen) {
 /* Auto-detect the translation table of this sequence */
 int detect_translation_table(unsigned char *seq, unsigned char *rseq,
                              int slen) {
-  /* tmp return 11 until this function is written */
-  return 11;
+  int i, ctr[6], norf11, norf4, last;
+  struct _training tinf;
+ 
+  /* See how many long ORFs we get with code 11 */ 
+  tinf.trans_table = 11; norf11 = 0; last = 0;
+  for(i = 0; i < 3; i++) ctr[i] = 0; 
+  for(i = 0; i < slen; i++) {
+    if(is_stop(seq, i, &tinf) == 1) ctr[i%3] = 0;
+    else {
+      ctr[i%3]++;
+      if(ctr[i%3] == MIN_GOOD_AA && i-last >= MIN_LAST_DIST) norf11++; 
+      if(ctr[i%3] >= MIN_GOOD_AA) last = i;
+    } 
+    if(is_stop(rseq, i, &tinf) == 1) ctr[3+i%3] = 0;
+    else {
+      ctr[3+i%3]++;
+      if(ctr[3+i%3] == MIN_GOOD_AA && i-last >=MIN_LAST_DIST) norf11++;
+      if(ctr[3+i%3] >= MIN_GOOD_AA) last = i;
+    } 
+  }
+
+  /* Now do the same for code 4 */
+  tinf.trans_table = 4; norf4 = 0; last = 0;
+  for(i = 0; i < 3; i++) ctr[i] = 0; 
+  for(i = 0; i < slen; i++) {
+    if(is_stop(seq, i, &tinf) == 1) ctr[i%3] = 0;
+    else {
+      ctr[i%3]++;
+      if(ctr[i%3] == MIN_GOOD_AA && i-last >= MIN_LAST_DIST) norf4++; 
+      if(ctr[i%3] >= MIN_GOOD_AA) last = i;
+    } 
+    if(is_stop(rseq, i, &tinf) == 1) ctr[3+i%3] = 0;
+    else {
+      ctr[3+i%3]++;
+      if(ctr[3+i%3] == MIN_GOOD_AA && i-last >=MIN_LAST_DIST) norf4++;
+      if(ctr[3+i%3] >= MIN_GOOD_AA) last = i;
+    } 
+  }
+  if(norf4 >= 1.4*norf11) return 4;
+  else return 11;
 }
 
 /* Converts a word of size len to a number */
