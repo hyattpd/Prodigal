@@ -210,6 +210,26 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  /* Training mode can't have output format or extra files specified. */
+  if(mode == 1 && (start_file != NULL || nuc_file != NULL ||
+     trans_file != NULL || outfmt != -1)) {
+    usage("-a/-d/-f/-s options cannot be used in training mode.");
+  }
+
+  /* Normal/anonymous can't have training files specified. */
+  if(mode != 0 && train_file != NULL) {
+    usage("Can only specify training file in normal mode.");
+  }
+
+  /* Anonymous mode can't have a specified value for genetic code. */
+  /* Nor can normal mode if using a training file. */
+  if((mode == 2 || (mode == 0 && train_file != NULL)) && 
+     tinf.trans_table != -1) {
+    usage("Can't specify translation table with anonymous mode or a training file.");
+  }
+
+  if(outfmt == -1) outfmt = 3; /* gff default output format */
+
   /* Print header */
   if(quiet == 0) {
     fprintf(stderr, "-------------------------------------\n");
@@ -222,19 +242,6 @@ int main(int argc, char *argv[]) {
   else if(mode == 1) fprintf(stderr, "Mode: Training, Phase: Training\n");
   else if(mode == 2) fprintf(stderr, "Mode: Anonymous, Phase: Training\n");
 
-  /* Training mode can't have output format specified. */
-  if(mode == 1 && outfmt != -1) {
-    fprintf(stderr, "\nError: can't specify output format in training mode.\n");
-    exit(17);
-  }
-  /* Anonymous mode can't have a specified value for genetic code. */
-  /* Nor can normal mode if using a training file. */
-  if((mode == 2 || (mode == 0 && train_file != NULL)) && 
-     tinf.trans_table != -1) {
-    fprintf(stderr, "\nError: can't specify translation table in anonymous");
-    fprintf(stderr, " mode.\n");
-    exit(3);
-  }
   
   /* If we're in normal mode and not reading from a training file, */
   /* then we have to make two passes over the sequence.  Since we  */
@@ -269,9 +276,6 @@ int main(int argc, char *argv[]) {
 
   /* Read in the training file (if specified) */
   if(train_file != NULL) {
-    if(mode != 0) {
-      usage("\nError: Can only specify training file in normal mode.");
-    }
     if(quiet == 0)
       fprintf(stderr, "Reading in training data from file %s...", train_file);
     rv = read_training_file(train_file, &tinf);
@@ -663,7 +667,7 @@ void version() {
 }
 
 void usage(char *msg) {
-  fprintf(stderr, "%s\n", msg);
+  fprintf(stderr, "\nError: %s\n", msg);
   fprintf(stderr, "\nUsage:  prodigal [-a protein_file] [-c] [-d mrna_file]");
   fprintf(stderr, " [-f out_format]\n");
   fprintf(stderr, "                 [-g tr_table] [-h] [-i input_file]");

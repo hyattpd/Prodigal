@@ -360,11 +360,15 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
     fprintf(fp, "DEFINITION  %s;%s\n", seq_data, run_data);
     fprintf(fp, "FEATURES             Location/Qualifiers\n");
   }
-  else if(flag != 1) {
+  else if(flag > 0 && flag < 4) {
     fprintf(fp, "# Sequence Data: %s\n", seq_data);
     fprintf(fp, "# Model Data: %s\n", run_data);
   }
-  
+  else if(flag == 4) {
+    fprintf(fp, ">Feature %s\n", short_hdr);
+    fprintf(fp, "1\t%d\tREFERENCE\n", slen);
+  }
+ 
   /* Print the genes */
   for(i = 0; i < ng; i++) {
     ndx = genes[i].start_ndx;
@@ -396,6 +400,13 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
                 genes[i].score_data);
         fprintf(fp, "\n"); 
       }
+      if(flag == 4) {
+        fprintf(fp, "%s\t%s\tCDS\n", left, right);
+        if(nod[ndx].edge == 1) 
+          fprintf(fp, "\t\t\tcodon_start\t%d\n", genes[i].begin);
+        fprintf(fp, "\t\t\tnote\t%s;%s\n", genes[i].gene_data, 
+                genes[i].score_data);
+      }
     }
     else {
 
@@ -423,12 +434,18 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
                 genes[i].score_data);
         fprintf(fp, "\n"); 
       }
+      if(flag == 4) {
+        fprintf(fp, "%s\t%s\tCDS\n", right, left);
+        if(nod[ndx].edge == 1) 
+          fprintf(fp, "\t\t\tcodon_start\t%d\n", genes[i].end);
+        fprintf(fp, "\t\t\tnote\t%s;%s\n", genes[i].gene_data, 
+                genes[i].score_data);
+      }
     }
   }
 
   /* Footer */
   if(flag == 0) fprintf(fp, "//\n");
-
 }
 
 /* Print the gene translations */
