@@ -536,16 +536,7 @@ void raw_coding_score(unsigned char *seq, unsigned char *rseq, int slen, struct
   int i, j, last[3], fr;
   double score[3], lfac, no_stop, gsize = 0.0;
 
-  if(tinf->trans_table != 11) { /* TGA or TAG is not a stop */
-    no_stop = ((1-tinf->gc)*(1-tinf->gc)*tinf->gc)/8.0;
-    no_stop += ((1-tinf->gc)*(1-tinf->gc)*(1-tinf->gc))/8.0;
-    no_stop = (1 - no_stop);
-  }
-  else {
-    no_stop = ((1-tinf->gc)*(1-tinf->gc)*tinf->gc)/4.0;
-    no_stop += ((1-tinf->gc)*(1-tinf->gc)*(1-tinf->gc))/8.0;
-    no_stop = (1 - no_stop);
-  }
+  no_stop = 1.0-prob_stop(tinf);
 
   /* Initial Pass: Score coding potential (start->stop) */
   for(i = 0; i < 3; i++) score[i] = 0.0;

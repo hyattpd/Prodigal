@@ -35,8 +35,6 @@
 #define GTG 1
 #define TTG 2
 #define STOP 3
-#define MIN_GOOD_AA 300
-#define MIN_LAST_DIST 600
 
 int read_seq_training(FILE *, unsigned char *, unsigned char *, double *, int);
 int next_seq_multi(FILE *, unsigned char *, unsigned char *, int *, double *,
@@ -57,6 +55,8 @@ int is_start(unsigned char *, int, struct _training *);
 int is_atg(unsigned char *, int);
 int is_gtg(unsigned char *, int);
 int is_ttg(unsigned char *, int);
+int is_nnn(unsigned char *, int);
+double prob_stop(struct _training *);
 
 double gc_content(unsigned char *, int, int);
 
@@ -67,7 +67,8 @@ char amino_letter(int);
 int rframe(int, int);
 int max_fr(int, int, int);
 
-int detect_translation_table(unsigned char *, unsigned char *, int);
+int detect_translation_table(unsigned char *, unsigned char *, unsigned char *,
+                             int, double);
 int *calc_most_gc_frame(unsigned char *, int);
 
 int mer_ndx(int, unsigned char *, int);

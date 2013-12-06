@@ -339,10 +339,53 @@ int is_ttg(unsigned char *seq, int n) {
   return 1;
 }
 
+int is_nnn(unsigned char *useq, int n) {
+  if(is_n(useq, n) == 0 || is_n(useq, n+1) == 0 || is_n(useq, n+2) == 0) 
+    return 0;
+  return 1;
+}
+
 int is_gc(unsigned char *seq, int n) {
   int ndx = n*2;
   if(test(seq, ndx) != test(seq, ndx+1)) return 1;
   return 0;
+}
+
+/* Returns the probability a random codon should be a stop codon */
+/* based on the GC content and genetic code of the organism */
+double prob_stop(struct _training *tinf) {
+  int i1, i2, i3, i4, i5, i6;
+  unsigned char codon[3];
+  double cprob, stop_prob = 0.0;
+
+  for(i1 = 0; i1 < 6; i1++) clear(codon, i1);
+  for(i1 = 0; i1 < 2; i1++) {
+    if(i1 == 0) clear(codon, 0); else set(codon, 0);
+    for(i2 = 0; i2 < 2; i2++) {
+      if(i2 == 0) clear(codon, 1); else set(codon, 1);
+      for(i3 = 0; i3 < 2; i3++) {
+        if(i3 == 0) clear(codon, 2); else set(codon, 2);
+        for(i4 = 0; i4 < 2; i4++) {
+          if(i4 == 0) clear(codon, 3); else set(codon, 3);
+          for(i5 = 0; i5 < 2; i5++) {
+            if(i5 == 0) clear(codon, 4); else set(codon, 4);
+            for(i6 = 0; i6 < 2; i6++) {
+              if(i6 == 0) clear(codon, 5); else set(codon, 5);
+              cprob = 1.0;
+              if(is_gc(codon, 0) == 1) cprob *= tinf->gc/2.0;
+              else cprob *= (1.0-tinf->gc)/2.0;
+              if(is_gc(codon, 1) == 1) cprob *= tinf->gc/2.0;
+              else cprob *= (1.0-tinf->gc)/2.0;
+              if(is_gc(codon, 2) == 1) cprob *= tinf->gc/2.0;
+              else cprob *= (1.0-tinf->gc)/2.0;
+              if(is_stop(codon, 0, tinf) == 1) stop_prob += cprob;
+            }
+          }
+        }
+      }
+    }
+  } 
+  return stop_prob;
 }
 
 double gc_content(unsigned char *seq, int a, int b) {
@@ -581,26 +624,30 @@ int *calc_most_gc_frame(unsigned char *seq, int slen) {
 }
 
 /* Auto-detect the translation table of this sequence */
+/* Only options at the moment are 11 (standard) or 4 (mycoplasma) */
 int detect_translation_table(unsigned char *seq, unsigned char *rseq,
-                             int slen) {
-  int i, ctr[6], norf11, norf4, last;
+                             unsigned char *useq, int slen, double gc) {
+  int i, ctr[6], norf11, norf4, last, min_good_aa, min_last_dist;
   struct _training tinf;
- 
+  
   /* See how many long ORFs we get with code 11 */ 
   tinf.trans_table = 11; norf11 = 0; last = 0;
+  min_good_aa = 300; min_last_dist = 820;
   for(i = 0; i < 3; i++) ctr[i] = 0; 
   for(i = 0; i < slen; i++) {
     if(is_stop(seq, i, &tinf) == 1) ctr[i%3] = 0;
+    else if(is_nnn(useq, i) == 1) ctr[i%3] = 0;
     else {
       ctr[i%3]++;
-      if(ctr[i%3] == MIN_GOOD_AA && i-last >= MIN_LAST_DIST) norf11++; 
-      if(ctr[i%3] >= MIN_GOOD_AA) last = i;
+      if(ctr[i%3] == min_good_aa && i-last >= min_last_dist) norf11++;
+      if(ctr[i%3] >= min_good_aa) last = i;
     } 
     if(is_stop(rseq, i, &tinf) == 1) ctr[3+i%3] = 0;
+    else if(is_nnn(useq, slen-i-3) == 1) ctr[3+i%3] = 0;
     else {
       ctr[3+i%3]++;
-      if(ctr[3+i%3] == MIN_GOOD_AA && i-last >=MIN_LAST_DIST) norf11++;
-      if(ctr[3+i%3] >= MIN_GOOD_AA) last = i;
+      if(ctr[3+i%3] == min_good_aa && i-last >=min_last_dist) norf11++;
+      if(ctr[3+i%3] >= min_good_aa) last = i;
     } 
   }
 
@@ -609,19 +656,22 @@ int detect_translation_table(unsigned char *seq, unsigned char *rseq,
   for(i = 0; i < 3; i++) ctr[i] = 0; 
   for(i = 0; i < slen; i++) {
     if(is_stop(seq, i, &tinf) == 1) ctr[i%3] = 0;
+    else if(is_nnn(useq, i) == 1) ctr[i%3] = 0;
     else {
       ctr[i%3]++;
-      if(ctr[i%3] == MIN_GOOD_AA && i-last >= MIN_LAST_DIST) norf4++; 
-      if(ctr[i%3] >= MIN_GOOD_AA) last = i;
+      if(ctr[i%3] == min_good_aa && i-last >= min_last_dist) norf4++;
+      if(ctr[i%3] >= min_good_aa) last = i;
     } 
     if(is_stop(rseq, i, &tinf) == 1) ctr[3+i%3] = 0;
+    else if(is_nnn(useq, slen-i-3) == 1) ctr[3+i%3] = 0;
     else {
       ctr[3+i%3]++;
-      if(ctr[3+i%3] == MIN_GOOD_AA && i-last >=MIN_LAST_DIST) norf4++;
-      if(ctr[3+i%3] >= MIN_GOOD_AA) last = i;
+      if(ctr[3+i%3] == min_good_aa && i-last >=min_last_dist) norf4++;
+      if(ctr[3+i%3] >= min_good_aa) last = i;
     } 
   }
-  if(norf4 >= 1.4*norf11) return 4;
+  if(norf11 < 50 && norf4 < 50) { return 11; }
+  if(norf4 >= 1.3*norf11) return 4;
   else return 11;
 }
 

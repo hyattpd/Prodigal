@@ -28,7 +28,7 @@
 #include "gene.h"
 
 #define VERSION "3.0-devel/Nov2013"
-#define DATE "November, 2013"
+#define DATE "December, 2013"
 
 #define MIN_SINGLE_GENOME 20000
 #define IDEAL_SINGLE_GENOME 100000
@@ -368,8 +368,8 @@ int main(int argc, char *argv[]) {
     ***********************************************************************/
     if(tinf.trans_table == -1) {
       if(quiet == 0) fprintf(stderr, "Detecting translation table...");
-      tinf.trans_table = detect_translation_table(seq, rseq, slen);
-      if(quiet == 0) fprintf(stderr, "table %d selected.\n", tinf.trans_table);
+      tinf.trans_table = detect_translation_table(seq, rseq, useq, slen, tinf.gc);
+      if(quiet == 0) fprintf(stderr, "table %d selected\n", tinf.trans_table);
     } 
 
     /***********************************************************************
