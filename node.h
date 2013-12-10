@@ -35,6 +35,9 @@
 #define EDGE_BONUS 0.74
 #define EDGE_UPS -1.00
 #define META_PEN 7.5
+#define MODE_NORM 0
+#define MODE_TRN 1
+#define MODE_ANON 2
 
 struct _motif {
   int ndx;             /* Index of the best motif for this node */
@@ -72,8 +75,8 @@ struct _node {
   int elim;            /* If set to 1, eliminate this gene from the model */
 };
 
-int add_nodes(unsigned char *, unsigned char *, int, struct _node *, int, int,
-              struct _training *);
+int add_nodes(unsigned char *, unsigned char *, unsigned char *, int, 
+              struct _node *, int, int, struct _training *);
 void reset_node_scores(struct _node *, int);
 int compare_nodes(const void *, const void *);
 int stopcmp_nodes(const void *, const void *);

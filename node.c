@@ -22,37 +22,55 @@
 
 /*******************************************************************************
   Adds nodes to the node list.  Genes must be >=90bp in length, unless they
-  run off the edge, in which case they only have to be 50bp.
+  run off the edge, in which case they only have to be 60bp.
 *******************************************************************************/
 
-int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
-              *nodes, int closed, int cross_gaps, struct _training *tinf) {
-  int i, nn = 0, last[3], saw_start[3], min_dist[3];
+int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq, 
+              int slen, struct _node *nodes, int closed, int cross_gaps, 
+              struct _training *tinf) {
+  int i, nn = 0, last[3], saw_start[3], min_dist[3], edge[3];
   int slmod = 0;
 
   /* Forward strand nodes */
   slmod = slen%3;
   for(i = 0; i < 3; i++) {
     last[(i+slmod)%3] = slen+i; 
+    while(last[(i+slmod)%3]+2 > slen-1) last[(i+slmod)%3]-=3;
+  }
+  for(i = 0; i < 3; i++) {
     saw_start[i%3] = 0;
-    min_dist[i%3] = MIN_EDGE_GENE;
-    if(closed == 0) while(last[(i+slmod)%3]+2 > slen-1) last[(i+slmod)%3]-=3;
+    if(is_stop(seq, last[i%3], tinf) == 1) {
+      min_dist[i%3] = MIN_GENE;
+      edge[i%3] = 0;
+    }
+    else {
+      min_dist[i%3] = MIN_EDGE_GENE;
+      edge[i%3] = 1;
+    }
   }
   for(i = slen-3; i >= 0; i--) {
-    if(is_stop(seq, i, tinf)==1) {
-      if(saw_start[i%3] == 1) {
-        if(is_stop(seq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
+    if(is_stop(seq, i, tinf) == 1 || (i <= slen-12 && cross_gaps == 0 && 
+       gap_to_right(useq, i) == 1)) {
+      if(saw_start[i%3] == 1 && (closed == 0 || edge[i%3] == 0)) {
+        nodes[nn].edge = edge[i%3];
         nodes[nn].ndx = last[i%3]; 
         nodes[nn].type = STOP;
         nodes[nn].strand = 1; 
         nodes[nn++].stop_val = i;
       }
-      min_dist[i%3] = MIN_GENE;
-      last[i%3]=i; 
+      if(is_stop(seq, i, tinf) == 1) {
+        min_dist[i%3] = MIN_GENE;
+        edge[i%3] = 0;
+      }
+      else {
+        min_dist[i%3] = MIN_EDGE_GENE;
+        edge[i%3] = 1;
+      }
+      last[i%3] = i; 
       saw_start[i%3] = 0;
       continue;
     }
-    if(last[i%3] >= slen) continue;
+    if(edge[i%3] == 1 && closed == 1) continue;
      
     if(is_start(seq, i, tinf) == 1 && ((last[i%3]-i+3) >= min_dist[i%3])) {
       nodes[nn].ndx = i; 
@@ -63,7 +81,9 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
       nodes[nn].stop_val = last[i%3]; 
       nodes[nn++].strand = 1;
     }
-    else if(i <= 2 && closed == 0 && ((last[i%3]-i) > MIN_EDGE_GENE)) {
+    else if(closed == 0 && ((last[i%3]-i) > MIN_EDGE_GENE) && (i <= 2 ||
+            (cross_gaps == 0 && i >= 9 && codon_has_n(useq, i) == 0 &&
+            gap_to_left(useq, i) == 1))) {
       nodes[nn].ndx = i; 
       nodes[nn].type = ATG; 
       saw_start[i%3] = 1;
@@ -74,7 +94,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
   }
   for(i = 0; i < 3; i++) {
     if(saw_start[i%3] == 1) {
-      if(is_stop(seq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
+      nodes[nn].edge = edge[i%3];
       nodes[nn].ndx = last[i%3]; 
       nodes[nn].type = STOP;
       nodes[nn].strand = 1; 
@@ -85,28 +105,45 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
   /* Reverse strand nodes */
   for(i = 0; i < 3; i++) {
     last[(i+slmod)%3] = slen+i; 
+    while(last[(i+slmod)%3]+2 > slen-1) last[(i+slmod)%3]-=3;
+  }
+  for(i = 0; i < 3; i++) {
     saw_start[i%3] = 0;
-    min_dist[i%3] = MIN_EDGE_GENE;
-    if(closed == 0) while(last[(i+slmod)%3]+2 > slen-1) last[(i+slmod)%3]-=3;
+    if(is_stop(rseq, last[i%3], tinf) == 1) {
+      min_dist[i%3] = MIN_GENE;
+      edge[i%3] = 1;
+    } 
+    else {
+      min_dist[i%3] = MIN_EDGE_GENE;
+      edge[i%3] = 1;
+    }
   }
   for(i = slen-3; i >= 0; i--) {
-    if(is_stop(rseq, i, tinf)==1) {
-      if(saw_start[i%3] == 1) {
-        if(is_stop(rseq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
+    if(is_stop(rseq, i, tinf)==1 || (i <= slen-12 && cross_gaps == 0 && 
+       gap_to_left(useq, slen-3-i) == 1)) {
+      if(saw_start[i%3] == 1 && (closed == 0 || edge[i%3] == 0)) {
+        nodes[nn].edge = edge[i%3];
         nodes[nn].ndx = slen-last[i%3]-1; 
         nodes[nn].type = STOP;
         nodes[nn].strand = -1; 
         nodes[nn++].stop_val = slen-i-1;
       }
-      min_dist[i%3] = MIN_GENE;
-      last[i%3]=i; 
+      if(is_stop(rseq, i, tinf) == 1) {
+        min_dist[i%3] = MIN_GENE;
+        edge[i%3] = 0;
+      }
+      else {
+        min_dist[i%3] = MIN_EDGE_GENE;
+        edge[i%3] = 1;
+      }
+      last[i%3] = i; 
       saw_start[i%3] = 0;
       continue;
     }
-    if(last[i%3] >= slen) continue;
+    if(edge[i%3] == 1 && closed == 1) continue;
 
     if(is_start(rseq, i, tinf) == 1 && ((last[i%3]-i+3) >= min_dist[i%3])) {
-      nodes[nn].ndx = slen - i - 1; 
+      nodes[nn].ndx = slen-i-1; 
       if(is_atg(rseq, i) == 1) nodes[nn].type = ATG; 
       else if(is_gtg(rseq, i) == 1) nodes[nn].type = GTG; 
       else if(is_ttg(rseq, i) == 1) nodes[nn].type = TTG; 
@@ -114,8 +151,10 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
       nodes[nn].stop_val = slen-last[i%3]-1; 
       nodes[nn++].strand = -1;
     }
-    else if(i <= 2 && closed == 0 && ((last[i%3]-i) > MIN_EDGE_GENE)) {
-      nodes[nn].ndx = slen - i - 1; 
+    else if(closed == 0 && ((last[i%3]-i) > MIN_EDGE_GENE) && (i <= 2 ||
+            (cross_gaps == 0 && i >= 9 && codon_has_n(useq, slen-3-i) == 0 &&
+            gap_to_right(useq, slen-3-i) == 1))) {
+      nodes[nn].ndx = slen-i-1; 
       nodes[nn].type = ATG; 
       saw_start[i%3] = 1;
       nodes[nn].edge = 1; 
@@ -125,7 +164,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
   }
   for(i = 0; i < 3; i++) {
     if(saw_start[i%3] == 1) {
-      if(is_stop(rseq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
+      nodes[nn].edge = edge[i%3];
       nodes[nn].ndx = slen - last[i%3] - 1; 
       nodes[nn].type = STOP;
       nodes[nn].strand = -1; 
@@ -338,9 +377,9 @@ void calc_dicodon_gene(struct _training *tinf, unsigned char *seq, unsigned
 
 void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
                  struct _node *nod, int nn, struct _training *tinf,
-                 int closed, int is_meta) {
+                 int closed, int mode) {
   int i, j;
-  double negf, posf, rbs1, rbs2, sd_score, edge_gene, min_meta_len;
+  double negf, posf, rbs1, rbs2, sd_score, edge_gene, min_anon_len;
 
   /* Step 1: Calculate raw coding potential for every start-stop pair. */
   calc_orf_gc(seq, rseq, slen, nod, nn, tinf);
@@ -446,11 +485,11 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
     }
 
     /**************************************************************/
-    /* Coding Penalization in Metagenomic Fragments:  Internal    */
+    /* Coding Penalization in Anonymous Fragments:    Internal    */
     /* genes must have a score of 5.0 and be >= 120bp.  High GC   */
     /* genes are also penalized.                                  */
     /**************************************************************/
-    if(is_meta == 1 && slen < 3000 && edge_gene == 0 && 
+    if(mode == MODE_ANON && slen < 3000 && edge_gene == 0 && 
        (nod[i].cscore < 5.0 || abs(nod[i].ndx-nod[i].stop_val < 120))) {
       nod[i].cscore -= META_PEN*dmax(0, (3000-slen)/2700.0);
     }
@@ -465,12 +504,12 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
     /**************************************************************/
     if(nod[i].cscore < 0.0) {
       if(edge_gene > 0 && nod[i].edge == 0) {
-        if(is_meta == 0 || slen > 1500) nod[i].sscore -= tinf->st_wt;
+        if(mode != MODE_ANON || slen > 1500) nod[i].sscore -= tinf->st_wt;
         else nod[i].sscore -= (10.31 - 0.004*slen);
       }
-      else if(is_meta == 1 && slen < 3000 && nod[i].edge == 1) {
-        min_meta_len = sqrt(slen)*5.0;
-        if(abs(nod[i].ndx-nod[i].stop_val) >= min_meta_len) {
+      else if(mode == MODE_ANON && slen < 3000 && nod[i].edge == 1) {
+        min_anon_len = sqrt(slen)*5.0;
+        if(abs(nod[i].ndx-nod[i].stop_val) >= min_anon_len) {
           if(nod[i].cscore >= 0) nod[i].cscore = -1.0;
           nod[i].sscore = 0.0; 
           nod[i].uscore = 0.0; 
@@ -478,7 +517,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
       }
       else nod[i].sscore -= 0.5;
     }
-    else if(nod[i].cscore < 5.0 && is_meta == 1 && abs(nod[i].ndx-
+    else if(nod[i].cscore < 5.0 && mode == MODE_ANON && abs(nod[i].ndx-
             nod[i].stop_val < 120) && nod[i].sscore < 0.0)
       nod[i].sscore -= tinf->st_wt; 
   }
@@ -1360,7 +1399,7 @@ double intergenic_mod(struct _node *n1, struct _node *n2, struct _training
   done at the user's request.
 *******************************************************************************/
 void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
-                      *tinf, int sctr, int slen, int is_meta, char *mdesc, 
+                      *tinf, int sctr, int slen, int mode, char *mdesc, 
                       char *version, char *header) {
   int i, prev_stop = -1, prev_strand = 0, st_type;
   double rbs1, rbs2;
@@ -1372,13 +1411,13 @@ void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
   sprintf(seq_data, "seqnum=%d;seqlen=%d;seqhdr=\"%s\"", sctr, slen, header);
 
   /* Initialize run data string */
-  if(is_meta == 0) {
-    sprintf(run_data, "version=Prodigal.v%s;run_type=Single;", version);
-    sprintf(run_data, "%smodel=\"Ab initio\";", run_data);
+  if(mode == MODE_ANON) {
+    sprintf(run_data, "version=Prodigal.v%s;run_type=Anonymous;", version);
+    sprintf(run_data, "%smodel=\"%s\";", run_data, mdesc);
   }
   else {
-    sprintf(run_data, "version=Prodigal.v%s;run_type=Metagenomic;", version);
-    sprintf(run_data, "%smodel=\"%s\";", run_data, mdesc);
+    sprintf(run_data, "version=Prodigal.v%s;run_type=Normal;", version);
+    sprintf(run_data, "%smodel=\"Ab initio\";", run_data);
   }
   sprintf(run_data, "%sgc_cont=%.2f;transl_table=%d;uses_sd=%d", run_data,
           tinf->gc*100.0, tinf->trans_table, tinf->uses_sd);

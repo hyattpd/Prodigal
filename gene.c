@@ -327,7 +327,7 @@ void record_gene_data(struct _gene *genes, int ng, struct _node *nod,
 
 /* Print the genes.  'Flag' indicates which format to use. */
 void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod, 
-                 int slen, int flag, int sctr, int is_meta, char *mdesc,
+                 int slen, int flag, int sctr, int mode, char *mdesc,
                  struct _training *tinf, char *header, char *short_hdr,
                  char *version) {
   int i, ndx, sndx;
@@ -338,13 +338,13 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
   sprintf(seq_data, "seqnum=%d;seqlen=%d;seqhdr=\"%s\"", sctr, slen, header);
 
   /* Initialize run data string */
-  if(is_meta == 0) {
-    sprintf(run_data, "version=Prodigal.v%s;run_type=Single;", version);
-    sprintf(run_data, "%smodel=\"Ab initio\";", run_data);
+  if(mode == MODE_ANON) {
+    sprintf(run_data, "version=Prodigal.v%s;run_type=Anonymous;", version);
+    sprintf(run_data, "%smodel=\"%s\";", run_data, mdesc);
   }
   else {
-    sprintf(run_data, "version=Prodigal.v%s;run_type=Metagenomic;", version);
-    sprintf(run_data, "%smodel=\"%s\";", run_data, mdesc);
+    sprintf(run_data, "version=Prodigal.v%s;run_type=Normal;", version);
+    sprintf(run_data, "%smodel=\"Ab initio\";", run_data);
   }
   sprintf(run_data, "%sgc_cont=%.2f;transl_table=%d;uses_sd=%d", run_data, 
           tinf->gc*100.0, tinf->trans_table, tinf->uses_sd);

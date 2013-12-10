@@ -27,7 +27,7 @@
 #include "dprog.h"
 #include "gene.h"
 
-#define VERSION "3.0-devel/Nov2013"
+#define VERSION "3.0-devel/Dec2013"
 #define DATE "December, 2013"
 
 #define MIN_SINGLE_GENOME 20000
@@ -44,7 +44,7 @@ int main(int argc, char *argv[]) {
   int closed, num_seq, cross_gaps, quiet;
   int piped, max_slen, fnum;
   int mode; /* 0 = normal, 1 = training, 2 = anonymous/metagenomic */
-  int force_nonsd = 0, is_anon = 0; /* deprecated and slated for removal PDH */
+  int force_nonsd = 0; /* deprecated and slated for removal PDH */
   double max_score, gc, low, high;
   unsigned char *seq, *rseq, *useq;
   char *train_file, *start_file, *trans_file, *nuc_file; 
@@ -387,7 +387,7 @@ int main(int argc, char *argv[]) {
       }
       max_slen = slen;
     }
-    nn = add_nodes(seq, rseq, slen, nodes, closed, cross_gaps, &tinf);
+    nn = add_nodes(seq, rseq, useq, slen, nodes, closed, cross_gaps, &tinf);
     qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
     if(quiet == 0) {
       fprintf(stderr, "%d nodes\n", nn); 
@@ -535,16 +535,16 @@ int main(int argc, char *argv[]) {
         Find all the potential starts and stops, sort them, and create a 
         comprehensive list of nodes for dynamic programming.
       ***********************************************************************/
-      nn = add_nodes(seq, rseq, slen, nodes, closed, cross_gaps, &tinf);
+      nn = add_nodes(seq, rseq, useq, slen, nodes, closed, cross_gaps, &tinf);
       qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
 
       /***********************************************************************
         Second dynamic programming, using the dicodon statistics as the
         scoring function.                                
       ***********************************************************************/
-      score_nodes(seq, rseq, slen, nodes, nn, &tinf, closed, is_anon);
+      score_nodes(seq, rseq, slen, nodes, nn, &tinf, closed, mode);
       if(start_ptr != stdout) 
-        write_start_file(start_ptr, nodes, nn, &tinf, num_seq, slen, 0, NULL,
+        write_start_file(start_ptr, nodes, nn, &tinf, num_seq, slen, mode, NULL,
                          VERSION, cur_header);
       record_overlapping_starts(nodes, nn, &tinf, 1);
       ipath = dprog(nodes, nn, &tinf, 1);
@@ -557,8 +557,8 @@ int main(int argc, char *argv[]) {
       }
 
       /* Output the genes */
-      print_genes(output_ptr, genes, ng, nodes, slen, outfmt, num_seq, 0, NULL,
-                  &tinf, cur_header, short_header, VERSION);
+      print_genes(output_ptr, genes, ng, nodes, slen, outfmt, num_seq, mode, 
+                  NULL, &tinf, cur_header, short_header, VERSION);
       fflush(output_ptr);
       if(trans_ptr != stdout)
         write_translations(trans_ptr, genes, ng, nodes, seq, rseq, useq, slen,
@@ -569,7 +569,6 @@ int main(int argc, char *argv[]) {
     }
 
     else { /* Anonymous (Metagenomic) Version */
-is_anon = 1;  /* deprecated slated for removal PDH */
       low = 0.88495*gc - 0.0102337;
       if(low > 0.65) low = 0.65;
       high = 0.86596*gc + .1131991;
@@ -580,12 +579,12 @@ is_anon = 1;  /* deprecated slated for removal PDH */
         if(i == 0 || presets[i].tinf->trans_table != 
            presets[i-1].tinf->trans_table) {
           memset(nodes, 0, nn*sizeof(struct _node));
-          nn = add_nodes(seq, rseq, slen, nodes, closed, cross_gaps, presets[i].tinf);
+          nn = add_nodes(seq, rseq, useq, slen, nodes, closed, cross_gaps, presets[i].tinf);
           qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
         }
         if(presets[i].tinf->gc < low || presets[i].tinf->gc > high) continue;  
         reset_node_scores(nodes, nn);
-        score_nodes(seq, rseq, slen, nodes, nn, presets[i].tinf, closed, is_anon);
+        score_nodes(seq, rseq, slen, nodes, nn, presets[i].tinf, closed, mode);
         record_overlapping_starts(nodes, nn, presets[i].tinf, 1);
         ipath = dprog(nodes, nn, presets[i].tinf, 1);
         if(nodes[ipath].score > max_score) {
@@ -600,13 +599,13 @@ is_anon = 1;  /* deprecated slated for removal PDH */
 
       /* Recover the nodes for the best of the runs */
       memset(nodes, 0, nn*sizeof(struct _node));
-      nn = add_nodes(seq, rseq, slen, nodes, closed, cross_gaps, presets[max_phase].tinf);
+      nn = add_nodes(seq, rseq, useq, slen, nodes, closed, cross_gaps, presets[max_phase].tinf);
       qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
       score_nodes(seq, rseq, slen, nodes, nn, presets[max_phase].tinf, closed,
-                  is_anon);
+                  mode);
       if(start_ptr != stdout) 
         write_start_file(start_ptr, nodes, nn, presets[max_phase].tinf, 
-                         num_seq, slen, 1, presets[max_phase].desc, VERSION,
+                         num_seq, slen, mode, presets[max_phase].desc, VERSION,
                          cur_header);
 
       if(quiet == 0) {
@@ -614,7 +613,7 @@ is_anon = 1;  /* deprecated slated for removal PDH */
       }
 
       /* Output the genes */
-      print_genes(output_ptr, genes, ng, nodes, slen, outfmt, num_seq, 1,
+      print_genes(output_ptr, genes, ng, nodes, slen, outfmt, num_seq, mode,
                   presets[max_phase].desc, presets[max_phase].tinf, cur_header, 
                   short_header, VERSION);
       fflush(output_ptr);

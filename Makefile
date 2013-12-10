@@ -32,7 +32,7 @@ SRC=	main.c \
 
 EXEC=	prodigal
 
-CFLAGS=	-O3 -Wall
+CFLAGS=	-O3 -Wall -g
 
 LIBS=	-lm
 LDFLAGS=	$(LIBS)

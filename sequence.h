@@ -56,6 +56,11 @@ int is_atg(unsigned char *, int);
 int is_gtg(unsigned char *, int);
 int is_ttg(unsigned char *, int);
 int is_nnn(unsigned char *, int);
+
+int codon_has_n(unsigned char *, int);
+int gap_to_left(unsigned char *, int);
+int gap_to_right(unsigned char *, int);
+
 double prob_stop(struct _training *);
 
 double gc_content(unsigned char *, int, int);
