@@ -48,7 +48,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
        (strlen(line) > 6 && strncmp(line, "ORIGIN", 6) == 0)) {
       hdr = 1;
       if(fhdr > 0 && closed == 0) {
-        for(i = 0; i < 11; i++) {
+        for(i = 0; i < 8; i++) {
           set(useq, len);
           bctr+=2; len++;
         }
@@ -93,7 +93,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
     }
   }
   if(fhdr > 1 && closed == 0) {
-    for(i = 0; i < 11; i++) {
+    for(i = 0; i < 8; i++) {
       set(useq, len);
       bctr+=2; len++;
     }
@@ -352,17 +352,17 @@ int codon_has_n(unsigned char *useq, int n) {
 }
 
 int gap_to_left(unsigned char *useq, int n) {
-  if(codon_has_n(useq, n-3) == 0 || codon_has_n(useq, n-6) == 0 ||
-     codon_has_n(useq, n-9) == 0) 
-    return 0; 
-  return 1;
+  if(is_nnn(useq, n-3) == 1 && is_nnn(useq, n-6) == 1) return 1;
+  else if(is_n(useq, n-3) == 1 && is_nnn(useq, n-6) == 1 &&
+          is_nnn(useq, n-9) == 1) return 1;
+  return 0;
 }
 
 int gap_to_right(unsigned char *useq, int n) {
-  if(codon_has_n(useq, n+3) == 0 || codon_has_n(useq, n+6) == 0 ||
-     codon_has_n(useq, n+9) == 0) 
-    return 0; 
-  return 1;
+  if(is_nnn(useq, n+3) == 1 && is_nnn(useq, n+6) == 1) return 1;
+  else if(is_n(useq, n+5) == 1 && is_nnn(useq, n+6) == 1 &&
+          is_nnn(useq, n+9) == 1) return 1;
+  return 0;
 }
 
 int is_gc(unsigned char *seq, int n) {
