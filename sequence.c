@@ -1,6 +1,6 @@
 /*******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2013 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -30,7 +30,7 @@
 *******************************************************************************/
 
 int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq, 
-                      double *gc, int closed) {
+                      double *gc, int closed, int *num_seq) {
   char line[MAX_LINE+1];
   int hdr = 0, fhdr = 0, bctr = 0, len = 0, wrn = 0;
   int gc_cont = 0;
@@ -62,7 +62,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
         if(gapsize < 1 || gapsize > MAX_LINE) {
           fprintf(stderr, "Error: gap size in gbk file can't exceed line");
           fprintf(stderr, " size.\n");
-          exit(51);
+          exit(14);
         }
         for(i = 0; i < gapsize; i++) line[i] = 'n';
         line[i] = '\0';
@@ -99,6 +99,27 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
     }
   }
   *gc = ((double)gc_cont / (double)len);
+
+  /* Exit if there are errors, warn if sequence is small */
+  if(len == 0) {
+    fprintf(stderr, "\n\nSequence read failed (file must be Fasta, ");
+    fprintf(stderr, "Genbank, or EMBL format).\n\n");
+    exit(9);
+  }
+  if(len < MIN_SINGLE_GENOME) {
+    fprintf(stderr, "\n\nError:  Sequence must be %d", MIN_SINGLE_GENOME);
+    fprintf(stderr, " characters (only %d read).\n(Consider", len);
+    fprintf(stderr, " running with the -m anon option or finding");
+    fprintf(stderr, " more contigs from the same genome.)\n\n");
+    exit(10);
+  }
+  if(len < IDEAL_SINGLE_GENOME) {
+    fprintf(stderr, "\n\nWarning:  ideally Prodigal should be given at");
+    fprintf(stderr, " least %d bases for ", IDEAL_SINGLE_GENOME);
+    fprintf(stderr, "training.\nYou may get better results with the ");
+    fprintf(stderr, "'-m anon' option.\n\n");
+  }
+  *num_seq = fhdr;
   return len;
 }
 
@@ -157,7 +178,7 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
         if(gapsize < 1 || gapsize > MAX_LINE) {
           fprintf(stderr, "Error: gap size in gbk file can't exceed line");
           fprintf(stderr, " size.\n");
-          exit(54);
+          exit(15);
         }
         for(i = 0; i < gapsize; i++) line[i] = 'n';
         line[i] = '\0';
@@ -182,7 +203,7 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
     }
     if(len+MAX_LINE >= MAX_SEQ) {
       fprintf(stderr, "Sequence too long (max %d permitted).\n", MAX_SEQ);
-      exit(56);
+      exit(16);
     }
   }
   if(len == 0) return -1;
@@ -254,43 +275,43 @@ int is_n(unsigned char *useq, int n) {
   return 1;
 }
 
-int is_stop(unsigned char *seq, int n, struct _training *tinf) {
+int is_stop(unsigned char *seq, int n, int trans_table) {
 
   /* TAG: Not a stop in genetic codes 6, 15, 16, and 22 */
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table == 6 || tinf->trans_table == 15 ||
-       tinf->trans_table == 16 || tinf->trans_table == 22) return 0;
+    if(trans_table == 6 || trans_table == 15 ||
+       trans_table == 16 || trans_table == 22) return 0;
     return 1;
   }
 
   /* TGA: Not a stop in genetic codes 2-5, 9-10, 13-14, 21, 24-25 */
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if((tinf->trans_table >= 2 && tinf->trans_table <= 5) ||
-       tinf->trans_table == 9 || tinf->trans_table == 10 ||
-       tinf->trans_table == 13 || tinf->trans_table == 14 ||
-       tinf->trans_table == 21 || tinf->trans_table == 24 ||
-       tinf->trans_table == 25) return 0;
+    if((trans_table >= 2 && trans_table <= 5) ||
+       trans_table == 9 || trans_table == 10 ||
+       trans_table == 13 || trans_table == 14 ||
+       trans_table == 21 || trans_table == 24 ||
+       trans_table == 25) return 0;
     return 1;
   }
 
   /* TAA: Not a stop in genetic codes 6 and 14 */
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 6 || tinf->trans_table == 14) return 0;
+    if(trans_table == 6 || trans_table == 14) return 0;
     return 1;
   }
 
   /* Code 2 */
-  if(tinf->trans_table == 2 && is_a(seq, n) == 1 && is_g(seq, n+1) == 1 &&
+  if(trans_table == 2 && is_a(seq, n) == 1 && is_g(seq, n+1) == 1 &&
      is_a(seq, n+2) == 1) return 1;
-  if(tinf->trans_table == 2 && is_a(seq, n) == 1 && is_g(seq, n+1) == 1 &&
+  if(trans_table == 2 && is_a(seq, n) == 1 && is_g(seq, n+1) == 1 &&
      is_g(seq, n+2) == 1) return 1;
 
   /* Code 22 */
-  if(tinf->trans_table == 22 && is_t(seq, n) == 1 && is_c(seq, n+1) == 1 &&
+  if(trans_table == 22 && is_t(seq, n) == 1 && is_c(seq, n+1) == 1 &&
      is_a(seq, n+2) == 1) return 1;
 
   /* Code 23 */
-  if(tinf->trans_table == 23 && is_t(seq, n) == 1 && is_t(seq, n+1) == 1 &&
+  if(trans_table == 23 && is_t(seq, n) == 1 && is_t(seq, n+1) == 1 &&
      is_a(seq, n+2) == 1) return 1;
 
   return 0;
@@ -299,25 +320,25 @@ int is_stop(unsigned char *seq, int n, struct _training *tinf) {
 /* Prodigal only supports ATG/GTG/TTG starts as 'standard' possibilities. */
 /* Some genetic codes have other initiation codons listed, but we do not  */
 /* support these. */
-int is_start(unsigned char *seq, int n, struct _training *tinf) {
+int is_start(unsigned char *seq, int n, int trans_table) {
 
   /* ATG: Always a start codon */
   if(is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) return 1;
 
   /* GTG: Start codon in 2/4/5/9/11/13/21/23/24/25 */
   if(is_g(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table == 2 || tinf->trans_table == 4 ||
-       tinf->trans_table == 5 || tinf->trans_table == 9 ||
-       tinf->trans_table == 11 || tinf->trans_table == 13 ||
-       tinf->trans_table == 21 || tinf->trans_table == 23 ||
-       tinf->trans_table == 24 || tinf->trans_table == 25) return 1;
+    if(trans_table == 2 || trans_table == 4 ||
+       trans_table == 5 || trans_table == 9 ||
+       trans_table == 11 || trans_table == 13 ||
+       trans_table == 21 || trans_table == 23 ||
+       trans_table == 24 || trans_table == 25) return 1;
   }
 
   /* TTG: Start codon in 4/5/11/13/24/25 */
   if(is_t(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table == 4 || tinf->trans_table == 5 ||
-       tinf->trans_table == 11 || tinf->trans_table == 13 ||
-       tinf->trans_table == 24 || tinf->trans_table == 25) return 1;
+    if(trans_table == 4 || trans_table == 5 ||
+       trans_table == 11 || trans_table == 13 ||
+       trans_table == 24 || trans_table == 25) return 1;
   }
 
   /* We do not handle other initiation codons */
@@ -373,7 +394,7 @@ int is_gc(unsigned char *seq, int n) {
 
 /* Returns the probability a random codon should be a stop codon */
 /* based on the GC content and genetic code of the organism */
-double prob_stop(struct _training *tinf) {
+double prob_stop(int tt, double gc) {
   int i1, i2, i3, i4, i5, i6;
   unsigned char codon[3];
   double cprob, stop_prob = 0.0;
@@ -392,13 +413,13 @@ double prob_stop(struct _training *tinf) {
             for(i6 = 0; i6 < 2; i6++) {
               if(i6 == 0) clear(codon, 5); else set(codon, 5);
               cprob = 1.0;
-              if(is_gc(codon, 0) == 1) cprob *= tinf->gc/2.0;
-              else cprob *= (1.0-tinf->gc)/2.0;
-              if(is_gc(codon, 1) == 1) cprob *= tinf->gc/2.0;
-              else cprob *= (1.0-tinf->gc)/2.0;
-              if(is_gc(codon, 2) == 1) cprob *= tinf->gc/2.0;
-              else cprob *= (1.0-tinf->gc)/2.0;
-              if(is_stop(codon, 0, tinf) == 1) stop_prob += cprob;
+              if(is_gc(codon, 0) == 1) cprob *= gc/2.0;
+              else cprob *= (1.0-gc)/2.0;
+              if(is_gc(codon, 1) == 1) cprob *= gc/2.0;
+              else cprob *= (1.0-gc)/2.0;
+              if(is_gc(codon, 2) == 1) cprob *= gc/2.0;
+              else cprob *= (1.0-gc)/2.0;
+              if(is_stop(codon, 0, tt) == 1) stop_prob += cprob;
             }
           }
         }
@@ -419,9 +440,9 @@ double gc_content(unsigned char *seq, int a, int b) {
 }
 
 /* Returns a single amino acid for this position */
-char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
-  if(is_stop(seq, n, tinf) == 1) return '*';
-  if(is_start(seq, n, tinf) == 1 && is_init == 1) return 'M';
+char amino(unsigned char *seq, int n, int trans_table, int is_init) {
+  if(is_stop(seq, n, trans_table) == 1) return '*';
+  if(is_start(seq, n, trans_table) == 1 && is_init == 1) return 'M';
   if(is_t(seq, n) == 1 && is_t(seq, n+1) == 1 && is_t(seq, n+2) == 1)
     return 'F';
   if(is_t(seq, n) == 1 && is_t(seq, n+1) == 1 && is_c(seq, n+2) == 1)
@@ -436,39 +457,39 @@ char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_c(seq, n+2) == 1)
     return 'Y';
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 6) return 'Q';
-    if(tinf->trans_table == 14) return 'Y';
+    if(trans_table == 6) return 'Q';
+    if(trans_table == 14) return 'Y';
   }
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table == 6 || tinf->trans_table == 15) return 'Q';
-    if(tinf->trans_table == 16 || tinf->trans_table == 22) return 'L';
+    if(trans_table == 6 || trans_table == 15) return 'Q';
+    if(trans_table == 16 || trans_table == 22) return 'L';
   }
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_t(seq, n+2) == 1)
     return 'C';
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_c(seq, n+2) == 1)
     return 'C';
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 10) return 'C';
-    if(tinf->trans_table == 25) return 'G';
+    if(trans_table == 10) return 'C';
+    if(trans_table == 25) return 'G';
     return 'W';
   }
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_g(seq, n+2) == 1)
     return 'W';
   if(is_c(seq, n) == 1 && is_t(seq, n+1) == 1 && is_t(seq, n+2) == 1) {
-    if(tinf->trans_table == 3) return 'T';
+    if(trans_table == 3) return 'T';
     return 'L';
   }
   if(is_c(seq, n) == 1 && is_t(seq, n+1) == 1 && is_c(seq, n+2) == 1) {
-    if(tinf->trans_table == 3) return 'T';
+    if(trans_table == 3) return 'T';
     return 'L';
   }
   if(is_c(seq, n) == 1 && is_t(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 3) return 'T';
+    if(trans_table == 3) return 'T';
     return 'L';
   }
   if(is_c(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table == 3) return 'T';
-    if(tinf->trans_table == 12) return 'S';
+    if(trans_table == 3) return 'T';
+    if(trans_table == 12) return 'S';
     return 'L';
   }
   if(is_c(seq, n) == 1 && is_c(seq, n+1) == 1) return 'P';
@@ -486,9 +507,9 @@ char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
   if(is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_c(seq, n+2) == 1)
     return 'I';
   if(is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 2 || tinf->trans_table == 3 ||
-       tinf->trans_table == 5 || tinf->trans_table == 13 ||
-       tinf->trans_table == 21) return 'M';
+    if(trans_table == 2 || trans_table == 3 ||
+       trans_table == 5 || trans_table == 13 ||
+       trans_table == 21) return 'M';
     return 'I';
   }
   if(is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1)
@@ -499,8 +520,8 @@ char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
   if(is_a(seq, n) == 1 && is_a(seq, n+1) == 1 && is_c(seq, n+2) == 1)
     return 'N';
   if(is_a(seq, n) == 1 && is_a(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 9 || tinf->trans_table == 14 ||
-       tinf->trans_table == 21) return 'N';
+    if(trans_table == 9 || trans_table == 14 ||
+       trans_table == 21) return 'N';
     return 'K';
   }
   if(is_a(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1)
@@ -510,17 +531,17 @@ char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
   if(is_a(seq, n) == 1 && is_g(seq, n+1) == 1 && is_c(seq, n+2) == 1)
     return 'S';
   if(is_a(seq, n) == 1 && is_g(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 13) return 'G';
-    if(tinf->trans_table == 5 || tinf->trans_table == 9 ||
-       tinf->trans_table == 14 || tinf->trans_table == 21 ||
-       tinf->trans_table == 24) return 'S';
+    if(trans_table == 13) return 'G';
+    if(trans_table == 5 || trans_table == 9 ||
+       trans_table == 14 || trans_table == 21 ||
+       trans_table == 24) return 'S';
     return 'R';
   }
   if(is_a(seq, n) == 1 && is_g(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table == 13) return 'G';
-    if(tinf->trans_table == 5 || tinf->trans_table == 9 ||
-       tinf->trans_table == 14 || tinf->trans_table == 21) return 'S';
-    if(tinf->trans_table == 24) return 'K';
+    if(trans_table == 13) return 'G';
+    if(trans_table == 5 || trans_table == 9 ||
+       trans_table == 14 || trans_table == 21) return 'S';
+    if(trans_table == 24) return 'K';
     return 'R';
   }
   if(is_g(seq, n) == 1 && is_t(seq, n+1) == 1) return 'V';
@@ -618,7 +639,10 @@ int *calc_most_gc_frame(unsigned char *seq, int slen) {
   fwd = (int *)malloc(slen*sizeof(int));
   bwd = (int *)malloc(slen*sizeof(int));
   tot = (int *)malloc(slen*sizeof(int));
-  if(fwd == NULL || bwd == NULL || gp == NULL || tot == NULL) return NULL;
+  if(fwd == NULL || bwd == NULL || gp == NULL || tot == NULL) {
+    perror("\n\nMalloc failed on GC frame plot.");
+    exit(11);
+  }
   for(i = 0; i < slen; i++) { fwd[i] = 0; bwd[i] = 0; tot[i] = 0; gp[i] = -1; }
 
   for(i = 0; i < 3; i++) {
@@ -641,58 +665,6 @@ int *calc_most_gc_frame(unsigned char *seq, int slen) {
   }
   free(tot);
   return gp;
-}
-
-/* Auto-detect the translation table of this sequence */
-/* Only options at the moment are 11 (standard) or 4 (mycoplasma) */
-int detect_translation_table(unsigned char *seq, unsigned char *rseq,
-                             unsigned char *useq, int slen, double gc) {
-  int i, ctr[6], norf11, norf4, last, min_good_aa, min_last_dist;
-  struct _training tinf;
-  
-  /* See how many long ORFs we get with code 11 */ 
-  tinf.trans_table = 11; norf11 = 0; last = 0;
-  min_good_aa = 300; min_last_dist = 820;
-  for(i = 0; i < 3; i++) ctr[i] = 0; 
-  for(i = 0; i < slen; i++) {
-    if(is_stop(seq, i, &tinf) == 1) ctr[i%3] = 0;
-    else if(is_nnn(useq, i) == 1) ctr[i%3] = 0;
-    else {
-      ctr[i%3]++;
-      if(ctr[i%3] == min_good_aa && i-last >= min_last_dist) norf11++;
-      if(ctr[i%3] >= min_good_aa) last = i;
-    } 
-    if(is_stop(rseq, i, &tinf) == 1) ctr[3+i%3] = 0;
-    else if(is_nnn(useq, slen-i-3) == 1) ctr[3+i%3] = 0;
-    else {
-      ctr[3+i%3]++;
-      if(ctr[3+i%3] == min_good_aa && i-last >=min_last_dist) norf11++;
-      if(ctr[3+i%3] >= min_good_aa) last = i;
-    } 
-  }
-
-  /* Now do the same for code 4 */
-  tinf.trans_table = 4; norf4 = 0; last = 0;
-  for(i = 0; i < 3; i++) ctr[i] = 0; 
-  for(i = 0; i < slen; i++) {
-    if(is_stop(seq, i, &tinf) == 1) ctr[i%3] = 0;
-    else if(is_nnn(useq, i) == 1) ctr[i%3] = 0;
-    else {
-      ctr[i%3]++;
-      if(ctr[i%3] == min_good_aa && i-last >= min_last_dist) norf4++;
-      if(ctr[i%3] >= min_good_aa) last = i;
-    } 
-    if(is_stop(rseq, i, &tinf) == 1) ctr[3+i%3] = 0;
-    else if(is_nnn(useq, slen-i-3) == 1) ctr[3+i%3] = 0;
-    else {
-      ctr[3+i%3]++;
-      if(ctr[3+i%3] == min_good_aa && i-last >=min_last_dist) norf4++;
-      if(ctr[3+i%3] >= min_good_aa) last = i;
-    } 
-  }
-  if(norf11 < 50 && norf4 < 50) { return 11; }
-  if(norf4 >= 1.3*norf11) return 4;
-  else return 11;
 }
 
 /* Converts a word of size len to a number */

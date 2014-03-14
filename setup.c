@@ -20,11 +20,13 @@
 
 #include "setup.h"
 
+/* Print version number and exit */
 void version() {
   fprintf(stderr, "\nProdigal V%s: %s\n\n", VERSION, DATE);
   exit(0);
 }
 
+/* Print usage information and exit */
 void usage(char *msg) {
   fprintf(stderr, "\nError: %s\n", msg);
   fprintf(stderr, "\nUsage:  prodigal [-a protein_file] [-c] [-d mrna_file]");
@@ -34,9 +36,10 @@ void usage(char *msg) {
   fprintf(stderr, "                 [-o output_file] [-q] [-s start_file]");
   fprintf(stderr, " [-t train_file]\n                 [-v] [-w summ_file]\n");
   fprintf(stderr, "\nDo 'prodigal -h' for more information.\n\n");
-  exit(15);
+  exit(2);
 }
 
+/* Print help message and exit */
 void help() {
   fprintf(stderr, "\nUsage:  prodigal [-a protein_file] [-c] [-d mrna_file]");
   fprintf(stderr, " [-f out_format]\n");
@@ -89,35 +92,12 @@ void help() {
   exit(0);
 }
 
-/* For piped input, we make a copy of stdin so we can rewind the file. */
-
-int copy_standard_input_to_file(char *path, int quiet) {
-  char line[MAX_LINE+1];
-  FILE *wp;
-
-  if(quiet == 0) {
-    fprintf(stderr, "Piped input detected, copying stdin to a tmp file...");
-  }
-
-  wp = fopen(path, "w");
-  if(wp == NULL) return -1;
-  while(fgets(line, MAX_LINE, stdin) != NULL) {
-    fprintf(wp, "%s", line);
-  }
-  fclose(wp);
-
-  if(quiet == 0) {
-    fprintf(stderr, "done!\n");
-    fprintf(stderr, "-------------------------------------\n");
-  }
-  return 0;
-}
-
 /* Allocates memory for data structures and memsets them all to 0 */
 int initialize_data_structures(unsigned char **seq, unsigned char **rseq,
                                 unsigned char **useq, struct _node **nodes,
                                 struct _gene **genes, struct _training *tinf,
-                                struct _preset_genome_bin *presets) {
+                                struct _preset_genome_bin *presets, struct
+                                _summary *statistics) {
   int i;
 
   *seq = (unsigned char *)malloc(MAX_SEQ/4*sizeof(unsigned char));
@@ -133,6 +113,7 @@ int initialize_data_structures(unsigned char **seq, unsigned char **rseq,
   memset(*nodes, 0, STT_NOD*sizeof(struct _node));
   memset(*genes, 0, MAX_GENES*sizeof(struct _gene));
   memset(tinf, 0, sizeof(struct _training));
+  memset(statistics, 0, sizeof(struct _summary));
 
   for(i = 0; i < NUM_PRESET_GENOME; i++) {
     memset(&presets[i], 0, sizeof(struct _preset_genome_bin));
@@ -144,27 +125,20 @@ int initialize_data_structures(unsigned char **seq, unsigned char **rseq,
   return 0;
 }
 
-/* Parse command line arguments */
-void parse_arguments(int argc, char **argv, char **input_file, char 
-                     **output_file, char **train_file, char **amino_file, char
-                     **nuc_file, char **start_file, char **summ_file, int *mode,
+/* Initialize argument variables, parse command line arguments, */
+/* and validate the arguments for consistency. */
+void parse_arguments(int argc, char **argv, char *input_file, char 
+                     *output_file, char *train_file, char *amino_file, char
+                     *nuc_file, char *start_file, char *summ_file, int *mode,
                      int *outfmt, int *genetic_code, int *closed, int 
                      *cross_gaps, int *quiet) {
   int i, j;
 
-  *input_file = NULL;
-  *output_file = NULL;
-  *train_file = NULL;
-  *start_file = NULL;
-  *amino_file = NULL;
-  *nuc_file = NULL;
-  *summ_file = NULL;
-  *mode = 0;
-  *outfmt = -1;
-  *genetic_code = -1;
-  *closed = 0;
-  *cross_gaps = 0;
-  *quiet = 0;
+  input_file[0] = '\0'; output_file[0] = '\0'; train_file[0] = '\0';
+  start_file[0] = '\0'; summ_file[0] = '\0'; 
+  amino_file[0] = '\0'; nuc_file[0] = '\0'; 
+  *mode = 0; *outfmt = -1; *genetic_code = -1; 
+  *closed = 0; *cross_gaps = 0; *quiet = 0;
 
   for(i = 1; i < argc; i++) {
     if(argv[i][0] == '-')
@@ -207,36 +181,36 @@ void parse_arguments(int argc, char **argv, char **input_file, char
       version();
     else if(strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--protein_file") 
             == 0) {
-      *amino_file = argv[i+1];
+      strcpy(amino_file, argv[i+1]);
       i++;
     }
     else if(strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--mrna_file") == 0) {
-      *nuc_file = argv[i+1];
+      strcpy(nuc_file, argv[i+1]);
       i++;
     }
     else if(strcmp(argv[i], "-i") == 0 || 
             strcmp(argv[i], "--input_file") == 0) {
-      *input_file = argv[i+1];
+      strcpy(input_file, argv[i+1]);
       i++;
     }
     else if(strcmp(argv[i], "-o") == 0 || 
             strcmp(argv[i], "--output_file") == 0) {
-      *output_file = argv[i+1];
+      strcpy(output_file, argv[i+1]);
       i++;
     }
     else if(strcmp(argv[i], "-s") == 0 || 
             strcmp(argv[i], "--start_file") == 0) {
-      *start_file = argv[i+1];
+      strcpy(start_file, argv[i+1]);
       i++;
     }
     else if(strcmp(argv[i], "-w") == 0 || 
             strcmp(argv[i], "--summ_file") == 0) {
-      *summ_file = argv[i+1];
+      strcpy(summ_file, argv[i+1]);
       i++;
     }
     else if(strcmp(argv[i], "-t") == 0 || 
             strcmp(argv[i], "--training_file") == 0) {
-      *train_file = argv[i+1];
+      strcpy(train_file, argv[i+1]);
       i++;
     }
     else if(strcmp(argv[i], "-g") == 0 || 
@@ -287,20 +261,97 @@ void parse_arguments(int argc, char **argv, char **input_file, char
   /* Validation of arguments checking for conflicting options */
 
   /* Training mode can't have output format or extra files specified. */
-  if(*mode == 1 && (*start_file != NULL || *nuc_file != NULL ||
-     *amino_file != NULL || *summ_file != NULL || *outfmt != -1)) {
+  if(*mode == 1 && (strlen(start_file) > 0 || strlen(nuc_file) > 0 ||
+     strlen(amino_file) > 0 || strlen(summ_file) > 0 || *outfmt != -1)) {
     usage("-a/-d/-f/-s/-w options cannot be used in training mode.");
   }
 
   /* Normal/anonymous can't have training files specified. */
-  if(*mode != 0 && *train_file != NULL) {
+  if(*mode != 0 && strlen(train_file) > 0) {
     usage("Can only specify training file in normal mode.");
   }
 
   /* Anonymous mode can't have a specified value for genetic code. */
   /* Nor can normal mode if using a training file. */
-  if((*mode == 2 || (*mode == 0 && *train_file != NULL)) &&
+  if((*mode == 2 || (*mode == 0 && strlen(train_file) > 0)) &&
      *genetic_code != -1) {
     usage("Can't specify translation table with anonymous mode or a training file.");
   }
+}
+
+/* Print the header */
+void header(int mode) {
+  fprintf(stderr, "-------------------------------------\n");
+  fprintf(stderr, "PRODIGAL v%s [%s]         \n", VERSION, DATE);
+  fprintf(stderr, "Univ of Tenn / Oak Ridge National Lab\n");
+  fprintf(stderr, "Doug Hyatt, Loren Hauser, et al.     \n");
+  fprintf(stderr, "-------------------------------------\n");
+  if(mode == 0) fprintf(stderr, "Mode: Normal, Phase: Training\n");
+  else if(mode == 1) fprintf(stderr, "Mode: Training, Phase: Training\n");
+  else if(mode == 2) fprintf(stderr, "Mode: Anonymous, Phase: Training\n");
+}
+
+/* If we're in normal mode and not reading from a training file, */
+/* then we have to make two passes over the sequence.  Since we  */
+/* rewind after the first pass (something Windows can't do to    */
+/* stdin), we copy stdin to a temp file so that we can rewind it */
+/* in Windows. If there's nothing present on stdin, we print     */
+/* the help message and exit. Returns a 1 if piped input is      */
+/* detected, 0 otherwise.                                        */
+int detect_input_and_handle_windows_stdin(int argc, int quiet, 
+                                           char *input_file) {
+  int fnum, piped = 0;
+  char input_copy[MAX_LINE];
+  struct stat fbuf;
+  pid_t pid;
+
+  pid = getpid();
+  sprintf(input_copy, "tmp.prodigal.stdin.%d", pid);
+
+  fnum = fileno(stdin);
+  if(fstat(fnum, &fbuf) == -1) {
+    fprintf(stderr, "\nError: can't fstat standard input.\n\n");
+    exit(3);
+  }
+  if(S_ISCHR(fbuf.st_mode)) {
+    if(argc == 1) help();
+    else {
+      fprintf(stderr, "\nError: options specified but no input ");
+      fprintf(stderr, "detected.\n\n");
+      exit(4);
+    }
+  }
+  else if(S_ISREG(fbuf.st_mode)) { /* do nothing */ }
+  else if(S_ISFIFO(fbuf.st_mode)) {
+    piped = 1;
+    if(copy_standard_input_to_file(input_copy, quiet) == -1) {
+      fprintf(stderr, "\nError: can't copy stdin to file.\n\n");
+      exit(5);
+    }
+    strcpy(input_file, input_copy);
+  }
+  return piped;
+}
+
+/* For piped input, we make a copy of stdin so we can rewind the file. */
+int copy_standard_input_to_file(char *path, int quiet) {
+  char line[MAX_LINE+1];
+  FILE *wp;
+
+  if(quiet == 0) {
+    fprintf(stderr, "Piped input detected, copying stdin to a tmp file...");
+  }
+
+  wp = fopen(path, "w");
+  if(wp == NULL) return -1;
+  while(fgets(line, MAX_LINE, stdin) != NULL) {
+    fprintf(wp, "%s", line);
+  }
+  fclose(wp);
+
+  if(quiet == 0) {
+    fprintf(stderr, "done!\n");
+    fprintf(stderr, "-------------------------------------\n");
+  }
+  return 0;
 }

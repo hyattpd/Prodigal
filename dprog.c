@@ -1,6 +1,6 @@
 /*******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2013 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -184,7 +184,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
           STOP) {
     left += 2;
     if(left >= right) return;
-    if(flag == 1) score = intergenic_mod(n1, n2, tinf);
+    if(flag == 1) score = intergenic_mod(n1, n2, tinf->st_wt);
   }
 
   /* 3'fwd->3'rev */
@@ -202,12 +202,12 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
       if(ovlp >= n3->ndx - left) continue;
       if(n1->traceb == -1) continue;
       if(ovlp >= n3->stop_val - nod[n1->traceb].ndx - 2) continue;
-      if((flag == 1 && n3->cscore + n3->sscore + intergenic_mod(n3, n2, tinf) >
-          maxval) || (flag == 0 && tinf->bias[0]*n3->gc_score[0] +
-          tinf->bias[1]*n3->gc_score[1] + tinf->bias[2]*n3->gc_score[2] >
-          maxval)) {
+      if((flag == 1 && n3->cscore + n3->sscore + 
+          intergenic_mod(n3, n2, tinf->st_wt) > maxval) || (flag == 0 && 
+          tinf->bias[0]*n3->gc_score[0] + tinf->bias[1]*n3->gc_score[1] + 
+          tinf->bias[2]*n3->gc_score[2] > maxval)) {
         maxfr = i;
-        maxval = n3->cscore + n3->sscore + intergenic_mod(n3, n2, tinf);
+        maxval = n3->cscore + n3->sscore + intergenic_mod(n3, n2, tinf->st_wt);
       }
     }
     if(maxfr != -1) {
@@ -216,9 +216,9 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
                     tinf->bias[1]*n3->gc_score[1] +
                     tinf->bias[2]*n3->gc_score[2];
       else if(flag == 1) score = n3->cscore + n3->sscore +
-              intergenic_mod(n3, n2, tinf);
+              intergenic_mod(n3, n2, tinf->st_wt);
     }
-    else if(flag == 1) score = intergenic_mod(n1, n2, tinf);
+    else if(flag == 1) score = intergenic_mod(n1, n2, tinf->st_wt);
   }
 
   /* 5'rev->3'rev */
@@ -226,14 +226,14 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
           == STOP) {
     right -= 2;
     if(left >= right) return;
-    if(flag == 1) score = intergenic_mod(n1, n2, tinf);
+    if(flag == 1) score = intergenic_mod(n1, n2, tinf->st_wt);
   }
 
   /* 5'rev->5'fwd */
   else if(n1->strand == -1 && n1->type != STOP && n2->strand == 1 && n2->type
           != STOP) {
     if(left >= right) return;
-    if(flag == 1) score = intergenic_mod(n1, n2, tinf);
+    if(flag == 1) score = intergenic_mod(n1, n2, tinf->st_wt);
   }
 
   /********************/
@@ -250,7 +250,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
     if(flag == 0) scr_mod = tinf->bias[0]*n3->gc_score[0] +
                   tinf->bias[1]*n3->gc_score[1] + tinf->bias[2]*n3->gc_score[2];
     else if(flag == 1) score = n3->cscore + n3->sscore +
-                       intergenic_mod(n1, n3, tinf);
+                       intergenic_mod(n1, n3, tinf->st_wt);
   }
 
   /* 3'rev->3'rev, check for a start just to right of second 3' */
@@ -263,7 +263,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
     if(flag == 0) scr_mod = tinf->bias[0]*n3->gc_score[0] +
                   tinf->bias[1]*n3->gc_score[1] + tinf->bias[2]*n3->gc_score[2];
     else if(flag == 1) score = n3->cscore + n3->sscore +
-                       intergenic_mod(n3, n2, tinf);
+                       intergenic_mod(n3, n2, tinf->st_wt);
   }
 
   /***************************************/
@@ -312,10 +312,10 @@ void eliminate_bad_genes(struct _node *nod, int dbeg, struct _training *tinf) {
   while(nod[path].tracef != -1) {
     if(nod[path].strand == 1 && nod[path].type == STOP)
       nod[nod[path].tracef].sscore += intergenic_mod(&nod[path],
-                                      &nod[nod[path].tracef], tinf);
+                                      &nod[nod[path].tracef], tinf->st_wt);
     if(nod[path].strand == -1 && nod[path].type != STOP)
       nod[path].sscore += intergenic_mod(&nod[path], &nod[nod[path].tracef],
-                          tinf);
+                          tinf->st_wt);
     path = nod[path].tracef;
   }
 

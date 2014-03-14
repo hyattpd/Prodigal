@@ -1,6 +1,6 @@
 /*******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2013 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -73,7 +73,7 @@ int add_genes(struct _gene *glist, struct _node *nod, int dbeg) {
   performance. 
 *******************************************************************************/
 void tweak_final_starts(struct _gene *genes, int ng, struct _node *nod,
-                        int nn, struct _training *tinf) {
+                        int nn, double st_wt) {
   int i, j, ndx, mndx, maxndx[2];
   double sc, igm, tigm, maxsc[2], maxigm[2];
 
@@ -82,15 +82,15 @@ void tweak_final_starts(struct _gene *genes, int ng, struct _node *nod,
     sc = nod[ndx].sscore + nod[ndx].cscore;
     igm = 0.0;
     if(i > 0 && nod[ndx].strand == 1 && nod[genes[i-1].start_ndx].strand == 1)
-      igm = intergenic_mod(&nod[genes[i-1].stop_ndx], &nod[ndx], tinf);
+      igm = intergenic_mod(&nod[genes[i-1].stop_ndx], &nod[ndx], st_wt);
     if(i > 0 && nod[ndx].strand == 1 && nod[genes[i-1].start_ndx].strand == -1)
-      igm = intergenic_mod(&nod[genes[i-1].start_ndx], &nod[ndx], tinf);
+      igm = intergenic_mod(&nod[genes[i-1].start_ndx], &nod[ndx], st_wt);
     if(i < ng-1 && nod[ndx].strand == -1 && nod[genes[i+1].start_ndx].strand 
        == 1)
-      igm = intergenic_mod(&nod[ndx], &nod[genes[i+1].start_ndx], tinf);
+      igm = intergenic_mod(&nod[ndx], &nod[genes[i+1].start_ndx], st_wt);
     if(i < ng-1 && nod[ndx].strand == -1 && nod[genes[i+1].start_ndx].strand 
        == -1)
-      igm = intergenic_mod(&nod[ndx], &nod[genes[i+1].stop_ndx], tinf);
+      igm = intergenic_mod(&nod[ndx], &nod[genes[i+1].stop_ndx], st_wt);
 
     /* Search upstream and downstream for the #2 and #3 scoring starts */
     maxndx[0] = -1; maxndx[1] = -1; maxsc[0] = 0; maxsc[1] = 0;
@@ -104,22 +104,22 @@ void tweak_final_starts(struct _gene *genes, int ng, struct _node *nod,
       if(i > 0 && nod[j].strand == 1 && nod[genes[i-1].start_ndx].strand == 1)
       {
         if(nod[genes[i-1].stop_ndx].ndx - nod[j].ndx > MAX_SAM_OVLP) continue;
-        tigm = intergenic_mod(&nod[genes[i-1].stop_ndx], &nod[j], tinf);
+        tigm = intergenic_mod(&nod[genes[i-1].stop_ndx], &nod[j], st_wt);
       }
       if(i > 0 && nod[j].strand == 1 && nod[genes[i-1].start_ndx].strand == -1)
       {
         if(nod[genes[i-1].start_ndx].ndx - nod[j].ndx >= 0) continue;
-        tigm = intergenic_mod(&nod[genes[i-1].start_ndx], &nod[j], tinf);
+        tigm = intergenic_mod(&nod[genes[i-1].start_ndx], &nod[j], st_wt);
       }
       if(i < ng-1 && nod[j].strand == -1 && nod[genes[i+1].start_ndx].strand 
          == 1) {
         if(nod[j].ndx - nod[genes[i+1].start_ndx].ndx >= 0) continue;
-        tigm = intergenic_mod(&nod[j], &nod[genes[i+1].start_ndx], tinf);
+        tigm = intergenic_mod(&nod[j], &nod[genes[i+1].start_ndx], st_wt);
       }
       if(i < ng-1 && nod[j].strand == -1 && nod[genes[i+1].start_ndx].strand 
          == -1) {
         if(nod[j].ndx - nod[genes[i+1].stop_ndx].ndx > MAX_SAM_OVLP) continue;
-        tigm = intergenic_mod(&nod[j], &nod[genes[i+1].stop_ndx], tinf);
+        tigm = intergenic_mod(&nod[j], &nod[genes[i+1].stop_ndx], st_wt);
       }
  
       if(maxndx[0] == -1) {
@@ -152,7 +152,7 @@ void tweak_final_starts(struct _gene *genes, int ng, struct _node *nod,
       /* Start of less common type but with better coding, rbs, and */
       /* upstream.  Must be 18 or more bases away from original.    */
       if(nod[mndx].tscore < nod[ndx].tscore && maxsc[j]-nod[mndx].tscore >= 
-         sc-nod[ndx].tscore+tinf->st_wt && nod[mndx].rscore > nod[ndx].rscore
+         sc-nod[ndx].tscore+st_wt && nod[mndx].rscore > nod[ndx].rscore
          && nod[mndx].uscore > nod[ndx].uscore && nod[mndx].cscore > 
          nod[ndx].cscore && abs(nod[mndx].ndx-nod[ndx].ndx) > 15) {
         maxsc[j] += nod[ndx].tscore-nod[mndx].tscore;
@@ -451,8 +451,8 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
 /* Print the gene translations */
 void write_translations(FILE *fh, struct _gene *genes, int ng, struct 
                         _node *nod, unsigned char *seq, unsigned char *rseq, 
-                        unsigned char *useq, int slen, struct _training *tinf,
-                        int sctr, char *short_hdr) {
+                        unsigned char *useq, int slen, int tt, int sctr, char
+                        *short_hdr) {
   int i, j;
 
   for(i = 0; i < ng; i++) {
@@ -462,7 +462,7 @@ void write_translations(FILE *fh, struct _gene *genes, int ng, struct
       for(j = genes[i].begin; j < genes[i].end; j+=3) {
         if(is_n(useq, j-1) == 1 || is_n(useq, j) == 1 || is_n(useq, j+1) == 1) 
           fprintf(fh, "X");
-        else fprintf(fh, "%c", amino(seq, j-1, tinf, j==genes[i].begin?1:0 &&
+        else fprintf(fh, "%c", amino(seq, j-1, tt, j==genes[i].begin?1:0 &&
                      (1-nod[genes[i].start_ndx].edge)));
         if((j-genes[i].begin)%180 == 177) fprintf(fh, "\n");
       }
@@ -475,7 +475,7 @@ void write_translations(FILE *fh, struct _gene *genes, int ng, struct
         if(is_n(useq, slen-j) == 1 || is_n(useq, slen-1-j) == 1 ||
            is_n(useq, slen-2-j) == 1)
           fprintf(fh, "X");
-        else fprintf(fh, "%c", amino(rseq, j-1, tinf, j==slen+1-genes[i].end?1:0
+        else fprintf(fh, "%c", amino(rseq, j-1, tt, j==slen+1-genes[i].end?1:0
                      && (1-nod[genes[i].start_ndx].edge)));
         if((j-slen-1+genes[i].end)%180 == 177) fprintf(fh, "\n");
       }
@@ -487,8 +487,8 @@ void write_translations(FILE *fh, struct _gene *genes, int ng, struct
 /* Print the gene nucleotide sequences */
 void write_nucleotide_seqs(FILE *fh, struct _gene *genes, int ng, struct 
                            _node *nod, unsigned char *seq, unsigned char *rseq,
-                           unsigned char *useq, int slen, struct _training 
-                           *tinf, int sctr, char *short_hdr) {
+                           unsigned char *useq, int slen, int sctr, char
+                           *short_hdr) {
   int i, j;
 
   for(i = 0; i < ng; i++) {
@@ -520,6 +520,153 @@ void write_nucleotide_seqs(FILE *fh, struct _gene *genes, int ng, struct
       if((j-slen+genes[i].end)%70 != 0) fprintf(fh, "\n");
     }
   }
+}
+
+/*******************************************************************************
+  Write detailed scoring information about every single possible gene.  Only
+  done at the user's request.
+*******************************************************************************/
+void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
+                      *tinf, int sctr, int slen, int mode, char *mdesc,
+                      char *version, char *header) {
+  int i, prev_stop = -1, prev_strand = 0, st_type;
+  double rbs1, rbs2;
+  char sd_string[28][100], sd_spacer[28][20], qt[10];
+  char type_string[4][5] = { "ATG", "GTG", "TTG" , "Edge" };
+  char seq_data[MAX_LINE*2], run_data[MAX_LINE];
+
+  /* Initialize sequence data */
+  sprintf(seq_data, "seqnum=%d;seqlen=%d;seqhdr=\"%s\"", sctr, slen, header);
+
+  /* Initialize run data string */
+  if(mode == MODE_ANON) {
+    sprintf(run_data, "version=Prodigal.v%s;run_type=Anonymous;", version);
+    sprintf(run_data, "%smodel=\"%s\";", run_data, mdesc);
+  }
+  else {
+    sprintf(run_data, "version=Prodigal.v%s;run_type=Normal;", version);
+    sprintf(run_data, "%smodel=\"Ab initio\";", run_data);
+  }
+  sprintf(run_data, "%sgc_cont=%.2f;transl_table=%d;uses_sd=%d", run_data,
+          tinf->gc*100.0, tinf->trans_table, tinf->uses_sd);
+
+  strcpy(sd_string[0], "None");
+  strcpy(sd_spacer[0], "None");
+  strcpy(sd_string[1], "GGA/GAG/AGG");
+  strcpy(sd_spacer[1], "3-4bp");
+  strcpy(sd_string[2], "3Base/5BMM");
+  strcpy(sd_spacer[2], "13-15bp");
+  strcpy(sd_string[3], "4Base/6BMM");
+  strcpy(sd_spacer[3], "13-15bp");
+  strcpy(sd_string[4], "AGxAG");
+  strcpy(sd_spacer[4], "11-12bp");
+  strcpy(sd_string[5], "AGxAG");
+  strcpy(sd_spacer[5], "3-4bp");
+  strcpy(sd_string[6], "GGA/GAG/AGG");
+  strcpy(sd_spacer[6], "11-12bp");
+  strcpy(sd_string[7], "GGxGG");
+  strcpy(sd_spacer[7], "11-12bp");
+  strcpy(sd_string[8], "GGxGG");
+  strcpy(sd_spacer[8], "3-4bp");
+  strcpy(sd_string[9], "AGxAG");
+  strcpy(sd_spacer[9], "5-10bp");
+  strcpy(sd_string[10], "AGGAG(G)/GGAGG");
+  strcpy(sd_spacer[10], "13-15bp");
+  strcpy(sd_string[11], "AGGA/GGAG/GAGG");
+  strcpy(sd_spacer[11], "3-4bp");
+  strcpy(sd_string[12], "AGGA/GGAG/GAGG");
+  strcpy(sd_spacer[12], "11-12bp");
+  strcpy(sd_string[13], "GGA/GAG/AGG");
+  strcpy(sd_spacer[13], "5-10bp");
+  strcpy(sd_string[14], "GGxGG");
+  strcpy(sd_spacer[14], "5-10bp");
+  strcpy(sd_string[15], "AGGA");
+  strcpy(sd_spacer[15], "5-10bp");
+  strcpy(sd_string[16], "GGAG/GAGG");
+  strcpy(sd_spacer[16], "5-10bp");
+  strcpy(sd_string[17], "AGxAGG/AGGxGG");
+  strcpy(sd_spacer[17], "11-12bp");
+  strcpy(sd_string[18], "AGxAGG/AGGxGG");
+  strcpy(sd_spacer[18], "3-4bp");
+  strcpy(sd_string[19], "AGxAGG/AGGxGG");
+  strcpy(sd_spacer[19], "5-10bp");
+  strcpy(sd_string[20], "AGGAG/GGAGG");
+  strcpy(sd_spacer[20], "11-12bp");
+  strcpy(sd_string[21], "AGGAG");
+  strcpy(sd_spacer[21], "3-4bp");
+  strcpy(sd_string[22], "AGGAG");
+  strcpy(sd_spacer[22], "5-10bp");
+  strcpy(sd_string[23], "GGAGG");
+  strcpy(sd_spacer[23], "3-4bp");
+  strcpy(sd_string[24], "GGAGG");
+  strcpy(sd_spacer[24], "5-10bp");
+  strcpy(sd_string[25], "AGGAGG");
+  strcpy(sd_spacer[25], "11-12bp");
+  strcpy(sd_string[26], "AGGAGG");
+  strcpy(sd_spacer[26], "3-4bp");
+  strcpy(sd_string[27], "AGGAGG");
+  strcpy(sd_spacer[27], "5-10bp");
+
+  qsort(nod, nn, sizeof(struct _node), &stopcmp_nodes);
+
+  fprintf(fh, "# Sequence Data: %s\n", seq_data);
+  fprintf(fh, "# Run Data: %s\n\n", run_data);
+
+  fprintf(fh, "Beg\tEnd\tStd\tTotal\tCodPot\tStrtSc\tCodon\tRBSMot\t");
+  fprintf(fh, "Spacer\tRBSScr\tUpsScr\tTypeScr\tGCCont\n");
+  for(i = 0; i < nn; i++) {
+    if(nod[i].type == STOP) continue;
+    if(nod[i].edge == 1) st_type = 3;
+    else st_type = nod[i].type;
+    if(nod[i].stop_val != prev_stop || nod[i].strand != prev_strand) {
+      prev_stop = nod[i].stop_val;
+      prev_strand = nod[i].strand;
+      fprintf(fh, "\n");
+    }
+    if(nod[i].strand == 1)
+      fprintf(fh, "%d\t%d\t+\t%.2f\t%.2f\t%.2f\t%s\t", nod[i].ndx+1,
+              nod[i].stop_val+3, nod[i].cscore+nod[i].sscore, nod[i].cscore,
+              nod[i].sscore, type_string[st_type]);
+    if(nod[i].strand == -1)
+      fprintf(fh, "%d\t%d\t-\t%.2f\t%.2f\t%.2f\t%s\t", nod[i].stop_val-1,
+              nod[i].ndx+1, nod[i].cscore+nod[i].sscore, nod[i].cscore,
+              nod[i].sscore, type_string[st_type]);
+    rbs1 = tinf->rbs_wt[nod[i].rbs[0]]*tinf->st_wt;
+    rbs2 = tinf->rbs_wt[nod[i].rbs[1]]*tinf->st_wt;
+    if(tinf->uses_sd == 1) {
+      if(rbs1 > rbs2) {
+        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[0]],
+                sd_spacer[nod[i].rbs[0]], nod[i].rscore);
+      }
+      else {
+        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[1]],
+                sd_spacer[nod[i].rbs[1]], nod[i].rscore);
+      }
+    }
+    else {
+      mer_text(qt, nod[i].mot.len, nod[i].mot.ndx);
+      if(tinf->no_mot > -0.5 && rbs1 > rbs2 && rbs1 > nod[i].mot.score *
+         tinf->st_wt) {
+        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[0]],
+                sd_spacer[nod[i].rbs[0]], nod[i].rscore);
+      }
+      else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && rbs2 > nod[i].mot.score *
+              tinf->st_wt) {
+        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[1]],
+                sd_spacer[nod[i].rbs[1]], nod[i].rscore);
+      }
+      else {
+        if(nod[i].mot.len == 0) fprintf(fh, "None\tNone\t%.2f\t",
+                                      nod[i].rscore);
+        else fprintf(fh, "%s\t%dbp\t%.2f\t", qt, nod[i].mot.spacer,
+                     nod[i].rscore);
+      }
+    }
+    fprintf(fh, "%.2f\t%.2f\t%.3f\n", nod[i].uscore, nod[i].tscore,
+            nod[i].gc_cont);
+  }
+  fprintf(fh, "\n");
+  qsort(nod, nn, sizeof(struct _node), &compare_nodes);
 }
 
 /* Convert score to a percent confidence */
