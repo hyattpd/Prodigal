@@ -1,6 +1,6 @@
 /*******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2013 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -18,7 +18,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
 
-README for Version 2.60
+README for Command-Line Prodigal, Version 2.7.0
 
 I.  Introduction
 
@@ -38,6 +38,10 @@ Reference:  Hyatt D, Chen GL, Locascio PF, Land ML, Larimer FW, Hauser LJ.
 The metagenomic/draft code was written by Doug Hyatt, with ideas from Loren
 Hauser and Edward C. Uberbacher.
 
+Detailed documentation for Prodigal can be found at the main web site
+(http://prodigal.ornl.gov/) or at the Prodigal github repository
+(http://github.com/hyattpd/prodigal/).
+
 To install Prodigal on Linux or MacOSX, just type 'make'.  On Windows, you 
 should compile with mingw (http://www.mingw.org/).  Other methods of 
 compilation are not supported on Windows.
@@ -49,35 +53,66 @@ files, but it does mean it takes a bit of time to compile.
 
 Do 'prodigal -h' to get a list of options, i.e.:
 
-Usage:  prodigal [-a trans_file] [-c] [-d nuc_file] [-f output_type]
-                 [-g tr_table] [-h] [-i input_file] [-m] [-n] [-o output_file]
-                 [-p mode] [-q] [-s start_file] [-t training_file] [-v]
+Usage:  prodigal [-a protein_file] [-c] [-d mrna_file] [-f out_format]
+                 [-g trans_table] [-h] [-i input_file] [-m mode] [-n]
+                 [-o output_file] [-q] [-s start_file] [-t train_file]
+                 [-v] [-w summ_file]
 
-         -a:  Write protein translations to the selected file.
-         -c:  Closed ends.  Do not allow genes to run off edges.
-         -d:  Write nucleotide sequences of genes to the selected file.
-         -f:  Select output format (gbk, gff, or sco).  Default is gbk.
-         -g:  Specify a translation table to use (default 11).
-         -h:  Print help menu and exit.
-         -i:  Specify input file (default reads from stdin).
-         -m:  Treat runs of n's as masked sequence and do not build genes across 
-              them.
-         -n:  Bypass the Shine-Dalgarno trainer and force the program to scan
-              for motifs.
-         -o:  Specify output file (default writes to stdout).
-         -p:  Select procedure (single or meta).  Default is single.
-         -q:  Run quietly (suppress normal stderr output).
-         -s:  Write all potential genes (with scores) to the selected file.
-         -t:  Write a training file (if none exists); otherwise, read and use
-              the specified training file.
-         -v:  Print version number and exit.
+Gene Modeling Parameters
 
-II.  Running Prodigal on Finished Genomes
+  -m, --mode:           Specify mode (normal, train, or anon).
+                          normal:   Single genome, any number of
+                                    sequences. (Default)
+                          train:    Do only training.  Input should
+                                    be multiple FASTA of one or more
+                                    closely related genomes.  Output
+                                    is a training file.
+                          anon:     Anonymous sequences, analyze using
+                                    preset training files, ideal for
+                                    metagenomic data or single short
+                                    sequences.
+  -g, --trans_table:    Specify a translation table to use
+                          Auto: Tries 11 then 4 (Default)
+                          11:   Standard Bacteria/Archaea
+                          4:    Mycoplasma/Spiroplasma
+                          #:    Other genetic codes 1-25
+  -c, --nopartial:      Closed ends.  Do not allow partial genes
+                        (genes that run off edges or into gaps.)
+  -n, --nogaps:         Do not treat runs of N's as gaps.  This option
+                        will build gene models that span runs of N's.
+  -t, --training_file:  Read and use the specified training file
+                        instead of training on the input sequence(s)
+                        (Only usable in normal mode.)
 
-Prodigal can be run in one pass on a finished genome, regardless of if the genome
-consists of one sequence.  Prodigal can read sequence in FASTA format, as well
-as Genbank and EMBL formats.  The Genbank and EMBL parsers are very simple/dumb,
-however, so these should be used with caution.
+Input/Output Parameters
+
+  -i, --input_file:     Specify input file (default stdin).
+  -o, --output_file:    Specify output file (default stdout).
+  -a, --protein_file:   Write protein translations to the named file.
+  -d, --mrna_file:      Write nucleotide sequences of genes to the
+                        named file.
+  -w, --summ_file:      Write summary statistics to the named file.
+  -s, --start_file:     Write all potential genes (with scores) to the
+                        named file.
+  -f, --output_format:  Specify output format (gbk, gff, sqn, or sco).
+                          gff:  GFF format (Default)
+                          gbk:  Genbank-like format
+                          sqn:  Sequin feature table format
+                          sco:  Simple coordinate output
+  -q, --quiet:          Run quietly (suppress normal stderr output).
+
+Other Parameters
+
+  -h, --help:     Print help menu and exit.
+  -v, --version:  Print version number and exit.
+
+
+II.  Running Prodigal on Single Genomes
+
+Prodigal can be run in one pass on a single genome, regardless of if the 
+genome consists of one sequence or many contigs.  Prodigal can read sequences
+in FASTA format, as well as Genbank and EMBL formats.  The Genbank and EMBL
+parsers are very simple/dumb, however, so these should be used with caution.
 
 To run Prodigal on a single finished genome, simply do:
 
@@ -87,28 +122,51 @@ or
 
         prodigal -i genome.seqs -o my.genes
 
-By default, Prodigal outputs a Genbank-like feature table format.  You can also 
-specify GFF format or SCO format (Simple Coordinate).  Other formats may be 
-supported at a later date.  
+By default, Prodigal outputs GFF format (in versions prior to 2.7.0, the
+default output format was a Genbank feature table).  You can also specify
+gbk (Genbank table), sqn (NCBI Sequin-compatible format), or SCO (lightweight
+format used by TiCO). 
 
-By default, Prodigal predicts genes that run off the edges of the sequence.  If
-you wish to disallow this (sometimes correct for finished genomes, but it seldom
-makes any difference), use the -c option, i.e.
+By default, Prodigal predicts genes that run off the edges of the sequence. In
+addition, Prodigal treats any two consecutive completely ambiguous codons (i.e.
+amino NN, or dna nnnnnn) as a gap.  Prodigal will also predict partial genes
+that run into gaps.
+
+If you wish to disallow this (sometimes correct for finished genomes, but it
+seldom makes any difference), use the -c option, and Prodigal will no longer
+predict partial genes, i.e.
 
         prodigal -c -i genome.seqs -o my.genes
 
-If you wish to retain a training file (for future sequences, perhaps), you may
-do:
+If you do not wish for Prodigal to treat runs of N's as gaps, then you can
+disable this behavior with the '-n' option, e.g.
 
-        prodigal -t my.trn -i genome.seq       (To write a training file)
+        prodigal -n -i genome.seqs -o my.genes
+
+Note that the above option will cause gene models occasionally to be built that
+span gaps, i.e. you will see runs of X's in your protein translations (and
+runs of N's in your mRNAs) if you have gaps in your sequences.
+
+If you wish to retain a training file (for future sequences, perhaps), you may
+run Prodigal in training mode:
+
+        prodigal -m train -o my.trn     (To write a training file)
+
+This will train on the supplied sequences and write to the 'my.trn' training
+file.  To then analyze a sequence or sequences using this training file, you
+would do:
+
         prodigal -t my.trn -i genome.seq -o my.genes (To read/use the training
                                                       file)
+
+Note that the above method of doing training has changed in 2.7.0 (and should
+now be much less confusing).
 
 III.  Running Prodigal on Multiple Sequences/Draft/Plasmids/Chromosomes/etc.
 
 With version 2.00+, you may now run Prodigal in a single step on multiple
-FASTA files.  The recommended way of doing this is to put all the contigs in
-a single file, i.e.
+FASTA files.  The recommended way of doing this is to put all the contigs in a
+single file, i.e.
 
         cat genome.contig* > genome.allseqs.fna
 
@@ -116,26 +174,16 @@ Prodigal can then be run as normal:
 
         prodigal -i genome.allseqs.fna -o my.genes
 
-Outputs will appear for each sequence, separated by the standard Genbank divider
-("//"), and with the addition of a "DEFINITION" line containing sequence and
-model information.
+Outputs will appear for each sequence in the same order as the input file.
 
 You may also run Prodigal in two steps:  (1) training and (2) analysis, if you
 want to analyze sequences one at a time and store the output in separate files.
 
 Prodigal can train on a multiple FASTA format file, so you can do, for example:
 
-        cat genome.contig* | prodigal -t genome.trn
+        cat genome.contig* | prodigal -m train -o genome.trn
 
-The -t option specifies a file name to write the training file to.  THIS FILE
-MUST NOT ALREADY EXIST IF YOU WANT TO TRAIN.  If the file already exists,
-prodigal will assume you want to use that training file to analyze your
-sequence.
-
-If you have messed up the training for whatever reason, or you wish to create a
-new training file, simply delete the old training file first, then run prodigal
-again with the -t option to retrain.  (Alternatively, you could simply specify a
-new training file name, like ecoli2.train', etc.).
+to create a training file to use later.
 
 To do the analysis on single sequences once you have trained, do:
 
@@ -150,15 +198,28 @@ different architecture.
 
 IV.  Running Prodigal on Metagenomic Samples
 
-Prodigal can be run on metagenomic sequences using the "-p meta" option.  All
-"metagenomic" means in this case is that Prodigal uses the best of 30 
+Prodigal can be run on metagenomic sequences using the "-m anon" option.  All
+"metagenomic" means in this case is that Prodigal uses the best of 50 
 pre-generated training files rather than doing any training of its own.
+"Anonymous" mode simply means that you don't know to which genome each sequence
+belongs ahead of time.
+
+Prior to 2.7.0, the "-p meta" option was used, but we decided to change this
+option to a more meaningful/accurate description, since "anonymous" mode should
+also be used to analyze short sequences (<100KB) for which Prodigal doesn't
+have enough training data to perform well in normal mode.  The "-p meta" is
+deprecated and may be removed in a future version, but it still works as of
+2.7.0.
 
 Prodigal scans the sequence and tries a variety of precalculated training files,
 and outputs the predictions that achieve the best score.  Model information is
-printed in the DEFINITION line showing which training file was ultimately used.  
-You can run one sequence at a time, or on multiple FASTA.  Either way works fine, 
-since Prodigal doesn't need to train or do anything special.
+printed in the comment lines showing which training file was ultimately used.  
+You can run one sequence at a time, or on multiple FASTA.  Either way works
+fine, since Prodigal doesn't need to train or do anything special.
+
+You cannot specify translation table, training files, etc., in anonymous mode,
+as Prodigal will simply use the characteristics of the 50 canned training files
+instead.
 
 V.  Training Files and Different Versions of Prodigal
 
@@ -175,7 +236,7 @@ numerical id for the gene, its location, and its strand (1 for forward, -1 for
 reverse).  The -d option provides a similar function for the nucleotide
 sequences of genes.
 
-VII.  Generating a List of All Potential Start/Stop Pairs
+VII.  Generating a List of All Potential Start/Stop Pairs and Summary Files
 
 The -s option can be used to write a file containing all the starts in the
 entire genome above a particular length (90bp is the #defined option for minimum
@@ -208,8 +269,8 @@ will be the same as the start score, but this score is penalized for genes less
 than 250bp.
 
 The dynamic programming also includes some contextual factors not displayed in 
-this file, such as operon distances, overlaps, etc., so the highest scoring total 
-score start may not always be what is used in the final models.
+this file, such as operon distances, overlaps, etc., so the highest scoring
+total score start may not always be what is used in the final models.
 
 This file is a DUMP of every single ORF with a potential start, even if the
 score is horribly negative.  This in no way represents any sort of actual
@@ -217,32 +278,40 @@ output that should be taken as real genes.  It is simply a resource provided
 for those who wish to examine individual ORFs in more detail to see how Prodigal
 scores the various potential starts.
 
+In addition, the "-w" option will generate a file of summary statistics about
+the genome, including average contig length, average gene length, start codon
+usage across the genome, and RBS motif usage across the genome.
+
 VIII. Mycoplasma and Other Nonstandard Stop Codons
 
 Prodigal supports all of the Genbank translation tables with the '-g' option.
 The expected value for the '-g' option is the number of the translation table to
 use.
 
-The default is 11 (standard microbial table).  Mycoplasma uses 4.  So '-g 4'
-would be the correct option to analyze mycoplasma genomes.
+The primary code is 11 (standard microbial table).  Mycoplasma uses 4.  So 
+'-g 4' would be the correct option to analyze mycoplasma genomes.
 
 Translation tables are available at NCBI:
 http://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi
+
+If the user does not specify a translation table, the program will check the
+average gene length in the training set and automatically try genetic code 4
+if genetic code 11 doesn't seem to work.
 
 IX.  Excluding RNA Genes and Other Regions from Gene Predictions
 
 To avoid predicting genes in known non-protein-coding regions, the user may mask
 out tRNAs, rRNAs, and other miscellaneous RNAs/objects by replacing their
-sequence with n's.  With the '-m' option, Prodigal will treat runs of 50 or more
-n's as unknown gene objects that it should not model across.  If -m is not
-specified, Prodigal will instead treat n's as gaps which may be modeled across.
+sequence with n's.  This will cause these regions to be treated as gaps.
+The user should run with the '-c' option in this case to prevent gene models
+from being built that run into or span gaps.
 
 X.  Understanding the Prodigal Output
 
 As of 2.00, Prodigal now outputs detailed information about each gene via the
-"note" field (or attributes field in GFF3).  This information is the same as
-described above in section VII.  In addition, the DEFINITION line contains 
-global information about the data, i.e. sequence length, FASTA header, a
+attributes field in GFF3 (or the /note field in Genbank).  This information is
+the same as described above in section VII.  In addition, the comment lines
+contain global information about the data, i.e. sequence length, FASTA header, a
 numerical id, the GC content, whether or not this is a single- or metagenomic-
 genome analysis, the translation table, and whether or not the organism uses
 the SD motif (uses_sd).  
@@ -253,30 +322,14 @@ contig, and a '1' indicates the gene runs off that edge.  So '11' runs off both
 edges of the contig, '10' runs off the left edge, '01' runs off the right edge,
 and '00' is fully contained within the contig.
 
-XI.  Forcing Prodigal to Scan for RBS Motifs
+XI.  How Much Sequence Does Prodigal Need to Train?
 
-When Prodigal determines that an organism uses Shine-Dalgarno, it uses the
-default SD motif scoring system.  This globs many motifs together into similar
-bins, and it only looks for subsets of the motif AGGAGG.  Sometimes organisms
-use something similar to SD, but not quite the same, i.e. AAGAGG.  If you
-really want to get the best results for your genome, you should consider
-running both with and without the '-n' option and manually examining the
-results.
-
-If you run without -n and the output says 'uses_sd=0', then running with -n
-is unnecessary (it will produce identical results).  If your output without -n
-says 'uses_sd=1', though, and the RBS motifs when you run WITH -n are slightly
-different (i.e. you see things like AAGA, or GGT, etc., that do not come from
-AGGAGG), the '-n' run may be more accurate than the original.
-
-XII.  How Much Sequence Does Prodigal Need to Train?
-
-With v2.00, you now have the option of running the metagenomic gene finder
+With v2.00, you now have the option of running the "anonymous" gene finder
 on small contigs.  Ideally, Prodigal should be given at least 100 high quality
 genes on which to train (100kbp+).  While Prodigal will accept a 20KB sequence
 and train on it, keep in mind that only giving the program 20 genes to train
 on is not going to produce great results.  You are probably much better off
-running the metagenomic gene finder with '-p meta' (or, better yet, get more
+running the anonymous mode version with '-m anon' (or, better yet, get more
 contigs from the same genome and put them together so you have enough data
 to train).  People frequently submit single small (20kbp) segments to the web
 server, but they are likely not getting very good results by doing so (since

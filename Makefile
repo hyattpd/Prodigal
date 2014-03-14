@@ -1,6 +1,6 @@
 ##############################################################################
 #   PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-#   Copyright (C) 2007-2013 University of Tennessee / UT-Battelle
+#   Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 #
 #   Code Author:  Doug Hyatt
 #
@@ -23,14 +23,17 @@ CC=	gcc
 
 SRC=	main.c \
 	gene.c \
+	summary.c \
 	dprog.c \
 	node.c \
 	anonymous.c \
 	sequence.c \
 	training.c \
+	preset.c \
+	setup.c \
 	bitmap.c
 
-EXEC=	prodigal
+EXEC=	prodigal2
 
 CFLAGS=	-O3 -Wall
 
