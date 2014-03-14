@@ -1,6 +1,6 @@
 /*******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2013 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -24,9 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include "bitmap.h"
-#include "training.h"
 
 #define MAX_SEQ 32000000
 #define MAX_LINE 10000
@@ -35,8 +33,11 @@
 #define GTG 1
 #define TTG 2
 #define STOP 3
+#define MIN_SINGLE_GENOME 20000
+#define IDEAL_SINGLE_GENOME 100000
 
-int read_seq_training(FILE *, unsigned char *, unsigned char *, double *, int);
+int read_seq_training(FILE *, unsigned char *, unsigned char *, double *, int,
+                      int *);
 int next_seq_multi(FILE *, unsigned char *, unsigned char *, int *, double *,
                    char *, char *);
 void rcom_seq(unsigned char *, unsigned char *, unsigned char *, int);
@@ -50,8 +51,8 @@ int is_t(unsigned char *, int);
 int is_n(unsigned char *, int);
 int is_gc(unsigned char *, int);
 
-int is_stop(unsigned char *, int, struct _training *);
-int is_start(unsigned char *, int, struct _training *);
+int is_stop(unsigned char *, int, int);
+int is_start(unsigned char *, int, int);
 int is_atg(unsigned char *, int);
 int is_gtg(unsigned char *, int);
 int is_ttg(unsigned char *, int);
@@ -61,19 +62,17 @@ int codon_has_n(unsigned char *, int);
 int gap_to_left(unsigned char *, int);
 int gap_to_right(unsigned char *, int);
 
-double prob_stop(struct _training *);
+double prob_stop(int, double);
 
 double gc_content(unsigned char *, int, int);
 
-char amino(unsigned char *, int, struct _training *, int);
+char amino(unsigned char *, int, int, int);
 int amino_num(char);
 char amino_letter(int);
 
 int rframe(int, int);
 int max_fr(int, int, int);
 
-int detect_translation_table(unsigned char *, unsigned char *, unsigned char *,
-                             int, double);
 int *calc_most_gc_frame(unsigned char *, int);
 
 int mer_ndx(int, unsigned char *, int);

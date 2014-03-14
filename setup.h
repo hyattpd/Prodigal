@@ -24,28 +24,27 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <ctype.h>
-#include "node.h"
+#include "datatypes.h"
+#include "summary.h"
 #include "gene.h"
 #include "anonymous.h"
-#include "sequence.h"
-#include "dprog.h"
 
 #define VERSION "2.7.0"
 #define DATE "March, 2014"
 
-#define MIN_SINGLE_GENOME 20000
-#define IDEAL_SINGLE_GENOME 100000
-
 void version();
 void usage(char *);
 void help();
-int copy_standard_input_to_file(char *, int);
+
 int initialize_data_structures(unsigned char **, unsigned char **, unsigned 
                                char **, struct _node **, struct _gene **, 
                                struct _training *, struct 
-                               _preset_genome_bin *);
-void parse_arguments(int, char **, char **, char **, char **, char **, char **,
-                     char **, char **, int *, int *, int *, int *, int *,
+                               _preset_genome_bin *, struct _summary *);
+void parse_arguments(int, char **, char *, char *, char *, char *, char *,
+                     char *, char *, int *, int *, int *, int *, int *,
                      int *);
+void header(int);
+int detect_input_and_handle_windows_stdin(int, int, char *);
+int copy_standard_input_to_file(char *, int);
 
 #endif

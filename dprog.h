@@ -1,6 +1,6 @@
 /*******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2013 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -26,7 +26,6 @@
 #include "sequence.h"
 #include "node.h"
 
-#define MAX_SAM_OVLP 60
 #define MAX_OPP_OVLP 200
 #define MAX_NODE_DIST 500
 
