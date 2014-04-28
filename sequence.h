@@ -35,6 +35,7 @@
 #define STOP 3
 #define MIN_SINGLE_GENOME 20000
 #define IDEAL_SINGLE_GENOME 100000
+#define IDEAL_AVG_CONTIG_LEN 1500
 
 int read_seq_training(FILE *, unsigned char *, unsigned char *, double *, int,
                       int *);

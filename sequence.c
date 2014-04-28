@@ -35,6 +35,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
   int hdr = 0, fhdr = 0, bctr = 0, len = 0, wrn = 0;
   int gc_cont = 0;
   unsigned int i, gapsize = 0;
+  double acl = 0.0;
 
   line[MAX_LINE] = '\0';
   while(fgets(line, MAX_LINE, fp) != NULL) {
@@ -99,6 +100,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
     }
   }
   *gc = ((double)gc_cont / (double)len);
+  acl = ((double)(len - (fhdr-1)*8))/(double)fhdr;
 
   /* Exit if there are errors, warn if sequence is small */
   if(len == 0) {
@@ -118,6 +120,11 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
     fprintf(stderr, " least %d bases for ", IDEAL_SINGLE_GENOME);
     fprintf(stderr, "training.\nYou may get better results with the ");
     fprintf(stderr, "'-m anon' option.\n\n");
+  }
+  if(acl < IDEAL_AVG_CONTIG_LEN) {
+    fprintf(stderr, "\n\nWarning:  Average training set contig length is");
+    fprintf(stderr, " short at %.2f bases.\nYou may", acl);
+    fprintf(stderr, " get better results with the '-m anon' option.\n\n");
   }
   *num_seq = fhdr;
   return len;

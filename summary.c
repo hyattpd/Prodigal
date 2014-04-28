@@ -95,6 +95,11 @@ int bad_train_gene_length(struct _summary gstat) {
   return 2;
 }
 
+/******************************************************************************
+  Calculate average length of contigs in training set.  Since we added gaps in
+  between each contig, we subtract 8 bases per contig to get the true length.
+******************************************************************************/
 void calc_avg_train_contig_len(struct _summary *gstat, int slen) {
-  gstat->avg_contig_len = (double)slen/(double)gstat->num_contig;
+  gstat->avg_contig_len = (double)(slen - (gstat->num_contig-1)*8);
+  gstat->avg_contig_len /= (double)gstat->num_contig;
 }

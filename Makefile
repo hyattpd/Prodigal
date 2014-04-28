@@ -33,7 +33,7 @@ SRC=	main.c \
 	setup.c \
 	bitmap.c
 
-EXEC=	prodigal2
+EXEC=	prodigal
 
 CFLAGS=	-O3 -Wall
 
