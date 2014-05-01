@@ -177,9 +177,8 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
 }
 
 /* Memset nodes to 0 and return 0 */
-int zero_nodes(struct _node *nod, int nn) {
+void zero_nodes(struct _node *nod, int nn) {
   memset(nod, 0, nn*sizeof(struct _node));
-  return 0;
 }
 
 /* Simple routine to zero out the node scores */

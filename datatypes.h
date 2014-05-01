@@ -81,4 +81,30 @@ struct _training {
   double gene_dc[4096];         /* Coding statistics for the genome */
 };
 
+struct _summary {
+  int num_contig;
+  double avg_contig_len;
+  int contig_len_bins[10];
+  double avg_contig_gc;
+  int contig_gc_bins[12]; /* <25, 25-30, etc., >75 */
+
+  int num_complete_genes;
+  double avg_comp_gene_len;
+  int comp_gene_len_bins[10];
+  double avg_comp_gene_gc;
+  int comp_gene_gc_bins[12];
+  int comp_start_bins[5];
+  int comp_stop_bins[4];
+  int comp_rbs_nosd_bins[4][4][4096];
+
+  int num_partial_genes;
+  double avg_part_gene_len;
+  int part_gene_len_bins[10];
+  double avg_part_gene_gc;
+  int part_gene_gc_bins[12];
+  int part_start_bins[5];
+  int part_stop_bins[4];
+  int part_rbs_nosd_bins[4][4][4096];
+};
+
 #endif

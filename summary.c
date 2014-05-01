@@ -20,6 +20,11 @@
 
 #include "summary.h"
 
+/* Memset nodes to 0 and return 0 */
+void zero_statistics(struct _summary *statistics) {
+  memset(statistics, 0, sizeof(struct _summary));
+}
+
 /*******************************************************************************
   Routine to record the average gene length of our initial dynamic programming.
   Complete and partial genes are stored separately.
@@ -27,6 +32,11 @@
 void calc_avg_training_gene_lens(struct _node *nod, int dbeg, struct _summary
                                  *gstat) {
   int path, left = 0, right = 0, partial = 0, ctr = 0;
+
+  gstat->num_complete_genes = 0;
+  gstat->num_partial_genes = 0;
+  gstat->avg_comp_gene_len = 0;
+  gstat->avg_part_gene_len = 0;
 
   if(dbeg == -1) return;
   path = dbeg;
@@ -93,6 +103,21 @@ int bad_train_gene_length(struct _summary gstat) {
   if(gstat.avg_contig_len < MIN_AVG_TRAIN_CTG_LEN ||
      gstat.num_partial_genes > gstat.num_complete_genes) return 1;
   return 2;
+}
+
+/* Output a warning for low average gene length */
+void low_gene_len_warning(int flag, struct _summary gstat) {
+  if(flag < 2) {
+    fprintf(stderr, "\nWarning: training sequence is highly fragmented.\n");
+    fprintf(stderr, "You may get better results with the ");
+    fprintf(stderr, "'-m anon' option.\n\n");
+  }
+  else {
+    fprintf(stderr, "\nWarning: Average training gene length is");
+    fprintf(stderr, " low (%.1f).\n", gstat.avg_comp_gene_len);
+    fprintf(stderr, "Double check translation table or check for");
+    fprintf(stderr, " pseudogenes/gene decay.\n\n");
+  }
 }
 
 /******************************************************************************

@@ -355,3 +355,46 @@ int copy_standard_input_to_file(char *path, int quiet) {
   }
   return 0;
 }
+
+/* Open files and set file pointers.  Exit if any files throw an error. */
+void open_files(char *input_file, char *output_file, char *start_file,
+                char *amino_file, char *nuc_file, char *summ_file,
+                FILE **input_ptr, FILE **output_ptr, FILE **start_ptr,
+                FILE **amino_ptr, FILE **nuc_ptr, FILE **summ_ptr) {
+  if(input_file[0] != '\0') {
+    *input_ptr = fopen(input_file, "r");
+    if(*input_ptr == NULL) { 
+      perror("\nError: can't open input file."); exit(7);
+    }
+  }
+  if(output_file[0] != '\0') {
+    *output_ptr = fopen(output_file, "w");
+    if(*output_ptr == NULL) {
+      perror("\nError: can't open output file."); exit(8);
+    }
+  }
+  if(start_file[0] != '\0') {
+    *start_ptr = fopen(start_file, "w");
+    if(*start_ptr == NULL) {
+      perror("\nError: can't open start file."); exit(8);
+    }
+  }
+  if(amino_file[0] != '\0') {
+    *amino_ptr = fopen(amino_file, "w");
+    if(*amino_ptr == NULL) {
+      perror("\nError: can't open translation file."); exit(8);
+    }
+  }
+  if(nuc_file[0] != '\0') {
+    *nuc_ptr = fopen(nuc_file, "w");
+    if(*nuc_ptr == NULL) {
+      perror("\nError: can't open gene nucleotide file."); exit(8);
+    }
+  }
+  if(summ_file[0] != '\0') {
+    *summ_ptr = fopen(summ_file, "w");
+    if(*summ_ptr == NULL) {
+      perror("\nError: can't open summary file."); exit(8);
+    }
+  }
+}

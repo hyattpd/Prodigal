@@ -44,6 +44,49 @@ int write_training_file(char *fn, struct _training *tinf) {
   return 0;
 }
 
+/* Build the training set using the supplied genetic code */
+void build_training_set(struct _node *nodes, struct _training *tinf, struct
+                        _summary *statistics, unsigned char *seq, unsigned
+                        char *rseq, unsigned char *useq, int slen, int
+                        *num_node, int closed, int cross_gaps) {
+
+    int nn = 0, ipath = 0;
+
+    /***********************************************************************
+      Find all the potential starts and stops, sort them, and create a 
+      comprehensive list of nodes for dynamic programming.
+    ***********************************************************************/
+    if(*num_node > 0) zero_nodes(nodes, *num_node);
+    nn = add_nodes(seq, rseq, useq, slen, nodes, closed, cross_gaps,
+                   tinf->trans_table);
+    *num_node = nn;
+    qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
+
+    /***********************************************************************
+      Scan all the ORFS looking for a potential GC bias in a particular
+      codon position.  This information will be used to acquire a good
+      initial set of genes.
+    ***********************************************************************/
+    record_gc_frame_bias(tinf, seq, slen, nodes, nn);
+
+    /***********************************************************************
+      Do an initial dynamic programming routine with just the GC frame
+      bias used as a scoring function.  This will get an initial set of 
+      genes to train on. 
+    ***********************************************************************/
+    record_overlapping_starts(nodes, nn, tinf->st_wt, 0);
+    ipath = dprog(nodes, nn, tinf, 0);
+
+    /***********************************************************************
+      Gather dicodon statistics for the training set.  Score the entire set
+      of nodes.                               
+    ***********************************************************************/
+    calc_dicodon_gene(tinf, seq, rseq, slen, nodes, ipath);
+    raw_coding_score(seq, rseq, slen, nodes, nn, tinf->trans_table, tinf->gc,
+                     tinf->gene_dc);
+    calc_avg_training_gene_lens(nodes, ipath, statistics);
+}
+
 /* Records the GC frame bias from the node GC statistics */
 void record_gc_frame_bias(struct _training *tinf, unsigned char *seq, int slen,
                           struct _node *nod, int nn) {

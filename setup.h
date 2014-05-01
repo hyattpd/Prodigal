@@ -46,5 +46,7 @@ void parse_arguments(int, char **, char *, char *, char *, char *, char *,
 void header(int);
 int detect_input_and_handle_windows_stdin(int, int, char *);
 int copy_standard_input_to_file(char *, int);
+void open_files(char *, char *, char *, char *, char *, char *, FILE **,
+                FILE **, FILE **, FILE **, FILE **, FILE **);
 
 #endif

@@ -41,7 +41,7 @@
 
 int add_nodes(unsigned char *, unsigned char *, unsigned char *, int, 
               struct _node *, int, int, int);
-int zero_nodes(struct _node *, int);
+void zero_nodes(struct _node *, int);
 void reset_node_scores(struct _node *, int);
 int compare_nodes(const void *, const void *);
 int stopcmp_nodes(const void *, const void *);

@@ -85,42 +85,9 @@ int main(int argc, char *argv[]) {
   }
 
   /* Check i/o files (if specified) and prepare them for reading/writing */
-  if(input_file[0] != '\0') {
-    input_ptr = fopen(input_file, "r");
-    if(input_ptr == NULL) { 
-      perror("\nError: can't open input file."); exit(7); 
-    }
-  }
-  if(output_file[0] != '\0') {
-    output_ptr = fopen(output_file, "w");
-    if(output_ptr == NULL) {
-      perror("\nError: can't open output file."); exit(8);
-    }
-  }
-  if(start_file[0] != '\0') {
-    start_ptr = fopen(start_file, "w");
-    if(start_ptr == NULL) {
-      perror("\nError: can't open start file."); exit(8);
-    }
-  }
-  if(amino_file[0] != '\0') {
-    amino_ptr = fopen(amino_file, "w");
-    if(amino_ptr == NULL) {
-      perror("\nError: can't open translation file."); exit(8);
-    }
-  }
-  if(nuc_file[0] != '\0') {
-    nuc_ptr = fopen(nuc_file, "w");
-    if(nuc_ptr == NULL) {
-      perror("\nError: can't open gene nucleotide file."); exit(8);
-    }
-  }
-  if(summ_file[0] != '\0') {
-    summ_ptr = fopen(summ_file, "w");
-    if(summ_ptr == NULL) {
-      perror("\nError: can't open summary file."); exit(8);
-    }
-  }
+  open_files(input_file, output_file, start_file, amino_file, nuc_file,
+             summ_file, &input_ptr, &output_ptr, &start_ptr, &amino_ptr,
+             &nuc_ptr, &summ_ptr);
 
   /***************************************************************************
     Single Genome Training:  Read in the sequence(s) and perform the
@@ -135,66 +102,30 @@ int main(int argc, char *argv[]) {
     if(quiet == 0)
       fprintf(stderr, "%d bp seq created, %.2f pct GC\n", slen, tinf.gc*100.0);
 
-    /***********************************************************************
-      Find all the potential starts and stops, sort them, and create a 
-      comprehensive list of nodes for dynamic programming.
-    ***********************************************************************/
-    if(quiet == 0)
-      fprintf(stderr, "Locating starts/stops using genetic code %d...",
-              tinf.trans_table); 
+    /* Grab more memory if sequence is larger than our default allocation */
     if(slen > max_slen && slen > STT_NOD*8) {
       nodes = (struct _node *)realloc(nodes, 
                                       (int)(slen/8)*sizeof(struct _node));
-      if(nodes == NULL) {
-        fprintf(stderr, "Realloc failed on nodes\n\n");
-        exit(11);
+      if(nodes == NULL) { 
+        perror("Realloc failed on nodes\n\n"); exit(11); 
       }
       max_slen = slen;
     }
-    nn = add_nodes(seq, rseq, useq, slen, nodes, closed, cross_gaps,
-                   tinf.trans_table);
-    qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
-    if(quiet == 0) fprintf(stderr, "%d nodes\n", nn);
 
-    /***********************************************************************
-      Scan all the ORFS looking for a potential GC bias in a particular
-      codon position.  This information will be used to acquire a good
-      initial set of genes.
-    ***********************************************************************/
-    if(quiet == 0) fprintf(stderr, "Examining GC bias in different frames...");
-    record_gc_frame_bias(&tinf, seq, slen, nodes, nn);
+    /* Build the training set and score the coding of every start-stop pair */
     if(quiet == 0)
-      fprintf(stderr, "frame bias scores: %.2f %.2f %.2f\n", tinf.bias[0],
-              tinf.bias[1], tinf.bias[2]); 
-
-    /***********************************************************************
-      Do an initial dynamic programming routine with just the GC frame
-      bias used as a scoring function.  This will get an initial set of 
-      genes to train on. 
-    ***********************************************************************/
-    if(quiet == 0) fprintf(stderr, "Building training set of genes...");
-    record_overlapping_starts(nodes, nn, tinf.st_wt, 0);
-    ipath = dprog(nodes, nn, &tinf, 0);
-    if(quiet == 0) fprintf(stderr, "done.\n");
-
-    /***********************************************************************
-      Gather dicodon statistics for the training set.  Score the entire set
-      of nodes.                               
-    ***********************************************************************/
-    if(quiet == 0) 
-      fprintf(stderr, "Creating coding model and scoring nodes...");
-    calc_dicodon_gene(&tinf, seq, rseq, slen, nodes, ipath);
-    raw_coding_score(seq, rseq, slen, nodes, nn, tinf.trans_table, tinf.gc,
-                     tinf.gene_dc);
-    if(quiet == 0) fprintf(stderr, "done.\n");
-
+      fprintf(stderr, "Building training set using genetic code %d...",
+              tinf.trans_table); 
+    build_training_set(nodes, &tinf, &statistics, seq, rseq, useq, slen, &nn,
+                       closed, cross_gaps);
+    if(quiet == 0) fprintf(stderr, "done!\n");
+    
     /***********************************************************************
       Check average gene length to see if translation table looks good or
       if there is substantial gene decay.  If no genetic code was specified,
       try genetic code 4 to see if it solves the problem.
     ***********************************************************************/
     if(quiet == 0) fprintf(stderr, "Checking average training gene length...");
-    calc_avg_training_gene_lens(nodes, ipath, &statistics);
     gene_len_flag = bad_train_gene_length(statistics); 
     if(gene_len_flag == 0) { /* ok */
       if(quiet == 0) fprintf(stderr, "%.1f, looks ok.\n", 
@@ -202,30 +133,16 @@ int main(int argc, char *argv[]) {
     }
     else if(gene_len_flag == 1) { /* too many partial genes */
       if(quiet == 0) fprintf(stderr, "low but sequence is really drafty.\n");
-      fprintf(stderr, "\nWarning: training sequence is highly fragmented.\n");
-      fprintf(stderr, "You may get better results with the ");
-      fprintf(stderr, "'-m anon' option.\n\n");
+      low_gene_len_warning(gene_len_flag, statistics);
     }
     else if(gene_len_flag == 2) { /* poor avg gene length */
       if(quiet == 0) 
         fprintf(stderr, "%.1f, too low.\n", statistics.avg_comp_gene_len);
       if(genetic_code == -1) {
         if(quiet == 0) fprintf(stderr, "Trying genetic code 4...");
-        nn = zero_nodes(nodes, nn);
-        statistics.num_partial_genes = 0;
-        statistics.num_complete_genes = 0;
-        statistics.avg_comp_gene_len = 0.0;
-        statistics.avg_comp_gene_len = 0.0;
         tinf.trans_table = 4;
-        nn = add_nodes(seq, rseq, useq, slen, nodes, closed, cross_gaps,
-                       tinf.trans_table);
-        qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
-        record_gc_frame_bias(&tinf, seq, slen, nodes, nn);
-        record_overlapping_starts(nodes, nn, tinf.st_wt, 0);
-        ipath = dprog(nodes, nn, &tinf, 0);
-        calc_dicodon_gene(&tinf, seq, rseq, slen, nodes, ipath);
-        raw_coding_score(seq, rseq, slen, nodes, nn, tinf.trans_table, tinf.gc, tinf.gene_dc);
-        calc_avg_training_gene_lens(nodes, ipath, &statistics);
+        build_training_set(nodes, &tinf, &statistics, seq, rseq, useq, slen,
+                           &nn, closed, cross_gaps);
         gene_len_flag = bad_train_gene_length(statistics); 
         if(gene_len_flag < 2) {
           if(quiet == 0) 
@@ -236,27 +153,14 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "still bad, switching back to genetic code 11.\n");
             fprintf(stderr, "Redoing genome with genetic code 11...");
           }
-          nn = zero_nodes(nodes, nn);
-          statistics.num_partial_genes = 0;
-          statistics.num_complete_genes = 0;
-          statistics.avg_comp_gene_len = 0.0;
-          statistics.avg_comp_gene_len = 0.0;
           tinf.trans_table = 11;
-          nn = add_nodes(seq, rseq, useq, slen, nodes, closed, cross_gaps,
-                         tinf.trans_table);
-          qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
-          record_gc_frame_bias(&tinf, seq, slen, nodes, nn);
-          record_overlapping_starts(nodes, nn, tinf.st_wt, 0);
-          ipath = dprog(nodes, nn, &tinf, 0);
-          calc_dicodon_gene(&tinf, seq, rseq, slen, nodes, ipath);
-          raw_coding_score(seq, rseq, slen, nodes, nn, tinf.trans_table, tinf.gc, tinf.gene_dc);
-          calc_avg_training_gene_lens(nodes, ipath, &statistics);
-          gene_len_flag = bad_train_gene_length(statistics); 
+          build_training_set(nodes, &tinf, &statistics, seq, rseq, useq, slen,
+                             &nn, closed, cross_gaps);
           if(quiet == 0) fprintf(stderr, "done.\n");
+          low_gene_len_warning(gene_len_flag, statistics);
         }
       }
-      else {
-      }
+      else { low_gene_len_warning(gene_len_flag, statistics); }
     }
 
     /***********************************************************************

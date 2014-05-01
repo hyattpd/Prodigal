@@ -26,10 +26,15 @@
 #include <string.h>
 #include "datatypes.h"
 #include "node.h"
+#include "dprog.h"
+#include "summary.h"
 
 int write_training_file(char *, struct _training *);
 int read_training_file(char *, struct _training *);
 
+void build_training_set(struct _node *, struct _training *, struct _summary *,
+                        unsigned char *, unsigned char *, unsigned char *, int,
+                        int *, int, int);
 void record_gc_frame_bias(struct _training *, unsigned char *, int, struct 
                           _node *, int);
 void calc_dicodon_gene(struct _training *, unsigned char *, unsigned char *,
