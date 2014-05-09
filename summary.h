@@ -23,6 +23,7 @@
 
 #include <stdio.h>
 #include "node.h"
+#include "gene.h"
 
 #define MIN_AVG_TRAIN_GENE_LEN 600
 #define MIN_AVG_TRAIN_CTG_LEN 3000

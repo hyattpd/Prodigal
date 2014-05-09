@@ -103,13 +103,12 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "%d bp seq created, %.2f pct GC\n", slen, tinf.gc*100.0);
 
     /* Grab more memory if sequence is larger than our default allocation */
-    if(slen > max_slen && slen > STT_NOD*8) {
+    if(slen > STT_NOD*8) {
       nodes = (struct _node *)realloc(nodes, 
                                       (int)(slen/8)*sizeof(struct _node));
       if(nodes == NULL) { 
         perror("Realloc failed on nodes\n\n"); exit(11); 
       }
-      max_slen = slen;
     }
 
     /* Build the training set and score the coding of every start-stop pair */

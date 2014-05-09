@@ -29,8 +29,8 @@
 #include "gene.h"
 #include "anonymous.h"
 
-#define VERSION "2.7.0dv1"
-#define DATE "April, 2014"
+#define VERSION "2.7.0rc1"
+#define DATE "May, 2014"
 
 void version();
 void usage(char *);

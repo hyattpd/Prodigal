@@ -22,7 +22,7 @@
 
 /* Print version number and exit */
 void version() {
-  fprintf(stderr, "\nProdigal V%s: %s\n\n", VERSION, DATE);
+  fprintf(stderr, "\nProdigal v%s: %s\n\n", VERSION, DATE);
   exit(0);
 }
 
