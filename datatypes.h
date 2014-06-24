@@ -86,14 +86,14 @@ struct _summary {
   double avg_contig_len;
   int contig_len_bins[10];
   double avg_contig_gc;
-  int contig_gc_bins[12]; /* <25, 25-30, etc., >75 */
+  int contig_gc_bins[12]; /* <25, 25-30, etc., >=75 */
 
   int num_complete_genes;
   double avg_comp_gene_len;
-  int comp_gene_len_bins[10];
+  int comp_gene_len_bins[26]; /* <200, 200-400, >=5000 */
   double avg_comp_gene_gc;
   int comp_gene_gc_bins[12];
-  int comp_start_bins[5];
+  int comp_start_bins[5]; /* ATG, GTG, TTG, Edge, Nonstandard */
   int comp_stop_bins[4];
   int comp_rbs_nosd_bins[4][4][4096];
 

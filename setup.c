@@ -22,7 +22,7 @@
 
 /* Print version number and exit */
 void version() {
-  fprintf(stderr, "\nProdigal v%s: %s\n\n", VERSION, DATE);
+  printf("\nProdigal v%s: %s\n\n", VERSION, DATE);
   exit(0);
 }
 
@@ -41,54 +41,54 @@ void usage(char *msg) {
 
 /* Print help message and exit */
 void help() {
-  fprintf(stderr, "\nUsage:  prodigal [-a protein_file] [-c] [-d mrna_file]");
-  fprintf(stderr, " [-f out_format]\n");
-  fprintf(stderr, "                 [-g trans_table] [-h] [-i input_file]");
-  fprintf(stderr, " [-m mode] [-n]\n");
-  fprintf(stderr, "                 [-o output_file] [-q] [-s start_file]");
-  fprintf(stderr, " [-t train_file]\n                 [-v] [-w summ_file]\n");
-  fprintf(stderr, "\nGene Modeling Parameters\n\n");
-  fprintf(stderr, "  -m, --mode:           Specify mode (normal, train, or anon).\n");
-  fprintf(stderr, "                          normal:   Single genome, any number of\n");
-  fprintf(stderr, "                                    sequences. (Default)\n");
-  fprintf(stderr, "                          train:    Do only training.  Input should\n");
-  fprintf(stderr, "                                    be multiple FASTA of one or more\n");
-  fprintf(stderr, "                                    closely related genomes.  Output\n");
-  fprintf(stderr, "                                    is a training file.\n");
-  fprintf(stderr, "                          anon:     Anonymous sequences, analyze using\n");
-  fprintf(stderr, "                                    preset training files, ideal for\n");
-  fprintf(stderr, "                                    metagenomic data or single short\n");
-  fprintf(stderr, "                                    sequences.\n");
-  fprintf(stderr, "  -g, --trans_table:    Specify a translation table to use\n");
-  fprintf(stderr, "                          Auto: Tries 11 then 4 (Default)\n");
-  fprintf(stderr, "                          11:   Standard Bacteria/Archaea\n");
-  fprintf(stderr, "                          4:    Mycoplasma/Spiroplasma\n");
-  fprintf(stderr, "                          #:    Other genetic codes 1-25\n");
-  fprintf(stderr, "  -c, --nopartial:      Closed ends.  Do not allow partial genes\n");
-  fprintf(stderr, "                        (genes that run off edges or into gaps.)\n");
-  fprintf(stderr, "  -n, --nogaps:         Do not treat runs of N's as gaps.  This option\n");
-  fprintf(stderr, "                        will build gene models that span runs of N's.\n");
-  fprintf(stderr, "  -t, --training_file:  Read and use the specified training file\n");
-  fprintf(stderr, "                        instead of training on the input sequence(s)\n");
-  fprintf(stderr, "                        (Only usable in normal mode.)\n");
-  fprintf(stderr, "\nInput/Output Parameters\n\n");
-  fprintf(stderr, "  -i, --input_file:     Specify input file (default stdin).\n");
-  fprintf(stderr, "  -o, --output_file:    Specify output file (default stdout).\n");
-  fprintf(stderr, "  -a, --protein_file:   Write protein translations to the named file.\n");
-  fprintf(stderr, "  -d, --mrna_file:      Write nucleotide sequences of genes to the\n");
-  fprintf(stderr, "                        named file.\n");
-  fprintf(stderr, "  -w, --summ_file:      Write summary statistics to the named file.\n");
-  fprintf(stderr, "  -s, --start_file:     Write all potential genes (with scores) to the\n");
-  fprintf(stderr, "                        named file.\n");
-  fprintf(stderr, "  -f, --output_format:  Specify output format (gbk, gff, sqn, or sco).\n");
-  fprintf(stderr, "                          gff:  GFF format (Default)\n");
-  fprintf(stderr, "                          gbk:  Genbank-like format\n");
-  fprintf(stderr, "                          sqn:  Sequin feature table format\n");
-  fprintf(stderr, "                          sco:  Simple coordinate output\n");
-  fprintf(stderr, "  -q, --quiet:          Run quietly (suppress normal stderr output).\n");
-  fprintf(stderr, "\nOther Parameters\n\n");
-  fprintf(stderr, "  -h, --help:     Print help menu and exit.\n");
-  fprintf(stderr, "  -v, --version:  Print version number and exit.\n\n");
+  printf("\nUsage:  prodigal [-a protein_file] [-c] [-d mrna_file]");
+  printf(" [-f out_format]\n");
+  printf("                 [-g trans_table] [-h] [-i input_file]");
+  printf(" [-m mode] [-n]\n");
+  printf("                 [-o output_file] [-q] [-s start_file]");
+  printf(" [-t train_file]\n                 [-v] [-w summ_file]\n");
+  printf("\nGene Modeling Parameters\n\n");
+  printf("  -m, --mode:           Specify mode (normal, train, or anon).\n");
+  printf("                          normal:   Single genome, any number of\n");
+  printf("                                    sequences. (Default)\n");
+  printf("                          train:    Do only training.  Input should\n");
+  printf("                                    be multiple FASTA of one or more\n");
+  printf("                                    closely related genomes.  Output\n");
+  printf("                                    is a training file.\n");
+  printf("                          anon:     Anonymous sequences, analyze using\n");
+  printf("                                    preset training files, ideal for\n");
+  printf("                                    metagenomic data or single short\n");
+  printf("                                    sequences.\n");
+  printf("  -g, --trans_table:    Specify a translation table to use\n");
+  printf("                          Auto: Tries 11 then 4 (Default)\n");
+  printf("                          11:   Standard Bacteria/Archaea\n");
+  printf("                          4:    Mycoplasma/Spiroplasma\n");
+  printf("                          #:    Other genetic codes 1-25\n");
+  printf("  -c, --nopartial:      Closed ends.  Do not allow partial genes\n");
+  printf("                        (genes that run off edges or into gaps.)\n");
+  printf("  -n, --nogaps:         Do not treat runs of N's as gaps.  This option\n");
+  printf("                        will build gene models that span runs of N's.\n");
+  printf("  -t, --training_file:  Read and use the specified training file\n");
+  printf("                        instead of training on the input sequence(s)\n");
+  printf("                        (Only usable in normal mode.)\n");
+  printf("\nInput/Output Parameters\n\n");
+  printf("  -i, --input_file:     Specify input file (default stdin).\n");
+  printf("  -o, --output_file:    Specify output file (default stdout).\n");
+  printf("  -a, --protein_file:   Write protein translations to the named file.\n");
+  printf("  -d, --mrna_file:      Write nucleotide sequences of genes to the\n");
+  printf("                        named file.\n");
+  printf("  -w, --summ_file:      Write summary statistics to the named file.\n");
+  printf("  -s, --start_file:     Write all potential genes (with scores) to the\n");
+  printf("                        named file.\n");
+  printf("  -f, --output_format:  Specify output format (gbk, gff, sqn, or sco).\n");
+  printf("                          gff:  GFF format (Default)\n");
+  printf("                          gbk:  Genbank-like format\n");
+  printf("                          sqn:  Sequin feature table format\n");
+  printf("                          sco:  Simple coordinate output\n");
+  printf("  -q, --quiet:          Run quietly (suppress normal stderr output).\n");
+  printf("\nOther Parameters\n\n");
+  printf("  -h, --help:     Print help menu and exit.\n");
+  printf("  -v, --version:  Print version number and exit.\n\n");
   exit(0);
 }
 
@@ -233,8 +233,8 @@ void parse_arguments(int argc, char **argv, char *input_file, char
       if(argv[i+1][0] == 's') *mode = 0;
       else if(argv[i+1][0] == 'm') *mode = 2; 
       else usage("Invalid procedure specified (should be single or meta).");
-      fprintf(stderr, "Warning: '-p meta' is deprecated.  Should use -m anon ");
-      fprintf(stderr, "instead.\n");
+      fprintf(stderr, "Warning: '-p meta' is deprecated.  Should use ");
+      fprintf(stderr, "'-m anon' instead for metagenomic sequences.\n");
       i++;
     }
     else if(strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--output_format") 

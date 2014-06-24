@@ -371,7 +371,7 @@ int main(int argc, char *argv[]) {
   for(i = 0; i < NUM_PRESET_GENOME; i++) 
     if(presets[i].tinf != NULL) free(presets[i].tinf);
 
-  /* Close all the filehandles and exit */
+  /* Close all the filehandles */
   if(input_ptr != stdin) fclose(input_ptr);
   if(output_ptr != stdout) fclose(output_ptr);
   if(start_ptr != NULL) fclose(start_ptr);
