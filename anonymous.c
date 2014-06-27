@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
     Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
@@ -16,15 +16,16 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*******************************************************************************/
+******************************************************************************/
 
 #include "anonymous.h"
 
-/*******************************************************************************
+/******************************************************************************
   Initialize the preset genome bins with the precalculated training files
   from the model organisms that best represent all of microbial Genbank.  
-*******************************************************************************/
-void initialize_preset_genome_bins(struct _preset_genome_bin *presets) {
+******************************************************************************/
+void initialize_preset_genome_bins(struct _preset_genome_bin *presets)
+{
   initialize_preset_genome_0(presets[0].tinf);
   initialize_preset_genome_1(presets[1].tinf);
   initialize_preset_genome_2(presets[2].tinf);
@@ -107,122 +108,122 @@ void initialize_preset_genome_bins(struct _preset_genome_bin *presets) {
           "B", 57.21, presets[9].tinf->trans_table, presets[9].tinf->uses_sd);
   sprintf(presets[10].desc, "%d|%s|%s|%.1f|%d|%d", 10,
           "Burkholderia_rhizoxinica_HKI_454",
-          "B", 59.70, presets[10].tinf->trans_table, presets[10].tinf->uses_sd);
+          "B",59.70, presets[10].tinf->trans_table, presets[10].tinf->uses_sd);
   sprintf(presets[11].desc, "%d|%s|%s|%.1f|%d|%d", 11,
           "Candidatus_Amoebophilus_asiaticus_5a2",
-          "B", 35.05, presets[11].tinf->trans_table, presets[11].tinf->uses_sd);
+          "B",35.05, presets[11].tinf->trans_table, presets[11].tinf->uses_sd);
   sprintf(presets[12].desc, "%d|%s|%s|%.1f|%d|%d", 12,
           "Candidatus_Korarchaeum_cryptofilum_OPF8",
-          "A", 49.00, presets[12].tinf->trans_table, presets[12].tinf->uses_sd);
+          "A",49.00, presets[12].tinf->trans_table, presets[12].tinf->uses_sd);
   sprintf(presets[13].desc, "%d|%s|%s|%.1f|%d|%d", 13,
           "Catenulispora_acidiphila_DSM_44928",
-          "B", 69.77, presets[13].tinf->trans_table, presets[13].tinf->uses_sd);
+          "B",69.77, presets[13].tinf->trans_table, presets[13].tinf->uses_sd);
   sprintf(presets[14].desc, "%d|%s|%s|%.1f|%d|%d", 14,
           "Cenarchaeum_symbiosum_B",
-          "A", 57.19, presets[14].tinf->trans_table, presets[14].tinf->uses_sd);
+          "A",57.19, presets[14].tinf->trans_table, presets[14].tinf->uses_sd);
   sprintf(presets[15].desc, "%d|%s|%s|%.1f|%d|%d", 15,
           "Chlorobium_phaeobacteroides_BS1",
-          "B", 48.93, presets[15].tinf->trans_table, presets[15].tinf->uses_sd);
+          "B",48.93, presets[15].tinf->trans_table, presets[15].tinf->uses_sd);
   sprintf(presets[16].desc, "%d|%s|%s|%.1f|%d|%d", 16,
           "Chlorobium_tepidum_TLS",
-          "B", 56.53, presets[16].tinf->trans_table, presets[16].tinf->uses_sd);
+          "B",56.53, presets[16].tinf->trans_table, presets[16].tinf->uses_sd);
   sprintf(presets[17].desc, "%d|%s|%s|%.1f|%d|%d", 17,
           "Desulfotomaculum_acetoxidans_DSM_771",
-          "B", 41.55, presets[17].tinf->trans_table, presets[17].tinf->uses_sd);
+          "B",41.55, presets[17].tinf->trans_table, presets[17].tinf->uses_sd);
   sprintf(presets[18].desc, "%d|%s|%s|%.1f|%d|%d", 18,
           "Desulfurococcus_kamchatkensis_1221n",
-          "B", 45.34, presets[18].tinf->trans_table, presets[18].tinf->uses_sd);
+          "B",45.34, presets[18].tinf->trans_table, presets[18].tinf->uses_sd);
   sprintf(presets[19].desc, "%d|%s|%s|%.1f|%d|%d", 19,
           "Erythrobacter_litoralis_HTCC2594",
-          "B", 63.07, presets[19].tinf->trans_table, presets[19].tinf->uses_sd);
+          "B",63.07, presets[19].tinf->trans_table, presets[19].tinf->uses_sd);
   sprintf(presets[20].desc, "%d|%s|%s|%.1f|%d|%d", 20,
           "Escherichia_coli_UMN026",
-          "B", 50.72, presets[20].tinf->trans_table, presets[20].tinf->uses_sd);
+          "B",50.72, presets[20].tinf->trans_table, presets[20].tinf->uses_sd);
   sprintf(presets[21].desc, "%d|%s|%s|%.1f|%d|%d", 21,
           "Haloquadratum_walsbyi_DSM_16790",
-          "A", 47.86, presets[21].tinf->trans_table, presets[21].tinf->uses_sd);
+          "A",47.86, presets[21].tinf->trans_table, presets[21].tinf->uses_sd);
   sprintf(presets[22].desc, "%d|%s|%s|%.1f|%d|%d", 22,
           "Halorubrum_lacusprofundi_ATCC_49239",
-          "A", 57.14, presets[22].tinf->trans_table, presets[22].tinf->uses_sd);
+          "A",57.14, presets[22].tinf->trans_table, presets[22].tinf->uses_sd);
   sprintf(presets[23].desc, "%d|%s|%s|%.1f|%d|%d", 23,
           "Hyperthermus_butylicus_DSM_5456",
-          "A", 53.74, presets[23].tinf->trans_table, presets[23].tinf->uses_sd);
+          "A",53.74, presets[23].tinf->trans_table, presets[23].tinf->uses_sd);
   sprintf(presets[24].desc, "%d|%s|%s|%.1f|%d|%d", 24,
           "Ignisphaera_aggregans_DSM_17230",
-          "A", 35.69, presets[24].tinf->trans_table, presets[24].tinf->uses_sd);
+          "A",35.69, presets[24].tinf->trans_table, presets[24].tinf->uses_sd);
   sprintf(presets[25].desc, "%d|%s|%s|%.1f|%d|%d", 25,
           "Marinobacter_aquaeolei_VT8",
-          "B", 57.27, presets[25].tinf->trans_table, presets[25].tinf->uses_sd);
+          "B",57.27, presets[25].tinf->trans_table, presets[25].tinf->uses_sd);
   sprintf(presets[26].desc, "%d|%s|%s|%.1f|%d|%d", 26,
           "Methanopyrus_kandleri_AV19",
-          "A", 61.16, presets[26].tinf->trans_table, presets[26].tinf->uses_sd);
+          "A",61.16, presets[26].tinf->trans_table, presets[26].tinf->uses_sd);
   sprintf(presets[27].desc, "%d|%s|%s|%.1f|%d|%d", 27,
           "Methanosphaerula_palustris_E1_9c",
-          "A", 55.35, presets[27].tinf->trans_table, presets[27].tinf->uses_sd);
+          "A",55.35, presets[27].tinf->trans_table, presets[27].tinf->uses_sd);
   sprintf(presets[28].desc, "%d|%s|%s|%.1f|%d|%d", 28,
           "Methanothermobacter_thermautotrophicus_Delta_H",
-          "B", 49.54, presets[28].tinf->trans_table, presets[28].tinf->uses_sd);
+          "B",49.54, presets[28].tinf->trans_table, presets[28].tinf->uses_sd);
   sprintf(presets[29].desc, "%d|%s|%s|%.1f|%d|%d", 29,
           "Methylacidiphilum_infernorum_V4",
-          "B", 45.48, presets[29].tinf->trans_table, presets[29].tinf->uses_sd);
+          "B",45.48, presets[29].tinf->trans_table, presets[29].tinf->uses_sd);
   sprintf(presets[30].desc, "%d|%s|%s|%.1f|%d|%d", 30,
           "Mycobacterium_leprae_TN",
-          "B", 57.80, presets[30].tinf->trans_table, presets[30].tinf->uses_sd);
+          "B",57.80, presets[30].tinf->trans_table, presets[30].tinf->uses_sd);
   sprintf(presets[31].desc, "%d|%s|%s|%.1f|%d|%d", 31,
           "Natrialba_magadii_ATCC_43099",
-          "A", 61.42, presets[31].tinf->trans_table, presets[31].tinf->uses_sd);
+          "A",61.42, presets[31].tinf->trans_table, presets[31].tinf->uses_sd);
   sprintf(presets[32].desc, "%d|%s|%s|%.1f|%d|%d", 32,
           "Orientia_tsutsugamushi_Boryong",
-          "B", 30.53, presets[32].tinf->trans_table, presets[32].tinf->uses_sd);
+          "B",30.53, presets[32].tinf->trans_table, presets[32].tinf->uses_sd);
   sprintf(presets[33].desc, "%d|%s|%s|%.1f|%d|%d", 33,
           "Pelotomaculum_thermopropionicum_SI",
-          "B", 52.96, presets[33].tinf->trans_table, presets[33].tinf->uses_sd);
+          "B",52.96, presets[33].tinf->trans_table, presets[33].tinf->uses_sd);
   sprintf(presets[34].desc, "%d|%s|%s|%.1f|%d|%d", 34,
           "Prochlorococcus_marinus_MIT_9313",
-          "B", 50.74, presets[34].tinf->trans_table, presets[34].tinf->uses_sd);
+          "B",50.74, presets[34].tinf->trans_table, presets[34].tinf->uses_sd);
   sprintf(presets[35].desc, "%d|%s|%s|%.1f|%d|%d", 35,
           "Pyrobaculum_aerophilum_IM2",
-          "A", 51.36, presets[35].tinf->trans_table, presets[35].tinf->uses_sd);
+          "A",51.36, presets[35].tinf->trans_table, presets[35].tinf->uses_sd);
   sprintf(presets[36].desc, "%d|%s|%s|%.1f|%d|%d", 36,
           "Ralstonia_solanacearum_PSI07",
-          "B", 66.13, presets[36].tinf->trans_table, presets[36].tinf->uses_sd);
+          "B",66.13, presets[36].tinf->trans_table, presets[36].tinf->uses_sd);
   sprintf(presets[37].desc, "%d|%s|%s|%.1f|%d|%d", 37,
           "Rhizobium_NGR234",
-          "B", 58.49, presets[37].tinf->trans_table, presets[37].tinf->uses_sd);
+          "B",58.49, presets[37].tinf->trans_table, presets[37].tinf->uses_sd);
   sprintf(presets[38].desc, "%d|%s|%s|%.1f|%d|%d", 38,
           "Rhodococcus_jostii_RHA1",
-          "B", 65.05, presets[38].tinf->trans_table, presets[38].tinf->uses_sd);
+          "B",65.05, presets[38].tinf->trans_table, presets[38].tinf->uses_sd);
   sprintf(presets[39].desc, "%d|%s|%s|%.1f|%d|%d", 39,
           "Rickettsia_conorii_Malish_7",
-          "B", 32.44, presets[39].tinf->trans_table, presets[39].tinf->uses_sd);
+          "B",32.44, presets[39].tinf->trans_table, presets[39].tinf->uses_sd);
   sprintf(presets[40].desc, "%d|%s|%s|%.1f|%d|%d", 40,
           "Rothia_dentocariosa_ATCC_17931",
-          "B", 53.69, presets[40].tinf->trans_table, presets[40].tinf->uses_sd);
+          "B",53.69, presets[40].tinf->trans_table, presets[40].tinf->uses_sd);
   sprintf(presets[41].desc, "%d|%s|%s|%.1f|%d|%d", 41,
           "Shigella_dysenteriae_Sd197",
-          "B", 51.25, presets[41].tinf->trans_table, presets[41].tinf->uses_sd);
+          "B",51.25, presets[41].tinf->trans_table, presets[41].tinf->uses_sd);
   sprintf(presets[42].desc, "%d|%s|%s|%.1f|%d|%d", 42,
           "Synechococcus_CC9605",
-          "B", 59.22, presets[42].tinf->trans_table, presets[42].tinf->uses_sd);
+          "B",59.22, presets[42].tinf->trans_table, presets[42].tinf->uses_sd);
   sprintf(presets[43].desc, "%d|%s|%s|%.1f|%d|%d", 43,
           "Synechococcus_JA_2_3B_a_2_13_",
-          "B", 58.45, presets[43].tinf->trans_table, presets[43].tinf->uses_sd);
+          "B",58.45, presets[43].tinf->trans_table, presets[43].tinf->uses_sd);
   sprintf(presets[44].desc, "%d|%s|%s|%.1f|%d|%d", 44,
           "Thermoplasma_volcanium_GSS1",
-          "A", 39.92, presets[44].tinf->trans_table, presets[44].tinf->uses_sd);
+          "A",39.92, presets[44].tinf->trans_table, presets[44].tinf->uses_sd);
   sprintf(presets[45].desc, "%d|%s|%s|%.1f|%d|%d", 45,
           "Treponema_pallidum_Nichols",
-          "B", 52.77, presets[45].tinf->trans_table, presets[45].tinf->uses_sd);
+          "B",52.77, presets[45].tinf->trans_table, presets[45].tinf->uses_sd);
   sprintf(presets[46].desc, "%d|%s|%s|%.1f|%d|%d", 46,
           "Tropheryma_whipplei_TW08_27",
-          "B", 46.31, presets[46].tinf->trans_table, presets[46].tinf->uses_sd);
+          "B",46.31, presets[46].tinf->trans_table, presets[46].tinf->uses_sd);
   sprintf(presets[47].desc, "%d|%s|%s|%.1f|%d|%d", 47,
           "Xenorhabdus_nematophila_ATCC_19061",
-          "B", 44.15, presets[47].tinf->trans_table, presets[47].tinf->uses_sd);
+          "B",44.15, presets[47].tinf->trans_table, presets[47].tinf->uses_sd);
   sprintf(presets[48].desc, "%d|%s|%s|%.1f|%d|%d", 48,
           "Xylella_fastidiosa_Temecula1",
-          "B", 51.78, presets[48].tinf->trans_table, presets[48].tinf->uses_sd);
+          "B",51.78, presets[48].tinf->trans_table, presets[48].tinf->uses_sd);
   sprintf(presets[49].desc, "%d|%s|%s|%.1f|%d|%d", 49,
           "_Nostoc_azollae__0708",
-          "B", 38.45, presets[49].tinf->trans_table, presets[49].tinf->uses_sd);
+          "B",38.45, presets[49].tinf->trans_table, presets[49].tinf->uses_sd);
 }

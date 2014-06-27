@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
     Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
@@ -16,12 +16,13 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*******************************************************************************/
+******************************************************************************/
 
 #include "setup.h"
 #include "summary.h"
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
 
   int slen, nn, ng, i, ipath, outfmt, max_phase;
   int closed, num_seq, cross_gaps, quiet;
@@ -36,14 +37,14 @@ int main(int argc, char *argv[]) {
   char cur_header[MAX_LINE], new_header[MAX_LINE], short_header[MAX_LINE];
   FILE *input_ptr, *output_ptr, *start_ptr, *amino_ptr, *nuc_ptr, *summ_ptr;
   struct _node *nodes;
-  struct _gene *genes;
+  struct _gene *genes, anon_genes[NUM_PRESET_GENOME];
   struct _training tinf;
   struct _preset_genome_bin presets[NUM_PRESET_GENOME];
   struct _summary statistics;
 
   /* Allocate memory for data structures */
   if(initialize_data_structures(&seq, &rseq, &useq, &nodes, &genes, &tinf, 
-     presets, &statistics) == -1) {
+     presets, anon_genes, &statistics) == -1) {
     perror("\nError: Dynamic memory allocation failed."); exit(1);
   }
 
@@ -173,7 +174,8 @@ int main(int argc, char *argv[]) {
     train_starts_sd(seq, rseq, slen, nodes, nn, &tinf);
     determine_sd_usage(&tinf);
     if(force_nonsd == 1) tinf.uses_sd = 0;
-    if(tinf.uses_sd == 0) train_starts_nonsd(seq, rseq, slen, nodes, nn, &tinf);
+    if(tinf.uses_sd == 0)
+      train_starts_nonsd(seq, rseq, slen, nodes, nn, &tinf);
     if(quiet == 0) fprintf(stderr, "done.\n");
  
     /* If training specified, write the training file and exit. */
@@ -265,8 +267,8 @@ int main(int argc, char *argv[]) {
       ***********************************************************************/
       score_nodes(seq, rseq, slen, nodes, nn, &tinf, closed, mode);
       if(start_ptr != NULL) 
-        write_start_file(start_ptr, nodes, nn, &tinf, num_seq, slen, mode, NULL,
-                         VERSION, cur_header);
+        write_start_file(start_ptr, nodes, nn, &tinf, num_seq, slen, mode,
+                         NULL, VERSION, cur_header);
       record_overlapping_starts(nodes, nn, tinf.st_wt, 1);
       ipath = dprog(nodes, nn, &tinf, 1);
       eliminate_bad_genes(nodes, ipath, &tinf);
@@ -335,8 +337,8 @@ int main(int argc, char *argv[]) {
 
       /* Output the genes */
       print_genes(output_ptr, genes, ng, nodes, slen, outfmt, num_seq, mode,
-                  presets[max_phase].desc, presets[max_phase].tinf, cur_header, 
-                  short_header, VERSION);
+                  presets[max_phase].desc, presets[max_phase].tinf,
+                  cur_header, short_header, VERSION);
       fflush(output_ptr);
       if(amino_ptr != NULL)
         write_translations(amino_ptr, genes, ng, nodes, seq, rseq, useq, slen,

@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
     Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
@@ -16,7 +16,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*******************************************************************************/
+******************************************************************************/
 
 #ifndef _GENE_H
 #define _GENE_H
@@ -27,15 +27,6 @@
 #include "dprog.h"
 
 #define MAX_GENES 30000
-
-struct _gene {
-  int begin;               /* Left end of the gene */
-  int end;                 /* Right end of the gene */
-  int start_ndx;           /* Index to the start node in the nodes file */
-  int stop_ndx;            /* Index to the stop node in the nodes file */
-  char gene_data[500];     /* String containing gene information */
-  char score_data[500];    /* String containing scoring information */
-};
 
 int add_genes(struct _gene *, struct _node *, int);
 void record_gene_data(struct _gene *, int, struct _node *, struct _training *,

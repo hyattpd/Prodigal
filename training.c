@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
     Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
@@ -16,12 +16,13 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*******************************************************************************/
+******************************************************************************/
 
 #include "training.h"
 
 /* Reads a training file to use for gene prediction */
-int read_training_file(char *fn, struct _training *tinf) {
+int read_training_file(char *fn, struct _training *tinf)
+{
   size_t rv;
   FILE *fh;
   fh = fopen(fn, "rb");
@@ -33,7 +34,8 @@ int read_training_file(char *fn, struct _training *tinf) {
 }
 
 /* Writes a training file to use for a later run of gene prediction */
-int write_training_file(char *fn, struct _training *tinf) {
+int write_training_file(char *fn, struct _training *tinf)
+{
   size_t rv;
   FILE *fh;
   fh = fopen(fn, "wb");
@@ -48,8 +50,8 @@ int write_training_file(char *fn, struct _training *tinf) {
 void build_training_set(struct _node *nodes, struct _training *tinf, struct
                         _summary *statistics, unsigned char *seq, unsigned
                         char *rseq, unsigned char *useq, int slen, int
-                        *num_node, int closed, int cross_gaps) {
-
+                        *num_node, int closed, int cross_gaps)
+{
     int nn = 0, ipath = 0;
 
     /***********************************************************************
@@ -89,7 +91,8 @@ void build_training_set(struct _node *nodes, struct _training *tinf, struct
 
 /* Records the GC frame bias from the node GC statistics */
 void record_gc_frame_bias(struct _training *tinf, unsigned char *seq, int slen,
-                          struct _node *nod, int nn) {
+                          struct _node *nod, int nn)
+{
   int i, len, *gc_frame;
   double tot;
 
@@ -101,21 +104,23 @@ void record_gc_frame_bias(struct _training *tinf, unsigned char *seq, int slen,
   for(i = 0; i < nn; i++) {
     if(nod[i].type != STOP) {
       len = abs(nod[i].stop_val-nod[i].ndx)+1;
-      tinf->bias[nod[i].gc_bias]+= (nod[i].gc_score[nod[i].gc_bias]*len)/1000.0;
+      tinf->bias[nod[i].gc_bias] +=
+        (nod[i].gc_score[nod[i].gc_bias]*len)/1000.0;
     }
   }
   tot = tinf->bias[0] + tinf->bias[1] + tinf->bias[2];
   for(i = 0; i < 3; i++) tinf->bias[i] *= (3.0/tot);
 };
 
-/*******************************************************************************
+/******************************************************************************
   Simple routine that calculates the dicodon frequency in genes and in the
   background, and then stores the log likelihood of each 6-mer relative to the
   background.
-*******************************************************************************/
+******************************************************************************/
 
 void calc_dicodon_gene(struct _training *tinf, unsigned char *seq, unsigned
-                       char *rseq, int slen, struct _node *nod, int dbeg) {
+                       char *rseq, int slen, struct _node *nod, int dbeg)
+{
   int i, path, counts[4096], glob = 0;
   int left, right, in_gene;
   double prob[4096], bg[4096];
@@ -143,7 +148,10 @@ void calc_dicodon_gene(struct _training *tinf, unsigned char *seq, unsigned
     }
     if(in_gene == 1 && nod[path].strand == 1 && nod[path].type != STOP) {
       left = nod[path].ndx;
-      for(i = left; i < right-5; i+=3) { counts[mer_ndx(6, seq, i)]++; glob++; }
+      for(i = left; i < right-5; i+=3) { 
+        counts[mer_ndx(6, seq, i)]++; 
+        glob++; 
+      }
       in_gene = 0;
     }
     path = nod[path].traceb;
@@ -158,14 +166,15 @@ void calc_dicodon_gene(struct _training *tinf, unsigned char *seq, unsigned
   }
 }
 
-/*******************************************************************************
+/******************************************************************************
   Iterative Algorithm to train starts.  It begins with all the highest coding
   starts in the model, scans for RBS/ATG-GTG-TTG usage, then starts moving
   starts around attempting to match these discoveries.  This start trainer is
   for Shine-Dalgarno motifs only.
-*******************************************************************************/
+******************************************************************************/
 void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
-                  struct _node *nod, int nn, struct _training *tinf) {
+                  struct _node *nod, int nn, struct _training *tinf)
+{
   int i, j, fr, rbs[3], type[3], bndx[3], max_rb;
   double sum, wt, rbg[28], rreal[28], best[3], sthresh = 35.0;
   double tbg[3], treal[3];
@@ -231,8 +240,8 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
         if(tinf->rbs_wt[nod[j].rbs[0]] > tinf->rbs_wt[nod[j].rbs[1]]+1.0 ||
            nod[j].rbs[1] == 0)
           max_rb = nod[j].rbs[0];
-        else if(tinf->rbs_wt[nod[j].rbs[0]] < tinf->rbs_wt[nod[j].rbs[1]]-1.0 ||
-                nod[j].rbs[0] == 0)
+        else if(tinf->rbs_wt[nod[j].rbs[0]] < tinf->rbs_wt[nod[j].rbs[1]]-1.0
+                || nod[j].rbs[0] == 0)
           max_rb = nod[j].rbs[1];
         else max_rb = (int)dmax(nod[j].rbs[0], nod[j].rbs[1]);
         if(nod[j].cscore + wt*tinf->rbs_wt[max_rb] +
@@ -266,8 +275,8 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
         if(tinf->rbs_wt[nod[j].rbs[0]] > tinf->rbs_wt[nod[j].rbs[1]]+1.0 ||
            nod[j].rbs[1] == 0)
           max_rb = nod[j].rbs[0];
-        else if(tinf->rbs_wt[nod[j].rbs[0]] < tinf->rbs_wt[nod[j].rbs[1]]-1.0 ||
-           nod[j].rbs[0] == 0)
+        else if(tinf->rbs_wt[nod[j].rbs[0]] < tinf->rbs_wt[nod[j].rbs[1]]-1.0
+           || nod[j].rbs[0] == 0)
           max_rb = nod[j].rbs[1];
         else max_rb = (int)dmax(nod[j].rbs[0], nod[j].rbs[1]);
         if(nod[j].cscore + wt*tinf->rbs_wt[max_rb] +
@@ -318,7 +327,8 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
         tinf->ups_comp[i][j] /= sum;
         if(tinf->gc > 0.1 && tinf->gc < 0.9) {
           if(j == 0 || j == 3)
-            tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/(1.0-tinf->gc));
+            tinf->ups_comp[i][j] = 
+              log(tinf->ups_comp[i][j]*2.0/(1.0-tinf->gc));
           else
             tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/tinf->gc);
         }
@@ -353,18 +363,22 @@ sum = 0.0;
 for(i = 0; i < 28; i++) { fprintf(stderr, "%f ", rreal[i]); sum+= rreal[i]; }
 fprintf(stderr, "sum is %f\n", sum);
 fprintf(stderr, "\n\nUPS COMP: ");
-for(i = 0; i < 32; i++) { fprintf(stderr, "%d", i); for(j = 0; j < 4; j++) { fprintf(stderr, "\t%.2f", tinf->ups_comp[i][j]); } fprintf(stderr, "\n"); } 
+for(i = 0; i < 32; i++) 
+{ fprintf(stderr, "%d", i); 
+for(j = 0; j < 4; j++) { fprintf(stderr, "\t%.2f", tinf->ups_comp[i][j]); }
+ fprintf(stderr, "\n"); } 
 exit(0); */
 }
 
-/*******************************************************************************
+/******************************************************************************
   Iterative Algorithm to train starts.  It begins with all the highest coding
   starts in the model, scans for RBS/ATG-GTG-TTG usage, then starts moving
   starts around attempting to match these discoveries.  Unlike the SD
   algorithm, it allows for any popular motif to be discovered.
-*******************************************************************************/
+******************************************************************************/
 void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
-                  struct _node *nod, int nn, struct _training *tinf) {
+                  struct _node *nod, int nn, struct _training *tinf)
+{
   int i, j, k, l, fr, bndx[3], mgood[4][4][4096], stage;
   double sum, ngenes, wt = tinf->st_wt, best[3], sthresh = 35.0;
   double tbg[3], treal[3];
@@ -527,7 +541,8 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
         tinf->ups_comp[i][j] /= sum;
         if(tinf->gc > 0.1 && tinf->gc < 0.9) {
           if(j == 0 || j == 3)
-            tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/(1.0-tinf->gc));
+            tinf->ups_comp[i][j] =
+              log(tinf->ups_comp[i][j]*2.0/(1.0-tinf->gc));
           else
             tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/tinf->gc);
         }
@@ -550,7 +565,10 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
   }
 
 /* fprintf(stderr, "\n\nUPS COMP: ");
-for(i = 0; i < 32; i++) { fprintf(stderr, "%d", i); for(j = 0; j < 4; j++) { fprintf(stderr, "\t%.2f", tinf->ups_comp[i][j]); } fprintf(stderr, "\n"); }  exit(0);
+for(i = 0; i < 32; i++) { 
+fprintf(stderr, "%d", i); for(j = 0; j < 4; j++) { 
+fprintf(stderr, "\t%.2f", tinf->ups_comp[i][j]); } fprintf(stderr, "\n"); }
+exit(0);
 */
 /* motif dump, keeping it in since it can be useful
 for(j = 0; j < 4096; j++) {
@@ -572,13 +590,14 @@ exit(0);
 
 }
 
-/*******************************************************************************
+/******************************************************************************
   For a given start, record the base composition of the upstream region at
   positions -1 and -2 and -15 to -44.  This will be used to supplement the
   SD (or other) motif finder with additional information.
-*******************************************************************************/
+******************************************************************************/
 void count_upstream_composition(unsigned char *seq, int slen, int strand,
-                                int pos, struct _training *tinf) {
+                                int pos, struct _training *tinf)
+{
   int i, start, count = 0;
   if(strand == 1) start = pos;
   else start = slen-1-pos;
@@ -590,16 +609,17 @@ void count_upstream_composition(unsigned char *seq, int slen, int strand,
   }
 }
 
-/*******************************************************************************
+/******************************************************************************
   Update the motif counts from a putative "real" start.  This is done in three
   stages.  In stage 0, all motifs sizes 3-6bp in the region with spacer 3-15bp
   are counted.  In stage 1, only the best motif and all its subsets are
   counted (e.g. for AGGAG, we would count AGGAG, AGGA, GGAG, AGG, GGA, and
   GAG).  In stage 2, only the best single motif is counted.
-*******************************************************************************/
+******************************************************************************/
 void update_motif_counts(double mcnt[4][4][4096], double *zero, unsigned char
-                         *seq, unsigned char *rseq, int slen, struct _node *nod,
-                         int stage) {
+                         *seq, unsigned char *rseq, int slen,
+                         struct _node *nod, int stage)
+{
   int i, j, k, start, spacendx;
   unsigned char *wseq;
   struct _motif *mot = &(nod->mot);
@@ -646,7 +666,7 @@ void update_motif_counts(double mcnt[4][4][4096], double *zero, unsigned char
   else if(stage == 2) mcnt[mot->len-3][mot->spacendx][mot->ndx] += 1.0;
 }
 
-/*******************************************************************************
+/******************************************************************************
   In addition to log likelihood, we also require a motif to actually be
   present a good portion of the time in an absolute sense across the genome.
   The coverage map is just a numerical map of whether or not to accept a
@@ -655,9 +675,10 @@ void update_motif_counts(double mcnt[4][4][4096], double *zero, unsigned char
   in at least 20% of the total genes.  In the final stage of iterative start
   training, all motifs are labeled good.  0 = bad, 1 = good, 2 = good
   w/mismatch.
-*******************************************************************************/
+******************************************************************************/
 void build_coverage_map(double real[4][4][4096], int good[4][4][4096], double
-                        ng, int stage) {
+                        ng, int stage)
+{
   int i, j, k, l, tmp, decomp[3];
   double thresh = 0.2;
 
@@ -666,7 +687,9 @@ void build_coverage_map(double real[4][4][4096], int good[4][4][4096], double
 
   /* 3-base motifs */
   for(i = 0; i < 4; i++) for(j = 0; j < 64; j++) {
-    if(real[0][i][j]/ng >= thresh) { for(k = 0; k < 4; k++) good[0][k][j] = 1; }
+    if(real[0][i][j]/ng >= thresh) { 
+      for(k = 0; k < 4; k++) good[0][k][j] = 1; 
+    }
   }
 
   /* 4-base motifs, must contain two valid 3-base motifs */
@@ -718,13 +741,14 @@ for(i = 0; i < 4; i++) for(j = 0; j < 4; j++) for(k = 0; k < 4096; k++) {
 
 }
 
-/*******************************************************************************
+/******************************************************************************
   Examines the results of the SD motif search to determine if this organism
   uses an SD motif or not.  Some motif of 3-6bp has to be good or we set
   uses_sd to 0, which will cause Prodigal to run the non-SD motif finder for
   starts.
-*******************************************************************************/
-void determine_sd_usage(struct _training *tinf) {
+******************************************************************************/
+void determine_sd_usage(struct _training *tinf)
+{
   tinf->uses_sd = 1;
   if(tinf->rbs_wt[0] >= 0.0) tinf->uses_sd = 0;
   if(tinf->rbs_wt[16] < 1.0 && tinf->rbs_wt[13] < 1.0 && tinf->rbs_wt[15] < 1.0

@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
     Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
@@ -16,21 +16,22 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*******************************************************************************/
+******************************************************************************/
 
 #include "sequence.h"
 
-/*******************************************************************************
+/******************************************************************************
   Read the sequence for training purposes.  If we encounter multiple
   sequences, we insert gaps in between each one to allow training on partial
   genes.  When we hit MAX_SEQ bp, we stop and return what we've got so
   far for training.  This routine reads in FASTA, and has a very 'loose' 
   Genbank and Embl parser, but, to be safe, FASTA should generally be 
   preferred.
-*******************************************************************************/
+******************************************************************************/
 
 int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq, 
-                      double *gc, int closed, int *num_seq) {
+                      double *gc, int closed, int *num_seq)
+{
   char line[MAX_LINE+1];
   int hdr = 0, fhdr = 0, bctr = 0, len = 0, wrn = 0;
   int gc_cont = 0;
@@ -87,7 +88,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
       }
     }
     if(len+MAX_LINE >= MAX_SEQ) {
-      fprintf(stderr, "\n\nWarning:  Sequence is long (max %d for training).\n",
+      fprintf(stderr, "\n\nWarning: Sequence is long (max %d for training).\n",
               MAX_SEQ);
       fprintf(stderr, "Training on the first %d bases.\n\n", MAX_SEQ);
       break;
@@ -133,7 +134,8 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
 /* This routine reads in the next sequence in a FASTA/GB/EMBL file */
 
 int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
-                   int *sctr, double *gc, char *cur_hdr, char *new_hdr) {
+                   int *sctr, double *gc, char *cur_hdr, char *new_hdr)
+{
   char line[MAX_LINE+1];
   int reading_seq = 0, genbank_end = 0, bctr = 0, len = 0, wrn = 0;
   int gc_cont = 0;
@@ -220,7 +222,8 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
 }
 
 /* Takes first word of header */
-void calc_short_header(char *header, char *short_header, int sctr) {
+void calc_short_header(char *header, char *short_header, int sctr)
+{
   int i;
 
   strcpy(short_header, header);
@@ -238,7 +241,8 @@ void calc_short_header(char *header, char *short_header, int sctr) {
 /* Takes rseq and fills it up with the rev complement of seq */
 
 void rcom_seq(unsigned char *seq, unsigned char *rseq, unsigned char *useq, 
-              int len) {
+              int len)
+{
   int i, slen=len*2;
   for(i = 0; i < slen; i++)
     if(test(seq, i) == 0) set(rseq, slen-i-1+(i%2==0?-1:1));
@@ -253,36 +257,42 @@ void rcom_seq(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
 /* Simple routines to say whether or not bases are */
 /* a, c, t, g, starts, stops, etc. */
 
-int is_a(unsigned char *seq, int n) {
+int is_a(unsigned char *seq, int n)
+{
   int ndx = n*2;
   if(test(seq, ndx) == 1 || test(seq, ndx+1) == 1) return 0;
   return 1;
 }
 
-int is_c(unsigned char *seq, int n) {
+int is_c(unsigned char *seq, int n)
+{
   int ndx = n*2;
   if(test(seq, ndx) == 1 || test(seq, ndx+1) == 0) return 0;
   return 1;
 }
 
-int is_g(unsigned char *seq, int n) {
+int is_g(unsigned char *seq, int n)
+{
   int ndx = n*2;
   if(test(seq, ndx) == 0 || test(seq, ndx+1) == 1) return 0;
   return 1;
 }
 
-int is_t(unsigned char *seq, int n) {
+int is_t(unsigned char *seq, int n)
+{
   int ndx = n*2;
   if(test(seq, ndx) == 0 || test(seq, ndx+1) == 0) return 0;
   return 1;
 }
 
-int is_n(unsigned char *useq, int n) {
+int is_n(unsigned char *useq, int n)
+{
   if(test(useq, n) == 0) return 0;
   return 1;
 }
 
-int is_stop(unsigned char *seq, int n, int trans_table) {
+int is_stop(unsigned char *seq, int n, int trans_table)
+{
 
   /* TAG: Not a stop in genetic codes 6, 15, 16, and 22 */
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
@@ -327,7 +337,8 @@ int is_stop(unsigned char *seq, int n, int trans_table) {
 /* Prodigal only supports ATG/GTG/TTG starts as 'standard' possibilities. */
 /* Some genetic codes have other initiation codons listed, but we do not  */
 /* support these. */
-int is_start(unsigned char *seq, int n, int trans_table) {
+int is_start(unsigned char *seq, int n, int trans_table)
+{
 
   /* ATG: Always a start codon */
   if(is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) return 1;
@@ -352,48 +363,56 @@ int is_start(unsigned char *seq, int n, int trans_table) {
   return 0;
 }
 
-int is_atg(unsigned char *seq, int n) {
+int is_atg(unsigned char *seq, int n)
+{
   if(is_a(seq, n) == 0 || is_t(seq, n+1) == 0 || is_g(seq, n+2) == 0) return 0;
   return 1;
 }
 
-int is_gtg(unsigned char *seq, int n) {
+int is_gtg(unsigned char *seq, int n)
+{
   if(is_g(seq, n) == 0 || is_t(seq, n+1) == 0 || is_g(seq, n+2) == 0) return 0;
   return 1;
 }
 
-int is_ttg(unsigned char *seq, int n) {
+int is_ttg(unsigned char *seq, int n)
+{
   if(is_t(seq, n) == 0 || is_t(seq, n+1) == 0 || is_g(seq, n+2) == 0) return 0;
   return 1;
 }
 
-int is_nnn(unsigned char *useq, int n) {
+int is_nnn(unsigned char *useq, int n)
+{
   if(is_n(useq, n) == 0 || is_n(useq, n+1) == 0 || is_n(useq, n+2) == 0) 
     return 0;
   return 1;
 }
 
-int codon_has_n(unsigned char *useq, int n) {
+int codon_has_n(unsigned char *useq, int n)
+{
   if(is_n(useq, n) == 1 || is_n(useq, n+1) == 1 || is_n(useq, n+2) == 1)
     return 1;
   return 0;
 }
 
-int gap_to_left(unsigned char *useq, int n) {
+int gap_to_left(unsigned char *useq, int n)
+{
   if(is_nnn(useq, n-3) == 1 && is_nnn(useq, n-6) == 1) return 1;
   else if(is_n(useq, n-3) == 1 && is_nnn(useq, n-6) == 1 &&
           is_nnn(useq, n-9) == 1) return 1;
   return 0;
 }
 
-int gap_to_right(unsigned char *useq, int n) {
+int gap_to_right(unsigned char *useq, int n)
+{
   if(is_nnn(useq, n+3) == 1 && is_nnn(useq, n+6) == 1) return 1;
   else if(is_n(useq, n+5) == 1 && is_nnn(useq, n+6) == 1 &&
           is_nnn(useq, n+9) == 1) return 1;
   return 0;
 }
 
-int is_gc(unsigned char *seq, int n) {
+int is_gc(unsigned char *seq, int n)
+{
   int ndx = n*2;
   if(test(seq, ndx) != test(seq, ndx+1)) return 1;
   return 0;
@@ -401,7 +420,8 @@ int is_gc(unsigned char *seq, int n) {
 
 /* Returns the probability a random codon should be a stop codon */
 /* based on the GC content and genetic code of the organism */
-double prob_stop(int tt, double gc) {
+double prob_stop(int tt, double gc)
+{
   int i1, i2, i3, i4, i5, i6;
   unsigned char codon[3];
   double cprob, stop_prob = 0.0;
@@ -436,7 +456,8 @@ double prob_stop(int tt, double gc) {
   return stop_prob;
 }
 
-double gc_content(unsigned char *seq, int a, int b) {
+double gc_content(unsigned char *seq, int a, int b)
+{
   double sum = 0.0, gc = 0.0;
   int i;
   for(i = a; i <= b; i++) {
@@ -447,7 +468,8 @@ double gc_content(unsigned char *seq, int a, int b) {
 }
 
 /* Returns a single amino acid for this position */
-char amino(unsigned char *seq, int n, int trans_table, int is_init) {
+char amino(unsigned char *seq, int n, int trans_table, int is_init)
+{
   if(is_stop(seq, n, trans_table) == 1) return '*';
   if(is_start(seq, n, trans_table) == 1 && is_init == 1) return 'M';
   if(is_t(seq, n) == 1 && is_t(seq, n+1) == 1 && is_t(seq, n+2) == 1)
@@ -566,7 +588,8 @@ char amino(unsigned char *seq, int n, int trans_table, int is_init) {
 }
 
 /* Converts an amino acid letter to a numerical value */
-int amino_num(char aa) {
+int amino_num(char aa)
+{
   if(aa == 'a' || aa == 'A') return 0;
   if(aa == 'c' || aa == 'C') return 1;
   if(aa == 'd' || aa == 'D') return 2;
@@ -591,7 +614,8 @@ int amino_num(char aa) {
 }
 
 /* Converts a numerical value to an amino acid letter */
-char amino_letter(int num) {
+char amino_letter(int num)
+{
   if(num == 0) return 'A';
   if(num == 1) return 'C';
   if(num == 2) return 'D';
@@ -617,7 +641,8 @@ char amino_letter(int num) {
 
 /* Returns the corresponding frame on the reverse strand */
 
-int rframe(int fr, int slen) {
+int rframe(int fr, int slen)
+{
   int md = slen%3-1;
   if(md == 0) md = 3;
   return (md-fr);
@@ -625,20 +650,22 @@ int rframe(int fr, int slen) {
 
 /* Simple 3-way max function */
 
-int max_fr(int n1, int n2, int n3) {
+int max_fr(int n1, int n2, int n3)
+{
   if(n1 > n2)
     if(n1 > n3) return 0; else return 2;
   else
     if(n2 > n3) return 1; else return 2;
 }
 
-/*******************************************************************************
+/******************************************************************************
   Creates a GC frame plot for a given sequence.  This is simply a string with 
   the highest GC content frame for a window centered on position for every
   position in the sequence.
-*******************************************************************************/
+******************************************************************************/
 
-int *calc_most_gc_frame(unsigned char *seq, int slen) {
+int *calc_most_gc_frame(unsigned char *seq, int slen)
+{
   int i, j, *fwd, *bwd, *tot;
   int win, *gp;
 
@@ -675,14 +702,16 @@ int *calc_most_gc_frame(unsigned char *seq, int slen) {
 }
 
 /* Converts a word of size len to a number */
-int mer_ndx(int len, unsigned char *seq, int pos) {
+int mer_ndx(int len, unsigned char *seq, int pos)
+{
   int i, ndx = 0;
   for(i = 0; i < 2*len; i++) ndx |= (test(seq, pos*2+i)<<i);
   return ndx;
 }
 
 /* Gives a text string for a start */
-void start_text(char *st, int type) {
+void start_text(char *st, int type)
+{
   if(type == 0) st[0] = 'A';
   else if(type == 1) st[0] = 'G';
   else if(type == 2) st[0] = 'T';
@@ -691,8 +720,9 @@ void start_text(char *st, int type) {
   st[3] = '\0';
 }
 
-/* Gives a text string for a mer of size 'len' (useful for outputting motifs) */
-void mer_text(char *qt, int len, int ndx) {
+/* Gives a text string for a mer of len 'len' (useful for outputting motifs) */
+void mer_text(char *qt, int len, int ndx)
+{
   int i, val;
   char letters[4] = { 'A', 'G', 'C', 'T' };
   if(len == 0) strcpy(qt, "None");
@@ -708,7 +738,8 @@ void mer_text(char *qt, int len, int ndx) {
 
 /* Builds a 'len'-mer background for whole sequence */
 void calc_mer_bg(int len, unsigned char *seq, unsigned char *rseq, int slen,
-                 double *bg) {
+                 double *bg)
+{
   int i, glob = 0, size = 1;
   int *counts;
 
@@ -724,12 +755,13 @@ void calc_mer_bg(int len, unsigned char *seq, unsigned char *rseq, int slen,
   free(counts);
 }
 
-/*******************************************************************************
+/******************************************************************************
   Finds the highest-scoring region similar to AGGAGG in a given stretch of 
   sequence upstream of a start.
-*******************************************************************************/
+******************************************************************************/
 
-int shine_dalgarno_exact(unsigned char *seq, int pos, int start, double *rwt) {
+int shine_dalgarno_exact(unsigned char *seq, int pos, int start, double *rwt)
+{
   int i, j, k, mism, rdis, limit, max_val, cur_val = 0;
   double match[6], cur_ctr, dis_flag;
 
@@ -800,12 +832,13 @@ int shine_dalgarno_exact(unsigned char *seq, int pos, int start, double *rwt) {
   return max_val;
 }
 
-/*******************************************************************************
+/******************************************************************************
   Finds the highest-scoring region similar to AGGAGG in a given stretch of 
   sequence upstream of a start.  Only considers 5/6-mers with 1 mismatch.
-*******************************************************************************/
+******************************************************************************/
 
-int shine_dalgarno_mm(unsigned char *seq, int pos, int start, double *rwt) {
+int shine_dalgarno_mm(unsigned char *seq, int pos, int start, double *rwt)
+{
   int i, j, k, mism, rdis, limit, max_val, cur_val = 0;
   double match[6], cur_ctr, dis_flag;
 
@@ -869,7 +902,8 @@ int shine_dalgarno_mm(unsigned char *seq, int pos, int start, double *rwt) {
 }
 
 /* Returns the minimum of two numbers */
-int imin(int x, int y) {
+int imin(int x, int y)
+{
   if(x < y) return x;
   return y;
 }

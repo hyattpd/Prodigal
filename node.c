@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
     Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
@@ -16,18 +16,19 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*******************************************************************************/
+******************************************************************************/
 
 #include "node.h"
 
-/*******************************************************************************
+/******************************************************************************
   Adds nodes to the node list.  Genes must be >=90bp in length, unless they
   run off the edge, in which case they only have to be 60bp.
-*******************************************************************************/
+******************************************************************************/
 
 int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq, 
               int slen, struct _node *nodes, int closed, int cross_gaps, 
-              int trans_table) {
+              int trans_table)
+{
   int i, nn = 0, last[3], saw_start[3], min_dist[3], edge[3];
   int slmod = 0;
 
@@ -177,13 +178,15 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
 }
 
 /* Memset nodes to 0 and return 0 */
-void zero_nodes(struct _node *nod, int nn) {
+void zero_nodes(struct _node *nod, int nn)
+{
   memset(nod, 0, nn*sizeof(struct _node));
 }
 
 /* Simple routine to zero out the node scores */
 
-void reset_node_scores(struct _node *nod, int nn) {
+void reset_node_scores(struct _node *nod, int nn)
+{
   int i, j;
   for(i = 0; i < nn; i++) {
     for(j = 0; j < 3; j++) {
@@ -206,17 +209,18 @@ void reset_node_scores(struct _node *nod, int nn) {
   }
 }
 
-/*******************************************************************************
+/******************************************************************************
   Since dynamic programming can't go 'backwards', we have to record
   information about overlapping genes in order to build the models.  So, for
   example, in cases like 5'->3', 5'-3' overlapping on the same strand, we
   record information about the 2nd 5' end under the first 3' end's
   information.  For every stop, we calculate and store all the best starts
   that could be used in genes that overlap that 3' end.
-*******************************************************************************/
+******************************************************************************/
 
 void record_overlapping_starts(struct _node *nod, int nn, double st_wt, int
-                               flag) {
+                               flag)
+{
   int i, j;
   double max_sc;
 
@@ -262,15 +266,16 @@ void record_overlapping_starts(struct _node *nod, int nn, double st_wt, int
   }
 }
 
-/*******************************************************************************
+/******************************************************************************
   This routine goes through all the ORFs and counts the relative frequency of
   the most common frame for G+C content.  In high GC genomes, this tends to be
   the third position.  In low GC genomes, this tends to be the first position.
   Genes will be selected as a training set based on the nature of this bias
   for this particular organism.
-*******************************************************************************/
+******************************************************************************/
 
-void frame_score(int *gc, struct _node *nod, int nn) {
+void frame_score(int *gc, struct _node *nod, int nn)
+{
   int i, j, ctr[3][3], last[3], frmod, fr, mfr;
 
   if(nn == 0) return;
@@ -314,21 +319,23 @@ void frame_score(int *gc, struct _node *nod, int nn) {
   }
 }
 
-/*******************************************************************************
+/******************************************************************************
   Scoring function for all the start nodes.  This score has two factors:  (1)
   Coding, which is a composite of coding score and length, and (2) Start
   score, which is a composite of RBS score and ATG/TTG/GTG.
-*******************************************************************************/
+******************************************************************************/
 
 void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
                  struct _node *nod, int nn, struct _training *tinf,
-                 int closed, int mode) {
+                 int closed, int mode)
+{
   int i, j;
   double negf, posf, rbs1, rbs2, sd_score, edge_gene, min_anon_len;
 
   /* Step 1: Calculate raw coding potential for every start-stop pair. */
   calc_orf_gc(seq, rseq, slen, nod, nn);
-  raw_coding_score(seq, rseq, slen, nod, nn, tinf->trans_table, tinf->gc, tinf->gene_dc);
+  raw_coding_score(seq, rseq, slen, nod, nn, tinf->trans_table, tinf->gc,
+                   tinf->gene_dc);
 
   /* Step 2: Calculate raw RBS Scores for every start node. */
   if(tinf->uses_sd == 1) rbs_score(seq, rseq, slen, nod, nn, tinf->rbs_wt);
@@ -347,8 +354,9 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
     edge_gene = 0;
     if(nod[i].edge == 1) edge_gene++;
     if((nod[i].strand == 1 && is_stop(seq, nod[i].stop_val,
-       tinf->trans_table) == 0) || (nod[i].strand == -1 && is_stop(rseq, slen-1-
-       nod[i].stop_val, tinf->trans_table) == 0)) edge_gene++;
+       tinf->trans_table) == 0) || (nod[i].strand == -1 &&
+       is_stop(rseq, slen-1-nod[i].stop_val, tinf->trans_table) == 0))
+      edge_gene++;
 
     /* Edge Nodes : stops with no starts, give a small bonus */
     if(nod[i].edge == 1) {
@@ -470,7 +478,8 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
 
 /* Calculate the GC Content for each start-stop pair */
 void calc_orf_gc(unsigned char *seq, unsigned char *rseq, int slen, struct
-                 _node *nod, int nn) {
+                 _node *nod, int nn)
+{
   int i, j, last[3], fr;
   double gc[3], gsize = 0.0;
 
@@ -509,15 +518,16 @@ void calc_orf_gc(unsigned char *seq, unsigned char *rseq, int slen, struct
   }
 }
 
-/*******************************************************************************
+/******************************************************************************
   Score each candidate's coding.  We also sharpen coding/noncoding thresholds
   to prevent choosing interior starts when there is strong coding continuing
   upstream.
-*******************************************************************************/
+******************************************************************************/
 
 void raw_coding_score(unsigned char *seq, unsigned char *rseq, int slen, struct
                       _node *nod, int nn, int trans_table, double gc, 
-                      double *gene_dc) {
+                      double *gene_dc)
+{
   int i, j, last[3], fr;
   double score[3], lfac, no_stop, gsize = 0.0;
 
@@ -617,13 +627,14 @@ void raw_coding_score(unsigned char *seq, unsigned char *rseq, int slen, struct
   }
 }
 
-/*******************************************************************************
+/******************************************************************************
   RBS Scoring Function: Calculate the RBS motif and then multiply it by the
   appropriate weight for that motif (determined in the start training
   function).
-*******************************************************************************/
+******************************************************************************/
 void rbs_score(unsigned char *seq, unsigned char *rseq, int slen, struct _node
-               *nod, int nn, double *rbs_wt) {
+               *nod, int nn, double *rbs_wt)
+{
   int i, j;
   int cur_sc[2];
 
@@ -655,13 +666,15 @@ void rbs_score(unsigned char *seq, unsigned char *rseq, int slen, struct _node
   }
 }
 
-/*******************************************************************************
+/******************************************************************************
   For a given start, score the base composition of the upstream region at
   positions -1 and -2 and -15 to -44.  This will be used to supplement the
   SD (or other) motif finder with additional information.
-*******************************************************************************/
-void score_upstream_composition(unsigned char *seq, int slen, struct _node *nod,
-                                struct _training *tinf) {
+******************************************************************************/
+void score_upstream_composition(unsigned char *seq, int slen,
+                                struct _node *nod,
+                                struct _training *tinf)
+{
   int i, start, count = 0;
   if(nod->strand == 1) start = nod->ndx;
   else start = slen-1-nod->ndx;
@@ -676,15 +689,16 @@ void score_upstream_composition(unsigned char *seq, int slen, struct _node *nod,
   }
 }
 
-/*******************************************************************************
+/******************************************************************************
   Given the weights for various motifs/distances from the training file,
   return the highest scoring mer/spacer combination of 3-6bp motifs with a
   spacer ranging from 3bp to 15bp.  In the final stage of start training, only
   good scoring motifs are returned.
-*******************************************************************************/
+******************************************************************************/
 void find_best_upstream_motif(struct _training *tinf, unsigned char *seq,
                               unsigned char *rseq, int slen, struct _node *nod,
-                              int stage) {
+                              int stage)
+{
   int i, j, start, spacer, spacendx, index;
   int max_spacer = 0, max_spacendx = 0, max_len = 0, max_ndx = 0;
   double max_sc = -100.0, score = 0.0;
@@ -730,14 +744,15 @@ void find_best_upstream_motif(struct _training *tinf, unsigned char *seq,
   }
 }
 
-/*******************************************************************************
+/******************************************************************************
   When connecting two genes, we add a bonus for the -1 and -4 base overlaps on
   the same strand, which often signify an operon and negate the need for an
   RBS for the second gene.  In addition, we add a slight bonus when genes are
   close and a slight penalty when switching strands or having a large
   intergenic space.
-*******************************************************************************/
-double intergenic_mod(struct _node *n1, struct _node *n2, double start_weight) {
+******************************************************************************/
+double intergenic_mod(struct _node *n1, struct _node *n2, double start_weight)
+{
   int dist;
   double rval = 0.0, ovlp = 0.0;
   if((n1->strand == 1 && n2->strand == 1 &&
@@ -764,21 +779,24 @@ double intergenic_mod(struct _node *n1, struct _node *n2, double start_weight) {
 
 /* Return the minimum of two numbers */
 
-double dmin(double x, double y) {
+double dmin(double x, double y)
+{
   if(x < y) return x;
   return y;
 }
 
 /* Return the maximum of two numbers */
 
-double dmax(double x, double y) {
+double dmax(double x, double y)
+{
   if(x > y) return x;
   return y;
 }
 
 /* Sorting routine for nodes */
 
-int compare_nodes(const void *v1, const void *v2) {
+int compare_nodes(const void *v1, const void *v2)
+{
   struct _node *n1, *n2;
   n1 = (struct _node *)v1;
   n2 = (struct _node *)v2;
@@ -791,7 +809,8 @@ int compare_nodes(const void *v1, const void *v2) {
 
 /* Sorts all nodes by common stop */
 
-int stopcmp_nodes(const void *v1, const void *v2) {
+int stopcmp_nodes(const void *v1, const void *v2)
+{
   struct _node *n1, *n2;
   n1 = (struct _node *)v1;
   n2 = (struct _node *)v2;

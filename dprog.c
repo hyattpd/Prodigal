@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
     Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
@@ -16,19 +16,20 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*******************************************************************************/
+******************************************************************************/
 
 #include "dprog.h"
 
-/*******************************************************************************
+/******************************************************************************
   Basic dynamic programming routine for predicting genes.  The 'flag' variable
   is set to 0 for the initial dynamic programming routine based solely on GC
   frame plot (used to construct a training set.  If the flag is set to 1, the
   routine does the final dynamic programming based on
   coding, RBS scores, etc.
-*******************************************************************************/
+******************************************************************************/
 
-int dprog(struct _node *nod, int nn, struct _training *tinf, int flag) {
+int dprog(struct _node *nod, int nn, struct _training *tinf, int flag)
+{
   int i, j, min, max_ndx = -1, path, nxt, tmp;
   double max_sc = -1.0;
 
@@ -92,8 +93,8 @@ int dprog(struct _node *nod, int nn, struct _training *tinf, int flag) {
       nod[path].traceb = nod[nxt].star_ptr[(nod[path].ndx)%3];
       nod[nod[path].traceb].traceb = nxt;
     }
-    if(nod[path].strand == -1 && nod[path].type == STOP && nod[nxt].strand == -1
-       && nod[nxt].type == STOP) {
+    if(nod[path].strand == -1 && nod[path].type == STOP &&
+       nod[nxt].strand == -1 && nod[nxt].type == STOP) {
       nod[path].traceb = nod[path].star_ptr[(nod[nxt].ndx)%3];
       nod[nod[path].traceb].traceb = nxt;
     }
@@ -111,17 +112,18 @@ int dprog(struct _node *nod, int nn, struct _training *tinf, int flag) {
   else return max_ndx;
 }
 
-/*******************************************************************************
+/******************************************************************************
   This routine scores the connection between two nodes, the most basic of which
   is 5'fwd->3'fwd (gene) and 3'rev->5'rev (rev gene).  If the connection ending
   at n2 is the maximal scoring model, it updates the pointers in the dynamic
   programming model.  n3 is used to handle overlaps, i.e. cases where 5->3'
-  overlaps 5'->3' on the same strand.  In this case, 3' connects directly to 3',
+  overlaps 5'->3' on the same strand. In this case, 3' connects directly to 3',
   and n3 is used to untangle the 5' end of the second gene.
-*******************************************************************************/
+******************************************************************************/
 
-void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
-                      int flag) {
+void score_connection(struct _node *nod, int p1, int p2, 
+                      struct _training *tinf, int flag)
+{
   struct _node *n1 = &(nod[p1]), *n2 = &(nod[p2]), *n3;
   int i, left = n1->ndx, right = n2->ndx, bnd, ovlp = 0, maxfr = -1;
   double score = 0.0, scr_mod = 0.0, maxval;
@@ -140,8 +142,8 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
   else if(n1->strand == -1 && n1->type == STOP && n2->strand == 1) return;
 
   /* 5'rev->3'fwd */
-  else if(n1->strand == -1 && n1->type != STOP && n2->strand == 1 && n2->type ==
-          STOP) return;
+  else if(n1->strand == -1 && n1->type != STOP && n2->strand == 1 &&
+          n2->type == STOP) return;
 
   /******************/
   /* Edge Artifacts */
@@ -160,7 +162,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
     if(n1->ndx % 3 != n2->ndx % 3) return;
     right += 2;
     if(flag == 0) scr_mod = tinf->bias[0]*n1->gc_score[0] +
-                  tinf->bias[1]*n1->gc_score[1] + tinf->bias[2]*n1->gc_score[2];
+                  tinf->bias[1]*n1->gc_score[1]+tinf->bias[2]*n1->gc_score[2];
     else if(flag == 1) score = n1->cscore + n1->sscore;
   }
 
@@ -171,7 +173,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
     if(n1->ndx % 3 != n2->ndx % 3) return;
     left -= 2;
     if(flag == 0) scr_mod = tinf->bias[0]*n2->gc_score[0] +
-                  tinf->bias[1]*n2->gc_score[1] + tinf->bias[2]*n2->gc_score[2];
+                  tinf->bias[1]*n2->gc_score[1]+tinf->bias[2]*n2->gc_score[2];
     else if(flag == 1) score = n2->cscore + n2->sscore;
   }
 
@@ -188,8 +190,8 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
   }
 
   /* 3'fwd->3'rev */
-  else if(n1->strand == 1 && n1->type == STOP && n2->strand == -1 && n2->type ==
-          STOP) {
+  else if(n1->strand == 1 && n1->type == STOP && n2->strand == -1 &&
+          n2->type == STOP) {
     left += 2; right -= 2;
     if(left >= right) return;
     /* Overlapping Gene Case 2: Three consecutive overlapping genes f r r */
@@ -248,7 +250,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
     n3 = &(nod[n1->star_ptr[n2->ndx%3]]);
     left = n3->ndx; right += 2;
     if(flag == 0) scr_mod = tinf->bias[0]*n3->gc_score[0] +
-                  tinf->bias[1]*n3->gc_score[1] + tinf->bias[2]*n3->gc_score[2];
+                  tinf->bias[1]*n3->gc_score[1]+tinf->bias[2]*n3->gc_score[2];
     else if(flag == 1) score = n3->cscore + n3->sscore +
                        intergenic_mod(n1, n3, tinf->st_wt);
   }
@@ -261,7 +263,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
     n3 = &(nod[n2->star_ptr[n1->ndx%3]]);
     left -= 2; right = n3->ndx;
     if(flag == 0) scr_mod = tinf->bias[0]*n3->gc_score[0] +
-                  tinf->bias[1]*n3->gc_score[1] + tinf->bias[2]*n3->gc_score[2];
+                  tinf->bias[1]*n3->gc_score[1]+tinf->bias[2]*n3->gc_score[2];
     else if(flag == 1) score = n3->cscore + n3->sscore +
                        intergenic_mod(n3, n2, tinf->st_wt);
   }
@@ -282,7 +284,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
     if((n1->ndx+2 - n2->stop_val-2 + 1) >= (n2->stop_val-3 - bnd + 1)) return;
     left = n2->stop_val-2;
     if(flag == 0) scr_mod = tinf->bias[0]*n2->gc_score[0] +
-                  tinf->bias[1]*n2->gc_score[1] + tinf->bias[2]*n2->gc_score[2];
+                  tinf->bias[1]*n2->gc_score[1]+tinf->bias[2]*n2->gc_score[2];
     else if(flag == 1) score = n2->cscore + n2->sscore - 0.15*tinf->st_wt;
   }
 
@@ -297,13 +299,14 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
   return;
 }
 
-/*******************************************************************************
+/******************************************************************************
   Sometimes bad genes creep into the model due to the node distance constraint
   in the dynamic programming routine.  This routine just does a sweep through
   the genes and eliminates ones with negative scores.
-*******************************************************************************/
+******************************************************************************/
 
-void eliminate_bad_genes(struct _node *nod, int dbeg, struct _training *tinf) {
+void eliminate_bad_genes(struct _node *nod, int dbeg, struct _training *tinf)
+{
   int path;
 
   if(dbeg == -1) return;

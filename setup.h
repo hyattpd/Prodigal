@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
     Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
@@ -16,7 +16,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*******************************************************************************/
+******************************************************************************/
 
 #ifndef SETUP_H_
 #define SETUP_H_
@@ -39,7 +39,8 @@ void help();
 int initialize_data_structures(unsigned char **, unsigned char **, unsigned 
                                char **, struct _node **, struct _gene **, 
                                struct _training *, struct 
-                               _preset_genome_bin *, struct _summary *);
+                               _preset_genome_bin *, struct _gene *, struct
+                               _summary *);
 void parse_arguments(int, char **, char *, char *, char *, char *, char *,
                      char *, char *, int *, int *, int *, int *, int *,
                      int *);

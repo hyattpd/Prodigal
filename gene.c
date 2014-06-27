@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
     Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
@@ -16,13 +16,14 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*******************************************************************************/
+******************************************************************************/
 
 #include "gene.h"
 
 /* Copies genes from the dynamic programming to a final array */
 
-int add_genes(struct _gene *glist, struct _node *nod, int dbeg) {
+int add_genes(struct _gene *glist, struct _node *nod, int dbeg)
+{
   int path, ctr;
 
   if(dbeg == -1) return 0;
@@ -58,7 +59,7 @@ int add_genes(struct _gene *glist, struct _node *nod, int dbeg) {
   return ctr;
 }
 
-/*******************************************************************************
+/******************************************************************************
   This routine attempts to solve the problem of extremely close starts.  If two
   potential starts are 5 amino acids or less away from each other, this routine
   sets their coding equal to each other and lets the RBS/operon/ATG-GTG-TTG
@@ -71,9 +72,10 @@ int add_genes(struct _gene *glist, struct _node *nod, int dbeg) {
 
   This routine was tested on numerous genomes and found to increase overall
   performance. 
-*******************************************************************************/
+******************************************************************************/
 void tweak_final_starts(struct _gene *genes, int ng, struct _node *nod,
-                        int nn, double st_wt) {
+                        int nn, double st_wt)
+{
   int i, j, ndx, mndx, maxndx[2];
   double sc, igm, tigm, maxsc[2], maxigm[2];
 
@@ -194,7 +196,8 @@ void tweak_final_starts(struct _gene *genes, int ng, struct _node *nod,
 }
 
 void record_gene_data(struct _gene *genes, int ng, struct _node *nod,
-                      struct _training *tinf, int sctr) {
+                      struct _training *tinf, int sctr)
+{
 
   int i, ndx, sndx, partial_left, partial_right, st_type;
   double rbs1, rbs2, confidence;
@@ -298,8 +301,8 @@ void record_gene_data(struct _gene *genes, int ng, struct _node *nod,
         sprintf(genes[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s", 
                 genes[i].gene_data, sd_string[nod[ndx].rbs[0]], 
                 sd_spacer[nod[ndx].rbs[0]]);
-      else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && rbs2 > nod[ndx].mot.score *
-              tinf->st_wt)
+      else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && 
+              rbs2 > nod[ndx].mot.score * tinf->st_wt)
         sprintf(genes[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s", 
                 genes[i].gene_data, sd_string[nod[ndx].rbs[1]], 
                 sd_spacer[nod[ndx].rbs[1]]);
@@ -329,7 +332,8 @@ void record_gene_data(struct _gene *genes, int ng, struct _node *nod,
 void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod, 
                  int slen, int flag, int sctr, int mode, char *mdesc,
                  struct _training *tinf, char *header, char *short_hdr,
-                 char *version) {
+                 char *version)
+{
   int i, ndx, sndx;
   char left[50], right[50];
   char seq_data[MAX_LINE*2], run_data[MAX_LINE];
@@ -389,7 +393,7 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
                 genes[i].score_data);
       }
       if(flag == 1)
-        fprintf(fp, "gene_prodigal=%d|1|f|y|y|3|0|%d|%d|%d|%d|-1|-1|1.0\n", i+1,
+        fprintf(fp, "gene_prodigal=%d|1|f|y|y|3|0|%d|%d|%d|%d|-1|-1|1.0\n",i+1,
                 genes[i].begin, genes[i].end, genes[i].begin, genes[i].end);
       if(flag == 2) fprintf(fp, ">%d_%d_%d_+\n", i+1, genes[i].begin, 
                             genes[i].end);
@@ -422,7 +426,7 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
                 genes[i].score_data);
       }
       if(flag == 1)
-        fprintf(fp, "gene_prodigal=%d|1|r|y|y|3|0|%d|%d|%d|%d|-1|-1|1.0\n", i+1,
+        fprintf(fp, "gene_prodigal=%d|1|r|y|y|3|0|%d|%d|%d|%d|-1|-1|1.0\n",i+1,
                slen+1-genes[i].end, slen+1-genes[i].begin,
                slen+1-genes[i].end, slen+1-genes[i].begin);
       if(flag == 2) fprintf(fp, ">%d_%d_%d_-\n", i+1, genes[i].begin, 
@@ -452,7 +456,8 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
 void write_translations(FILE *fh, struct _gene *genes, int ng, struct 
                         _node *nod, unsigned char *seq, unsigned char *rseq, 
                         unsigned char *useq, int slen, int tt, int sctr, char
-                        *short_hdr) {
+                        *short_hdr)
+{
   int i, j;
 
   for(i = 0; i < ng; i++) {
@@ -488,7 +493,8 @@ void write_translations(FILE *fh, struct _gene *genes, int ng, struct
 void write_nucleotide_seqs(FILE *fh, struct _gene *genes, int ng, struct 
                            _node *nod, unsigned char *seq, unsigned char *rseq,
                            unsigned char *useq, int slen, int sctr, char
-                           *short_hdr) {
+                           *short_hdr)
+{
   int i, j;
 
   for(i = 0; i < ng; i++) {
@@ -522,13 +528,14 @@ void write_nucleotide_seqs(FILE *fh, struct _gene *genes, int ng, struct
   }
 }
 
-/*******************************************************************************
+/******************************************************************************
   Write detailed scoring information about every single possible gene.  Only
   done at the user's request.
-*******************************************************************************/
+******************************************************************************/
 void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
                       *tinf, int sctr, int slen, int mode, char *mdesc,
-                      char *version, char *header) {
+                      char *version, char *header)
+{
   int i, prev_stop = -1, prev_strand = 0, st_type;
   double rbs1, rbs2;
   char sd_string[28][100], sd_spacer[28][20], qt[10];
@@ -670,7 +677,8 @@ void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
 }
 
 /* Convert score to a percent confidence */
-double calculate_confidence(double score, double start_weight) {
+double calculate_confidence(double score, double start_weight)
+{
   double conf;
 
   if(score/start_weight < 41) {

@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
     Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
@@ -16,12 +16,13 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*******************************************************************************/
+******************************************************************************/
 
 #ifndef _DATA_TYPES_H
 #define _DATA_TYPES_H
 
-struct _motif {
+struct _motif
+{
   int ndx;             /* Index of the best motif for this node */
   int len;             /* Length of the motif */
   int spacer;          /* Spacer between coding start and the motif */
@@ -29,14 +30,15 @@ struct _motif {
   double score;        /* Score for the motif */
 };
 
-struct _node {
+struct _node
+{
   int type;            /* 0=ATG, 1=GTG, 2=TTG/Other, 3=Stop */
   int edge;            /* Runs off the edge; 0 = normal, 1 = edge node */
   int ndx;             /* position in the sequence of the node */
   int strand;          /* 1 = forward, -1 = reverse */
   int stop_val;        /* For a stop, record previous stop; for start, record
                           its stop */
-  int star_ptr[3];     /* Array of starts w/in MAX_SAM_OVLP bases of a stop in 3
+  int star_ptr[3];     /* Array of starts w/in MAX_SAM_OVLP bases of stop in 3
                           frames */
   int gc_bias;         /* Frame of highest GC content within this node */
   double gc_score[3];  /* % GC content in different codon positions */
@@ -57,31 +59,43 @@ struct _node {
   int elim;            /* If set to 1, eliminate this gene from the model */
 };
 
-struct _training {
-  double gc;                    /* GC Content */
-  int trans_table;              /* 11 = Standard Microbial, NCBI Trans Table to
-                                   use */
-  double st_wt;                 /* Start weight */
-  double bias[3];               /* GC frame bias for each of the 3 positions */
-  double type_wt[3];            /* Weights for ATG vs GTG vs TTG */
-  int uses_sd;                  /* 0 if doesn't use SD motif, 1 if it does */
-  double rbs_wt[28];            /* Set of weights for RBS scores */
-  double ups_comp[32][4];       /* Base composition weights for non-RBS-distance
-                                   motifs.  0-1 are the -1/-2 position, 2-31 are
-                                   the -15 to -44 positions.  Second array is
-                                   the base A,C,T,G,etc. */
-  double mot_wt[4][4][4096];    /* Weights for upstream motifs.  First index is
+struct _training
+{
+  double gc;                   /* GC Content */
+  int trans_table;             /* 11 = Standard Microbial, NCBI Trans Table to
+                                  use */
+  double st_wt;                /* Start weight */
+  double bias[3];              /* GC frame bias for each of the 3 positions */
+  double type_wt[3];           /* Weights for ATG vs GTG vs TTG */
+  int uses_sd;                 /* 0 if doesn't use SD motif, 1 if it does */
+  double rbs_wt[28];           /* Set of weights for RBS scores */
+  double ups_comp[32][4];      /* Base composition weights for non-RBS-distance
+                                  motifs.  0-1 are the -1/-2 position, 2-31 are
+                                  the -15 to -44 positions.  Second array is
+                                  the base A,C,T,G,etc. */
+  double mot_wt[4][4][4096];   /* Weights for upstream motifs.  First index is
                                    the motif length (3-6), the second is the
                                    spacer distance (0 = 5-10bp, 1 = 3-4bp, 2 =
                                    11-12bp, 3 = 13-15bp), and the last is the
                                    numerical value of the motif (ranging from 0
                                    to 4095 for 6-mers, less for shorter
                                    motifs) */
-  double no_mot;                /* Weight for the case of no motif */
-  double gene_dc[4096];         /* Coding statistics for the genome */
+  double no_mot;               /* Weight for the case of no motif */
+  double gene_dc[4096];        /* Coding statistics for the genome */
 };
 
-struct _summary {
+struct _gene
+{
+  int begin;               /* Left end of the gene */
+  int end;                 /* Right end of the gene */
+  int start_ndx;           /* Index to the start node in the nodes file */
+  int stop_ndx;            /* Index to the stop node in the nodes file */
+  char gene_data[500];     /* String containing gene information */
+  char score_data[500];    /* String containing scoring information */
+};
+
+struct _summary
+{
   int num_contig;
   double avg_contig_len;
   int contig_len_bins[10];

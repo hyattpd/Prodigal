@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
     Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
@@ -16,21 +16,23 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*******************************************************************************/
+******************************************************************************/
 
 #include "summary.h"
 
 /* Memset nodes to 0 and return 0 */
-void zero_statistics(struct _summary *statistics) {
+void zero_statistics(struct _summary *statistics)
+{
   memset(statistics, 0, sizeof(struct _summary));
 }
 
-/*******************************************************************************
+/******************************************************************************
   Routine to record the average gene length of our initial dynamic programming.
   Complete and partial genes are stored separately.
-*******************************************************************************/
+******************************************************************************/
 void calc_avg_training_gene_lens(struct _node *nod, int dbeg, struct _summary
-                                 *gstat) {
+                                 *gstat)
+{
   int path, left = 0, right = 0, partial = 0, ctr = 0;
 
   gstat->num_complete_genes = 0;
@@ -98,7 +100,8 @@ void calc_avg_training_gene_lens(struct _node *nod, int dbeg, struct _summary
   being in tons of contigs.  If so, return 1.  If we still have no explanation
   for why it's low, return 2.
 ******************************************************************************/
-int bad_train_gene_length(struct _summary gstat) {
+int bad_train_gene_length(struct _summary gstat)
+{
   if(gstat.avg_comp_gene_len > MIN_AVG_TRAIN_GENE_LEN) return 0;
   if(gstat.avg_contig_len < MIN_AVG_TRAIN_CTG_LEN ||
      gstat.num_partial_genes > gstat.num_complete_genes) return 1;
@@ -106,7 +109,8 @@ int bad_train_gene_length(struct _summary gstat) {
 }
 
 /* Output a warning for low average gene length */
-void low_gene_len_warning(int flag, struct _summary gstat) {
+void low_gene_len_warning(int flag, struct _summary gstat)
+{
   if(flag < 2) {
     fprintf(stderr, "\nWarning: training sequence is highly fragmented.\n");
     fprintf(stderr, "You may get better results with the ");
@@ -124,7 +128,8 @@ void low_gene_len_warning(int flag, struct _summary gstat) {
   Calculate average length of contigs in training set.  Since we added gaps in
   between each contig, we subtract 8 bases per contig to get the true length.
 ******************************************************************************/
-void calc_avg_train_contig_len(struct _summary *gstat, int slen) {
+void calc_avg_train_contig_len(struct _summary *gstat, int slen)
+{
   gstat->avg_contig_len = (double)(slen - (gstat->num_contig-1)*8);
   gstat->avg_contig_len /= (double)gstat->num_contig;
 }

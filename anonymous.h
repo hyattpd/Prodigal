@@ -1,4 +1,4 @@
-/*******************************************************************************
+/******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
     Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 
@@ -16,7 +16,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*******************************************************************************/
+******************************************************************************/
 
 #ifndef ANON_H_
 #define ANON_H_
@@ -30,7 +30,8 @@
 
 #define NUM_PRESET_GENOME 50
 
-struct _preset_genome_bin {
+struct _preset_genome_bin
+{
   int index;                    /* Index used for sorting */
   int clusnum;                  /* Cluster number */
   char desc[500];               /* Text description of this bin */
