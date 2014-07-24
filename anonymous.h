@@ -25,28 +25,9 @@
 #include <stdlib.h>
 #include <time.h>
 #include "sequence.h"
-#include "training.h"
+#include "preset.h"
 #include "node.h"
 
-#define NUM_PRESET_GENOME 50
-
-struct _preset_genome_bin
-{
-  int index;                    /* Index used for sorting */
-  int clusnum;                  /* Cluster number */
-  char desc[500];               /* Text description of this bin */
-  double weight;                /* Current weight/score of this bin */
-  double gc;                    /* GC distance from target sequence */
-  struct _training *tinf;       /* Pointer to the training file for this bin */
-};
-
 void initialize_preset_genome_bins(struct _preset_genome_bin *);
-double score_edges(unsigned char *, unsigned char *, int, 
-                   struct _training *tinf);
-double score_sample(unsigned char *, unsigned char *, int, int, int, struct
-                    _training *tinf);
-void determine_top_bins(unsigned char *, unsigned char *, int, double,
-                        struct _preset_genome_bin *);
-int compare_genome_bins(const void *, const void *);
 
 #endif

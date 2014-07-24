@@ -20,43 +20,68 @@
 
 #include "gene.h"
 
-/* Copies genes from the dynamic programming to a final array */
-
-int add_genes(struct _gene *glist, struct _node *nod, int dbeg)
+/******************************************************************************
+  Copies genes from the dynamic programming to a more normal structure
+  with starts and stops labeled, etc.  Returns the number of genes we found.
+******************************************************************************/
+int add_genes(struct _gene *genes, struct _node *nodes, int initial_node)
 {
-  int path, ctr;
+  int path, counter;
 
-  if(dbeg == -1) return 0;
-  path = dbeg; ctr = 0;
-  while(nod[path].traceb != -1) path = nod[path].traceb;
+  if (initial_node == -1)
+  {
+    return 0;
+  }
 
-  while(path != -1) {
-    if(nod[path].elim == 1) { path = nod[path].tracef; continue; }
-    if(nod[path].strand == 1 && nod[path].type != STOP) {
-      glist[ctr].begin = nod[path].ndx+1;
-      glist[ctr].start_ndx = path;
+  /* Trace back to starting node */
+  path = initial_node;
+  counter = 0;
+  while (nodes[path].trace_back != -1)
+  {
+    path = nodes[path].trace_back;
+  }
+
+  /* Find the genes */
+  while (path != -1)
+  {
+    /* Ignore deleted genes */
+    if (nodes[path].eliminate == 1)
+    {
+      path = nodes[path].trace_forward;
+      continue;
     }
-    if(nod[path].strand == -1 && nod[path].type == STOP) {
-      glist[ctr].begin = nod[path].ndx-1;
-      glist[ctr].stop_ndx = path;
+    /* Valid start/stop: add it to the list */
+    if (nodes[path].strand == 1 && is_start_node(&nodes[path]) == 1)
+    {
+      genes[counter].begin = nodes[path].index+1;
+      genes[counter].start_index = path;
     }
-    if(nod[path].strand == 1 && nod[path].type == STOP) {
-      glist[ctr].end = nod[path].ndx+3;
-      glist[ctr].stop_ndx = path;
-      ctr++;
+    if (nodes[path].strand == -1 && is_stop_node(&nodes[path]) == 1)
+    {
+      genes[counter].begin = nodes[path].index-1;
+      genes[counter].stop_index = path;
     }
-    if(nod[path].strand == -1 && nod[path].type != STOP) {
-      glist[ctr].end = nod[path].ndx+1;
-      glist[ctr].start_ndx = path;
-      ctr++;
+    if (nodes[path].strand == 1 && is_stop_node(&nodes[path]) == 1)
+    {
+      genes[counter].end = nodes[path].index+3;
+      genes[counter].stop_index = path;
+      counter++;
     }
-    path = nod[path].tracef;
-    if(ctr == MAX_GENES) {
+    if (nodes[path].strand == -1 && is_start_node(&nodes[path]) == 1)
+    {
+      genes[counter].end = nodes[path].index+1;
+      genes[counter].start_index = path;
+      counter++;
+    }
+    path = nodes[path].trace_forward;
+    /* If we see too many genes (unlikely), stop adding them */
+    if (counter == MAX_GENES)
+    {
       fprintf(stderr, "warning, max # of genes exceeded, truncating...\n");
-      return ctr;
+      return counter;
     }
   }
-  return ctr;
+  return counter;
 }
 
 /******************************************************************************
@@ -71,138 +96,230 @@ int add_genes(struct _gene *glist, struct _node *nod, int dbeg)
   to whatever start we initially chose.
 
   This routine was tested on numerous genomes and found to increase overall
-  performance. 
+  performance.
 ******************************************************************************/
-void tweak_final_starts(struct _gene *genes, int ng, struct _node *nod,
-                        int nn, double st_wt)
+void adjust_close_starts(struct _gene *genes, int num_genes,
+                         struct _node *nodes, int num_nodes,
+                         double start_weight)
 {
-  int i, j, ndx, mndx, maxndx[2];
-  double sc, igm, tigm, maxsc[2], maxigm[2];
+  int i, j, index, tmp_index, max_index[2];
+  double score, max_score[2];
+  /* Variables to track modifications to the score for intergenic distance */
+  double ig_mod, tmp_ig_mod, max_ig_mod[2];
 
-  for(i = 0; i < ng; i++) {
-    ndx = genes[i].start_ndx;
-    sc = nod[ndx].sscore + nod[ndx].cscore;
-    igm = 0.0;
-    if(i > 0 && nod[ndx].strand == 1 && nod[genes[i-1].start_ndx].strand == 1)
-      igm = intergenic_mod(&nod[genes[i-1].stop_ndx], &nod[ndx], st_wt);
-    if(i > 0 && nod[ndx].strand == 1 && nod[genes[i-1].start_ndx].strand == -1)
-      igm = intergenic_mod(&nod[genes[i-1].start_ndx], &nod[ndx], st_wt);
-    if(i < ng-1 && nod[ndx].strand == -1 && nod[genes[i+1].start_ndx].strand 
-       == 1)
-      igm = intergenic_mod(&nod[ndx], &nod[genes[i+1].start_ndx], st_wt);
-    if(i < ng-1 && nod[ndx].strand == -1 && nod[genes[i+1].start_ndx].strand 
-       == -1)
-      igm = intergenic_mod(&nod[ndx], &nod[genes[i+1].stop_ndx], st_wt);
+  for (i = 0; i < num_genes; i++)
+  {
+    /* For each gene, record the index, base score, and modification
+       due to intergenic distance with the gene upstream from the start. */
+    index = genes[i].start_index;
+    score = nodes[index].sscore + nodes[index].cscore;
+    ig_mod = 0.0;
+    if (i > 0 && nodes[index].strand == 1 &&
+        nodes[genes[i-1].start_index].strand == 1)
+    {
+      ig_mod = intergenic_mod(&nodes[genes[i-1].stop_index], &nodes[index],
+                              start_weight);
+    }
+    if (i > 0 && nodes[index].strand == 1 &&
+        nodes[genes[i-1].start_index].strand == -1)
+    {
+      ig_mod = intergenic_mod(&nodes[genes[i-1].start_index], &nodes[index],
+                              start_weight);
+    }
+    if (i < num_genes-1 && nodes[index].strand == -1 &&
+        nodes[genes[i + 1].start_index].strand == 1)
+    {
+      ig_mod = intergenic_mod(&nodes[index], &nodes[genes[i + 1].start_index],
+                              start_weight);
+    }
+    if (i < num_genes-1 && nodes[index].strand == -1 &&
+        nodes[genes[i + 1].start_index].strand == -1)
+    {
+      ig_mod = intergenic_mod(&nodes[index], &nodes[genes[i + 1].stop_index],
+                              start_weight);
+    }
 
     /* Search upstream and downstream for the #2 and #3 scoring starts */
-    maxndx[0] = -1; maxndx[1] = -1; maxsc[0] = 0; maxsc[1] = 0;
-    maxigm[0] = 0; maxigm[1] = 0;
-    for(j = ndx-100; j < ndx+100; j++) {
-      if(j < 0 || j >= nn || j == ndx) continue;
-      if(nod[j].type == STOP || nod[j].stop_val != nod[ndx].stop_val)
+    /* We store these in indices '0' and '1' in an array of size two. */
+    max_index[0] = -1;
+    max_index[1] = -1;
+    max_score[0] = 0;
+    max_score[1] = 0;
+    max_ig_mod[0] = 0;
+    max_ig_mod[1] = 0;
+    for (j = index-100; j < index+100; j++)
+    {
+      if (j < 0 || j >= num_nodes || j == index)
+      {
         continue;
+      }
+      if (is_stop_node(&nodes[j]) == 1 ||
+          nodes[j].stop_val != nodes[index].stop_val)
+      {
+        continue;
+      }
 
-      tigm = 0.0;
-      if(i > 0 && nod[j].strand == 1 && nod[genes[i-1].start_ndx].strand == 1)
+      tmp_ig_mod = 0.0;
+      if (i > 0 && nodes[j].strand == 1 &&
+          nodes[genes[i-1].start_index].strand == 1)
       {
-        if(nod[genes[i-1].stop_ndx].ndx - nod[j].ndx > MAX_SAM_OVLP) continue;
-        tigm = intergenic_mod(&nod[genes[i-1].stop_ndx], &nod[j], st_wt);
+        if (nodes[genes[i-1].stop_index].index - nodes[j].index > MAX_SAM_OVLP)
+        {
+          continue;
+        }
+        tmp_ig_mod = intergenic_mod(&nodes[genes[i-1].stop_index], &nodes[j],
+                                    start_weight);
       }
-      if(i > 0 && nod[j].strand == 1 && nod[genes[i-1].start_ndx].strand == -1)
+      if (i > 0 && nodes[j].strand == 1 &&
+          nodes[genes[i-1].start_index].strand == -1)
       {
-        if(nod[genes[i-1].start_ndx].ndx - nod[j].ndx >= 0) continue;
-        tigm = intergenic_mod(&nod[genes[i-1].start_ndx], &nod[j], st_wt);
+        if (nodes[genes[i-1].start_index].index - nodes[j].index >= 0)
+        {
+          continue;
+        }
+        tmp_ig_mod = intergenic_mod(&nodes[genes[i-1].start_index], &nodes[j],
+                                    start_weight);
       }
-      if(i < ng-1 && nod[j].strand == -1 && nod[genes[i+1].start_ndx].strand 
-         == 1) {
-        if(nod[j].ndx - nod[genes[i+1].start_ndx].ndx >= 0) continue;
-        tigm = intergenic_mod(&nod[j], &nod[genes[i+1].start_ndx], st_wt);
+      if (i < num_genes-1 && nodes[j].strand == -1 &&
+          nodes[genes[i + 1].start_index].strand == 1)
+      {
+        if (nodes[j].index - nodes[genes[i + 1].start_index].index >= 0)
+        {
+          continue;
+        }
+        tmp_ig_mod = intergenic_mod(&nodes[j], &nodes[genes[i+1].start_index],
+                                    start_weight);
       }
-      if(i < ng-1 && nod[j].strand == -1 && nod[genes[i+1].start_ndx].strand 
-         == -1) {
-        if(nod[j].ndx - nod[genes[i+1].stop_ndx].ndx > MAX_SAM_OVLP) continue;
-        tigm = intergenic_mod(&nod[j], &nod[genes[i+1].stop_ndx], st_wt);
+      if (i < num_genes-1 && nodes[j].strand == -1 &&
+          nodes[genes[i + 1].start_index].strand == -1)
+      {
+        if (nodes[j].index - nodes[genes[i+1].stop_index].index > MAX_SAM_OVLP)
+        {
+          continue;
+        }
+        tmp_ig_mod = intergenic_mod(&nodes[j], &nodes[genes[i+1].stop_index],
+                                    start_weight);
       }
- 
-      if(maxndx[0] == -1) {
-        maxndx[0] = j;
-        maxsc[0] = nod[j].cscore + nod[j].sscore;
-        maxigm[0] = tigm;
+
+      /* If it's one of the top two alternatives, add it to our array */
+      if (max_index[0] == -1)
+      {
+        max_index[0] = j;
+        max_score[0] = nodes[j].cscore + nodes[j].sscore;
+        max_ig_mod[0] = tmp_ig_mod;
       }
-      else if(nod[j].cscore + nod[j].sscore + tigm > maxsc[0]) {
-        maxndx[1] = maxndx[0];
-        maxsc[1] = maxsc[0];
-        maxigm[1] = maxigm[0];
-        maxndx[0] = j;
-        maxsc[0] = nod[j].cscore + nod[j].sscore;
-        maxigm[0] = tigm;
+      else if (nodes[j].cscore + nodes[j].sscore + tmp_ig_mod > max_score[0])
+      {
+        max_index[1] = max_index[0];
+        max_score[1] = max_score[0];
+        max_ig_mod[1] = max_ig_mod[0];
+        max_index[0] = j;
+        max_score[0] = nodes[j].cscore + nodes[j].sscore;
+        max_ig_mod[0] = tmp_ig_mod;
       }
-      else if(maxndx[1] == -1 || nod[j].cscore + nod[j].sscore + tigm > 
-              maxsc[1]) { 
-        maxndx[1] = j;
-        maxsc[1] = nod[j].cscore + nod[j].sscore;
-        maxigm[1] = tigm;
+      else if (max_index[1] == -1 || nodes[j].cscore + nodes[j].sscore +
+               tmp_ig_mod > max_score[1])
+      {
+        max_index[1] = j;
+        max_score[1] = nodes[j].cscore + nodes[j].sscore;
+        max_ig_mod[1] = tmp_ig_mod;
       }
     }
 
+    /* Now we look at the 2nd and 3rd best starts to see if we can find a */
+    /* reason to make them our preferred start. */
     /* Change the start if it's a TTG with better coding/RBS/upstream score */
     /* Also change the start if it's <=15bp but has better coding/RBS       */
-    for(j = 0; j < 2; j++) {
-      mndx = maxndx[j];
-      if(mndx == -1) continue;
+    for (j = 0; j < 2; j++)
+    {
+      tmp_index = max_index[j];
+      if (tmp_index == -1)
+      {
+        continue;
+      }
 
       /* Start of less common type but with better coding, rbs, and */
       /* upstream.  Must be 18 or more bases away from original.    */
-      if(nod[mndx].tscore < nod[ndx].tscore && maxsc[j]-nod[mndx].tscore >= 
-         sc-nod[ndx].tscore+st_wt && nod[mndx].rscore > nod[ndx].rscore
-         && nod[mndx].uscore > nod[ndx].uscore && nod[mndx].cscore > 
-         nod[ndx].cscore && abs(nod[mndx].ndx-nod[ndx].ndx) > 15) {
-        maxsc[j] += nod[ndx].tscore-nod[mndx].tscore;
+      if (nodes[tmp_index].tscore < nodes[index].tscore && max_score[j] -
+          nodes[tmp_index].tscore >= score-nodes[index].tscore +
+          start_weight && nodes[tmp_index].rscore > nodes[index].rscore &&
+          nodes[tmp_index].uscore > nodes[index].uscore &&
+          nodes[tmp_index].cscore > nodes[index].cscore &&
+          abs(nodes[tmp_index].index - nodes[index].index) > 15)
+      {
+        max_score[j] += nodes[index].tscore-nodes[tmp_index].tscore;
       }
 
       /* Close starts.  Ignore coding and see if start has better rbs */
       /* and type. */
-      else if(abs(nod[mndx].ndx-nod[ndx].ndx) <= 15 && nod[mndx].rscore+
-              nod[mndx].tscore > nod[ndx].rscore+nod[ndx].tscore &&
-              nod[ndx].edge == 0 && nod[mndx].edge == 0) {
-        if(nod[ndx].cscore > nod[mndx].cscore) 
-          maxsc[j] += nod[ndx].cscore - nod[mndx].cscore;
-        if(nod[ndx].uscore > nod[mndx].uscore) 
-          maxsc[j] += nod[ndx].uscore - nod[mndx].uscore;
-        if(igm > maxigm[j]) maxsc[j] += igm - maxigm[j]; 
+      else if (abs(nodes[tmp_index].index - nodes[index].index) <= 15 &&
+               nodes[tmp_index].rscore + nodes[tmp_index].tscore >
+               nodes[index].rscore + nodes[index].tscore &&
+               nodes[index].edge == 0 && nodes[tmp_index].edge == 0)
+      {
+        if (nodes[index].cscore > nodes[tmp_index].cscore)
+        {
+          max_score[j] += nodes[index].cscore - nodes[tmp_index].cscore;
+        }
+        if (nodes[index].uscore > nodes[tmp_index].uscore)
+        {
+          max_score[j] += nodes[index].uscore - nodes[tmp_index].uscore;
+        }
+        if (ig_mod > max_ig_mod[j])
+        {
+          max_score[j] += ig_mod - max_ig_mod[j];
+        }
       }
-  
-      else maxsc[j] = -1000.0;
+
+      else
+      {
+        max_score[j] = -1000.0;
+      }
     }
 
     /* Change the gene coordinates to the new maximum. */
-    mndx = -1;
-    for(j = 0; j < 2; j++) {
-      if(maxndx[j] == -1) continue;
-      if(mndx == -1 && maxsc[j]+maxigm[j] > sc+igm)
-        mndx = j;
-      else if(mndx >= 0 && maxsc[j]+maxigm[j] > maxsc[mndx]+maxigm[mndx])
-        mndx = j; 
+    tmp_index = -1;
+    for (j = 0; j < 2; j++)
+    {
+      if (max_index[j] == -1)
+      {
+        continue;
+      }
+      if (tmp_index == -1 && max_score[j] + max_ig_mod[j] > score+ig_mod)
+      {
+        tmp_index = j;
+      }
+      else if (tmp_index >= 0 && max_score[j] + max_ig_mod[j] >
+               max_score[tmp_index] + max_ig_mod[tmp_index])
+      {
+        tmp_index = j;
+      }
     }
-    if(mndx != -1 && nod[maxndx[mndx]].strand == 1) {
-      genes[i].start_ndx = maxndx[mndx];
-      genes[i].begin = nod[maxndx[mndx]].ndx+1;
-    } 
-    else if(mndx != -1 && nod[maxndx[mndx]].strand == -1) {
-      genes[i].start_ndx = maxndx[mndx];
-      genes[i].end = nod[maxndx[mndx]].ndx+1;
-    } 
+    if (tmp_index != -1 && nodes[max_index[tmp_index]].strand == 1)
+    {
+      genes[i].start_index = max_index[tmp_index];
+      genes[i].begin = nodes[max_index[tmp_index]].index + 1;
+    }
+    else if (tmp_index != -1 && nodes[max_index[tmp_index]].strand == -1)
+    {
+      genes[i].start_index = max_index[tmp_index];
+      genes[i].end = nodes[max_index[tmp_index]].index + 1;
+    }
   }
 }
 
-void record_gene_data(struct _gene *genes, int ng, struct _node *nod,
-                      struct _training *tinf, int sctr)
+/* This function records the metadata associated with a gene into */
+/* two text strings: gene_data for start type/RBS motif/etc. and score_data */
+/* for the actual numerical scores. */
+void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
+                      int num_genes, struct _node *nodes,
+                      struct _training *train_data, int seq_counter)
 {
 
-  int i, ndx, sndx, partial_left, partial_right, st_type;
+  int i, index, sindex, partial_left, partial_right, start_type;
   double rbs1, rbs2, confidence;
-  char sd_string[28][100], sd_spacer[28][20], qt[10];
-  char type_string[4][5] = { "ATG", "GTG", "TTG" , "Edge" };
+  char sd_string[28][100], sd_spacer[28][20], motif[10];
+  char type_string[5][20] = { "ATG", "GTG", "TTG" , "Nonstandard", "Edge" };
 
   /* Initialize RBS string information for default SD */
   strcpy(sd_string[0], "None");
@@ -262,268 +379,440 @@ void record_gene_data(struct _gene *genes, int ng, struct _node *nod,
   strcpy(sd_string[27], "AGGAGG");
   strcpy(sd_spacer[27], "5-10bp");
 
-  for(i = 0; i < ng; i++) {
-    ndx = genes[i].start_ndx;
-    sndx = genes[i].stop_ndx;
+  /* Go through each gene and record its information */
+  for (i = 0; i < num_genes; i++)
+  {
+    index = genes[i].start_index;
+    sindex = genes[i].stop_index;
 
     /* Record basic gene data */
-    if((nod[ndx].edge == 1 && nod[ndx].strand == 1) ||
-       (nod[sndx].edge == 1 && nod[ndx].strand == -1))
+    if ((nodes[index].edge == 1 && nodes[index].strand == 1) ||
+        (nodes[sindex].edge == 1 && nodes[index].strand == -1))
+    {
       partial_left = 1;
-    else partial_left = 0;
-    if((nod[sndx].edge == 1 && nod[ndx].strand == 1) ||
-       (nod[ndx].edge == 1 && nod[ndx].strand == -1))
+    }
+    else
+    {
+      partial_left = 0;
+    }
+    if ((nodes[sindex].edge == 1 && nodes[index].strand == 1) ||
+        (nodes[index].edge == 1 && nodes[index].strand == -1))
+    {
       partial_right = 1;
-    else partial_right = 0;
-    if(nod[ndx].edge == 1) st_type = 3;
-    else st_type = nod[ndx].type;
+    }
+    else
+    {
+      partial_right = 0;
+    }
+    if (nodes[index].edge == 1)
+    {
+      start_type = 4;
+    }
+    else
+    {
+      start_type = nodes[index].type;
+    }
 
-    sprintf(genes[i].gene_data, "ID=%d_%d;partial=%d%d;start_type=%s;", sctr, 
-            i+1, partial_left, partial_right, type_string[st_type]);
+    sprintf(gene_data[i].gene_data, "ID=%d_%d;partial=%d%d;start_type=%s;",
+            seq_counter, i + 1, partial_left, partial_right,
+            type_string[start_type]);
 
     /* Record rbs data */
-    rbs1 = tinf->rbs_wt[nod[ndx].rbs[0]]*tinf->st_wt;
-    rbs2 = tinf->rbs_wt[nod[ndx].rbs[1]]*tinf->st_wt;
-    if(tinf->uses_sd == 1) {
-      if(rbs1 > rbs2)
-        sprintf(genes[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s", 
-                genes[i].gene_data, sd_string[nod[ndx].rbs[0]], 
-                sd_spacer[nod[ndx].rbs[0]]);
+    rbs1 = train_data->rbs_wt[nodes[index].rbs[0]]*train_data->start_weight;
+    rbs2 = train_data->rbs_wt[nodes[index].rbs[1]]*train_data->start_weight;
+    if (train_data->uses_sd == 1)
+    {
+      if (rbs1 > rbs2)
+      {
+        sprintf(gene_data[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s",
+                gene_data[i].gene_data, sd_string[nodes[index].rbs[0]],
+                sd_spacer[nodes[index].rbs[0]]);
+      }
       else
-        sprintf(genes[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s", 
-                genes[i].gene_data, sd_string[nod[ndx].rbs[1]], 
-                sd_spacer[nod[ndx].rbs[1]]);
+      {
+        sprintf(gene_data[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s",
+                gene_data[i].gene_data, sd_string[nodes[index].rbs[1]],
+                sd_spacer[nodes[index].rbs[1]]);
+      }
     }
-    else {
-      mer_text(qt, nod[ndx].mot.len, nod[ndx].mot.ndx);
-      if(tinf->no_mot > -0.5 && rbs1 > rbs2 && rbs1 > nod[ndx].mot.score *
-         tinf->st_wt)
-        sprintf(genes[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s", 
-                genes[i].gene_data, sd_string[nod[ndx].rbs[0]], 
-                sd_spacer[nod[ndx].rbs[0]]);
-      else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && 
-              rbs2 > nod[ndx].mot.score * tinf->st_wt)
-        sprintf(genes[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s", 
-                genes[i].gene_data, sd_string[nod[ndx].rbs[1]], 
-                sd_spacer[nod[ndx].rbs[1]]);
-      else if(nod[ndx].mot.len == 0) 
-        sprintf(genes[i].gene_data, "%srbs_motif=None;rbs_spacer=None", 
-                genes[i].gene_data);
-      else sprintf(genes[i].gene_data, "%srbs_motif=%s;rbs_spacer=%dbp", 
-                   genes[i].gene_data, qt, nod[ndx].mot.spacer);
+    else
+    {
+      mer_text(motif, nodes[index].mot.len, nodes[index].mot.index);
+      if (train_data->no_mot > -0.5 && rbs1 > rbs2 &&
+          rbs1 > nodes[index].mot.score * train_data->start_weight)
+      {
+        sprintf(gene_data[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s",
+                gene_data[i].gene_data, sd_string[nodes[index].rbs[0]],
+                sd_spacer[nodes[index].rbs[0]]);
+      }
+      else if (train_data->no_mot > -0.5 && rbs2 >= rbs1 &&
+               rbs2 > nodes[index].mot.score * train_data->start_weight)
+      {
+        sprintf(gene_data[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s",
+                gene_data[i].gene_data, sd_string[nodes[index].rbs[1]],
+                sd_spacer[nodes[index].rbs[1]]);
+      }
+      else if (nodes[index].mot.len == 0)
+      {
+        sprintf(gene_data[i].gene_data, "%srbs_motif=None;rbs_spacer=None",
+                gene_data[i].gene_data);
+      }
+      else
+      {
+        sprintf(gene_data[i].gene_data, "%srbs_motif=%s;rbs_spacer=%dbp",
+                gene_data[i].gene_data, motif, nodes[index].mot.spacer);
+      }
     }
-    sprintf(genes[i].gene_data, "%s;gc_cont=%.3f", genes[i].gene_data, 
-            nod[ndx].gc_cont);
+    sprintf(gene_data[i].gene_data, "%s;gc_cont=%.3f", gene_data[i].gene_data,
+            nodes[index].gc_cont);
 
     /* Record score data */
-    confidence = calculate_confidence(nod[ndx].cscore + nod[ndx].sscore, 
-                                      tinf->st_wt);
-    sprintf(genes[i].score_data, 
-     "conf=%.2f;score=%.2f;cscore=%.2f;sscore=%.2f;rscore=%.2f;uscore=%.2f;",
-     confidence, nod[ndx].cscore+nod[ndx].sscore,nod[ndx].cscore, 
-     nod[ndx].sscore, nod[ndx].rscore, nod[ndx].uscore);
-    sprintf(genes[i].score_data, "%stscore=%.2f;", genes[i].score_data, 
-            nod[ndx].tscore);
+    confidence = calculate_confidence(nodes[index].cscore +
+                                      nodes[index].sscore,
+                                      train_data->start_weight);
+    sprintf(gene_data[i].score_data,
+      "conf=%.2f;score=%.2f;cscore=%.2f;sscore=%.2f;rscore=%.2f;uscore=%.2f;",
+      confidence, nodes[index].cscore+nodes[index].sscore,nodes[index].cscore,
+      nodes[index].sscore, nodes[index].rscore, nodes[index].uscore);
+    sprintf(gene_data[i].score_data, "%stscore=%.2f;", gene_data[i].score_data,
+            nodes[index].tscore);
   }
-
 }
 
-/* Print the genes.  'Flag' indicates which format to use. */
-void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod, 
-                 int slen, int flag, int sctr, int mode, char *mdesc,
-                 struct _training *tinf, char *header, char *short_hdr,
+/* Print the genes.  The 'format' variable indicates which format to use. */
+void print_genes(FILE *fp, struct _gene *genes, struct _gene_data *gene_data,
+                 int num_genes, struct _node *nodes, int seq_length,
+                 int format, int seq_counter, int mode, char *preset_data,
+                 struct _training *train_data, char *header, char *short_hdr,
                  char *version)
 {
-  int i, ndx, sndx;
+  int i, beg_node, end_node;
   char left[50], right[50];
   char seq_data[MAX_LINE*2], run_data[MAX_LINE];
 
   /* Initialize sequence data */
-  sprintf(seq_data, "seqnum=%d;seqlen=%d;seqhdr=\"%s\"", sctr, slen, header);
+  sprintf(seq_data, "seqnum=%d;seqlen=%d;seqhdr=\"%s\"", seq_counter,
+          seq_length, header);
 
   /* Initialize run data string */
-  if(mode == MODE_ANON) {
+  if (mode == MODE_ANON)
+  {
     sprintf(run_data, "version=Prodigal.v%s;run_type=Anonymous;", version);
-    sprintf(run_data, "%smodel=\"%s\";", run_data, mdesc);
+    sprintf(run_data, "%smodel=\"%s\";", run_data, preset_data);
   }
-  else {
+  else
+  {
     sprintf(run_data, "version=Prodigal.v%s;run_type=Normal;", version);
     sprintf(run_data, "%smodel=\"Ab initio\";", run_data);
   }
-  sprintf(run_data, "%sgc_cont=%.2f;transl_table=%d;uses_sd=%d", run_data, 
-          tinf->gc*100.0, tinf->trans_table, tinf->uses_sd);
+  sprintf(run_data, "%sgc_cont=%.2f;transl_table=%d;uses_sd=%d", run_data,
+          train_data->gc*100.0, train_data->trans_table, train_data->uses_sd);
 
   strcpy(left, "");
   strcpy(right, "");
 
   /* Print the gff header once */
-  if(flag == 3 && sctr == 1) fprintf(fp, "##gff-version  3\n");
+  if (format == 3 && seq_counter == 1)
+  {
+    fprintf(fp, "##gff-version  3\n");
+  }
 
   /* Print sequence/model information */
-  if(flag == 0) {
+  if (format == 0)
+  {
     fprintf(fp, "DEFINITION  %s;%s\n", seq_data, run_data);
     fprintf(fp, "FEATURES             Location/Qualifiers\n");
   }
-  else if(flag > 0 && flag < 4) {
+  else if (format > 0 && format < 4)
+  {
     fprintf(fp, "# Sequence Data: %s\n", seq_data);
     fprintf(fp, "# Model Data: %s\n", run_data);
   }
-  else if(flag == 4) {
+  else if (format == 4)
+  {
     fprintf(fp, ">Feature %s\n", short_hdr);
-    fprintf(fp, "1\t%d\tREFERENCE\n", slen);
+    fprintf(fp, "1\t%d\tREFERENCE\n", seq_length);
   }
- 
+
   /* Print the genes */
-  for(i = 0; i < ng; i++) {
-    ndx = genes[i].start_ndx;
-    sndx = genes[i].stop_ndx;
+  for (i = 0; i < num_genes; i++)
+  {
+    beg_node = genes[i].start_index;
+    end_node = genes[i].stop_index;
 
     /* Print the coordinates and data */
-    if(nod[ndx].strand == 1) {
+    if (nodes[beg_node].strand == 1)
+    {
+      if (nodes[beg_node].edge == 1)
+      {
+        sprintf(left, "<%d", genes[i].begin);
+      }
+      else
+      {
+        sprintf(left, "%d", genes[i].begin);
+      }
+      if (nodes[end_node].edge == 1)
+      {
+        sprintf(right, ">%d", genes[i].end);
+      }
+      else
+      {
+        sprintf(right, "%d", genes[i].end);
+      }
 
-      if(nod[ndx].edge == 1) sprintf(left, "<%d", genes[i].begin);
-      else sprintf(left, "%d", genes[i].begin);
-      if(nod[sndx].edge == 1) sprintf(right, ">%d", genes[i].end);
-      else sprintf(right, "%d", genes[i].end);
-
-      if(flag == 0) {
+      if (format == 0)
+      {
         fprintf(fp, "     CDS             %s..%s\n", left, right);
         fprintf(fp, "                     ");
-        fprintf(fp, "/note=\"%s;%s\"\n", genes[i].gene_data,
-                genes[i].score_data);
+        fprintf(fp, "/note=\"%s;%s\"\n", gene_data[i].gene_data,
+                gene_data[i].score_data);
       }
-      if(flag == 1)
-        fprintf(fp, "gene_prodigal=%d|1|f|y|y|3|0|%d|%d|%d|%d|-1|-1|1.0\n",i+1,
-                genes[i].begin, genes[i].end, genes[i].begin, genes[i].end);
-      if(flag == 2) fprintf(fp, ">%d_%d_%d_+\n", i+1, genes[i].begin, 
-                            genes[i].end);
-      if(flag == 3) {
-        fprintf(fp, "%s\tProdigal_v%s\tCDS\t%d\t%d\t%.1f\t+\t0\t%s;%s", 
-                short_hdr, version, genes[i].begin, genes[i].end, 
-                nod[ndx].cscore+nod[ndx].sscore, genes[i].gene_data,
-                genes[i].score_data);
-        fprintf(fp, "\n"); 
+      if (format == 1)
+      {
+        fprintf(fp, "gene_prodigal=%d|1|f|y|y|3|0|%d|%d|%d|%d|-1|-1|1.0\n",
+                i+1, genes[i].begin, genes[i].end, genes[i].begin,
+                genes[i].end);
       }
-      if(flag == 4) {
+      if (format == 2) fprintf(fp, ">%d_%d_%d_+\n", i + 1, genes[i].begin,
+          genes[i].end);
+      {
+      }
+      if (format == 3)
+      {
+        fprintf(fp, "%s\tProdigal_v%s\tCDS\t%d\t%d\t%.1f\t+\t0\t%s;%s",
+                short_hdr, version, genes[i].begin, genes[i].end,
+                nodes[beg_node].cscore + nodes[beg_node].sscore,
+                gene_data[i].gene_data, gene_data[i].score_data);
+        fprintf(fp, "\n");
+      }
+      if (format == 4)
+      {
         fprintf(fp, "%s\t%s\tCDS\n", left, right);
-        if(nod[ndx].edge == 1) 
+        if (nodes[beg_node].edge == 1)
+        {
           fprintf(fp, "\t\t\tcodon_start\t%d\n", genes[i].begin);
-        fprintf(fp, "\t\t\tnote\t%s;%s\n", genes[i].gene_data, 
-                genes[i].score_data);
+        }
+        fprintf(fp, "\t\t\tnote\t%s;%s\n", gene_data[i].gene_data,
+                gene_data[i].score_data);
       }
     }
-    else {
+    else
+    {
+      if (nodes[end_node].edge == 1)
+      {
+        sprintf(left, "<%d", genes[i].begin);
+      }
+      else
+      {
+        sprintf(left, "%d", genes[i].begin);
+      }
+      if (nodes[beg_node].edge == 1)
+      {
+        sprintf(right, ">%d", genes[i].end);
+      }
+      else
+      {
+        sprintf(right, "%d", genes[i].end);
+      }
 
-      if(nod[sndx].edge == 1) sprintf(left, "<%d", genes[i].begin);
-      else sprintf(left, "%d", genes[i].begin);
-      if(nod[ndx].edge == 1) sprintf(right, ">%d", genes[i].end);
-      else sprintf(right, "%d", genes[i].end);
-
-      if(flag == 0) {
+      if (format == 0)
+      {
         fprintf(fp, "     CDS             complement(%s..%s)\n", left, right);
         fprintf(fp, "                     ");
-        fprintf(fp, "/note=\"%s;%s\"\n", genes[i].gene_data,
-                genes[i].score_data);
+        fprintf(fp, "/note=\"%s;%s\"\n", gene_data[i].gene_data,
+                gene_data[i].score_data);
       }
-      if(flag == 1)
-        fprintf(fp, "gene_prodigal=%d|1|r|y|y|3|0|%d|%d|%d|%d|-1|-1|1.0\n",i+1,
-               slen+1-genes[i].end, slen+1-genes[i].begin,
-               slen+1-genes[i].end, slen+1-genes[i].begin);
-      if(flag == 2) fprintf(fp, ">%d_%d_%d_-\n", i+1, genes[i].begin, 
-                            genes[i].end);
-      if(flag == 3) {
+      if (format == 1)
+      {
+        fprintf(fp, "gene_prodigal=%d|1|r|y|y|3|0|%d|%d|%d|%d|-1|-1|1.0\n",
+                i+1, seq_length +1 - genes[i].end,
+                seq_length + 1 - genes[i].begin,
+                seq_length + 1 - genes[i].end,
+                seq_length + 1 - genes[i].begin);
+      }
+      if (format == 2)
+      {
+        fprintf(fp, ">%d_%d_%d_-\n", i + 1, genes[i].begin, genes[i].end);
+      }
+      if (format == 3)
+      {
         fprintf(fp, "%s\tProdigal_v%s\tCDS\t%d\t%d\t%.1f\t-\t0\t%s;%s",
-                short_hdr, version, genes[i].begin, genes[i].end, 
-                nod[ndx].cscore+nod[ndx].sscore, genes[i].gene_data,
-                genes[i].score_data);
-        fprintf(fp, "\n"); 
+                short_hdr, version, genes[i].begin, genes[i].end,
+                nodes[beg_node].cscore + nodes[beg_node].sscore,
+                gene_data[i].gene_data, gene_data[i].score_data);
+        fprintf(fp, "\n");
       }
-      if(flag == 4) {
+      if (format == 4)
+      {
         fprintf(fp, "%s\t%s\tCDS\n", right, left);
-        if(nod[ndx].edge == 1) 
+        if (nodes[beg_node].edge == 1)
+        {
           fprintf(fp, "\t\t\tcodon_start\t%d\n", genes[i].end);
-        fprintf(fp, "\t\t\tnote\t%s;%s\n", genes[i].gene_data, 
-                genes[i].score_data);
+        }
+        fprintf(fp, "\t\t\tnote\t%s;%s\n", gene_data[i].gene_data,
+                gene_data[i].score_data);
       }
     }
   }
 
-  /* Footer */
-  if(flag == 0) fprintf(fp, "//\n");
+  /* Genbank footer */
+  if (format == 0)
+  {
+    fprintf(fp, "//\n");
+  }
 }
 
 /* Print the gene translations */
-void write_translations(FILE *fh, struct _gene *genes, int ng, struct 
-                        _node *nod, unsigned char *seq, unsigned char *rseq, 
-                        unsigned char *useq, int slen, int tt, int sctr, char
-                        *short_hdr)
+void write_translations(FILE *fh, struct _gene *genes,
+                        struct _gene_data *gene_data, int num_genes,
+                        struct _node *nodes, unsigned char *seq,
+                        unsigned char *rseq, unsigned char *useq,
+                        int seq_length, int trans_table, int seq_counter,
+                        char *short_hdr)
 {
   int i, j;
 
-  for(i = 0; i < ng; i++) {
-    if(nod[genes[i].start_ndx].strand == 1) {
-      fprintf(fh, ">%s_%d # %d # %d # 1 # %s\n", short_hdr, i+1,
-              genes[i].begin, genes[i].end, genes[i].gene_data);
-      for(j = genes[i].begin; j < genes[i].end; j+=3) {
-        if(is_n(useq, j-1) == 1 || is_n(useq, j) == 1 || is_n(useq, j+1) == 1) 
+  for (i = 0; i < num_genes; i++)
+  {
+    if (nodes[genes[i].start_index].strand == 1)
+    {
+      fprintf(fh, ">%s_%d # %d # %d # 1 # %s\n", short_hdr, i + 1,
+              genes[i].begin, genes[i].end, gene_data[i].gene_data);
+      for (j = genes[i].begin; j < genes[i].end; j+=3)
+      {
+        if (is_n(useq, j-1) == 1 || is_n(useq, j) == 1 || is_n(useq, j+1) == 1)
+        {
           fprintf(fh, "X");
-        else fprintf(fh, "%c", amino(seq, j-1, tt, j==genes[i].begin?1:0 &&
-                     (1-nod[genes[i].start_ndx].edge)));
-        if((j-genes[i].begin)%180 == 177) fprintf(fh, "\n");
+        }
+        else
+        {
+          fprintf(fh, "%c", amino(seq, j-1, trans_table,
+                  j==genes[i].begin?1:0 &&
+                  (1 - nodes[genes[i].start_index].edge)));
+        }
+        if ((j - genes[i].begin) % 180 == 177)
+        {
+          fprintf(fh, "\n");
+        }
       }
-      if((j-genes[i].begin)%180 != 0) fprintf(fh, "\n");
+      if ((j - genes[i].begin) % 180 != 0)
+      {
+        fprintf(fh, "\n");
+      }
     }
-    else {
-      fprintf(fh, ">%s_%d # %d # %d # -1 # %s\n", short_hdr, i+1,
-              genes[i].begin, genes[i].end, genes[i].gene_data);
-      for(j = slen+1-genes[i].end; j < slen+1-genes[i].begin; j+=3) {
-        if(is_n(useq, slen-j) == 1 || is_n(useq, slen-1-j) == 1 ||
-           is_n(useq, slen-2-j) == 1)
+    else
+    {
+      fprintf(fh, ">%s_%d # %d # %d # -1 # %s\n", short_hdr, i + 1,
+              genes[i].begin, genes[i].end, gene_data[i].gene_data);
+      for (j = seq_length + 1 - genes[i].end; j < seq_length + 1 -
+           genes[i].begin; j+=3)
+      {
+        if (is_n(useq, seq_length - j) == 1 || is_n(useq, seq_length - 1 - j)
+            == 1 || is_n(useq, seq_length - 2 - j) == 1)
+        {
           fprintf(fh, "X");
-        else fprintf(fh, "%c", amino(rseq, j-1, tt, j==slen+1-genes[i].end?1:0
-                     && (1-nod[genes[i].start_ndx].edge)));
-        if((j-slen-1+genes[i].end)%180 == 177) fprintf(fh, "\n");
+        }
+        else
+        {
+          fprintf(fh, "%c", amino(rseq, j-1, trans_table,
+                  j==seq_length + 1 - genes[i].end?1:0 &&
+                  (1 - nodes[genes[i].start_index].edge)));
+        }
+        if ((j - seq_length - 1 + genes[i].end) % 180 == 177)
+        {
+          fprintf(fh, "\n");
+        }
       }
-      if((j-slen-1+genes[i].end)%180 != 0) fprintf(fh, "\n");
+      if ((j - seq_length - 1 + genes[i].end) % 180 != 0)
+      {
+        fprintf(fh, "\n");
+      }
     }
   }
 }
 
 /* Print the gene nucleotide sequences */
-void write_nucleotide_seqs(FILE *fh, struct _gene *genes, int ng, struct 
-                           _node *nod, unsigned char *seq, unsigned char *rseq,
-                           unsigned char *useq, int slen, int sctr, char
-                           *short_hdr)
+void write_nucleotide_seqs(FILE *fh, struct _gene *genes,
+                           struct _gene_data *gene_data, int num_genes,
+                           struct _node *nodes, unsigned char *seq,
+                           unsigned char *rseq, unsigned char *useq,
+                           int seq_length, int seq_counter, char *short_hdr)
 {
   int i, j;
 
-  for(i = 0; i < ng; i++) {
-    if(nod[genes[i].start_ndx].strand == 1) {
-      fprintf(fh, ">%s_%d # %d # %d # 1 # %s\n", short_hdr, i+1,
-              genes[i].begin, genes[i].end, genes[i].gene_data);
-      for(j = genes[i].begin-1; j < genes[i].end; j++) {
-        if(is_a(seq, j) == 1) fprintf(fh, "A");
-        else if(is_t(seq, j) == 1) fprintf(fh, "T");
-        else if(is_g(seq, j) == 1) fprintf(fh, "G");
-        else if(is_c(seq, j) == 1 && is_n(useq, j) == 0) fprintf(fh, "C");
-        else fprintf(fh, "N");
-        if((j-genes[i].begin+1)%70 == 69) fprintf(fh, "\n");
-      }
-      if((j-genes[i].begin+1)%70 != 0) fprintf(fh, "\n");
-    }
-    else {
-      fprintf(fh, ">%s_%d # %d # %d # -1 # %s\n", short_hdr, i+1,
-              genes[i].begin, genes[i].end, genes[i].gene_data);
-      for(j = slen-genes[i].end; j < slen+1-genes[i].begin; j++) {
-        if(is_a(rseq, j) == 1) fprintf(fh, "A");
-        else if(is_t(rseq, j) == 1) fprintf(fh, "T");
-        else if(is_g(rseq, j) == 1) fprintf(fh, "G");
-        else if(is_c(rseq, j) == 1 && is_n(useq, slen-1-j) == 0) 
+  for (i = 0; i < num_genes; i++)
+  {
+    if (nodes[genes[i].start_index].strand == 1)
+    {
+      fprintf(fh, ">%s_%d # %d # %d # 1 # %s\n", short_hdr, i + 1,
+              genes[i].begin, genes[i].end, gene_data[i].gene_data);
+      for (j = genes[i].begin-1; j < genes[i].end; j++)
+      {
+        if (is_n(useq, j) == 1)
+        {
+          fprintf(fh, "N");
+        }
+        else if (is_a(seq, j) == 1)
+        {
+          fprintf(fh, "A");
+        }
+        else if (is_t(seq, j) == 1)
+        {
+          fprintf(fh, "T");
+        }
+        else if (is_g(seq, j) == 1)
+        {
+          fprintf(fh, "G");
+        }
+        else if (is_c(seq, j) == 1)
+        {
           fprintf(fh, "C");
-        else fprintf(fh, "N");
-        if((j-slen+genes[i].end)%70 == 69) fprintf(fh, "\n");
+        }
+        if ((j - genes[i].begin + 1) % 70 == 69)
+        {
+          fprintf(fh, "\n");
+        }
       }
-      if((j-slen+genes[i].end)%70 != 0) fprintf(fh, "\n");
+      if ((j - genes[i].begin + 1) % 70 != 0)
+      {
+        fprintf(fh, "\n");
+      }
+    }
+    else
+    {
+      fprintf(fh, ">%s_%d # %d # %d # -1 # %s\n", short_hdr, i + 1,
+              genes[i].begin, genes[i].end, gene_data[i].gene_data);
+      for (j = seq_length-genes[i].end; j < seq_length+1-genes[i].begin; j++)
+      {
+        if (is_n(useq, seq_length - 1 - j) == 1)
+        {
+          fprintf(fh, "N");
+        }
+        else if (is_a(rseq, j) == 1)
+        {
+          fprintf(fh, "A");
+        }
+        else if (is_t(rseq, j) == 1)
+        {
+          fprintf(fh, "T");
+        }
+        else if (is_g(rseq, j) == 1)
+        {
+          fprintf(fh, "G");
+        }
+        else if (is_c(rseq, j) == 1)
+        {
+          fprintf(fh, "C");
+        }
+        if ((j - seq_length + genes[i].end) % 70 == 69)
+        {
+          fprintf(fh, "\n");
+        }
+      }
+      if ((j - seq_length + genes[i].end) % 70 != 0)
+      {
+        fprintf(fh, "\n");
+      }
     }
   }
 }
@@ -532,30 +821,34 @@ void write_nucleotide_seqs(FILE *fh, struct _gene *genes, int ng, struct
   Write detailed scoring information about every single possible gene.  Only
   done at the user's request.
 ******************************************************************************/
-void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
-                      *tinf, int sctr, int slen, int mode, char *mdesc,
+void write_start_file(FILE *fh, struct _node *nodes, int num_nodes,
+                      struct _training *train_data, int seq_counter,
+                      int seq_length, int mode, char *preset_data,
                       char *version, char *header)
 {
-  int i, prev_stop = -1, prev_strand = 0, st_type;
+  int i, prev_stop = -1, prev_strand = 0, start_type;
   double rbs1, rbs2;
-  char sd_string[28][100], sd_spacer[28][20], qt[10];
-  char type_string[4][5] = { "ATG", "GTG", "TTG" , "Edge" };
+  char sd_string[28][100], sd_spacer[28][20], motif[10];
+  char type_string[5][20] = { "ATG", "GTG", "TTG" , "Nonstandard", "Edge" };
   char seq_data[MAX_LINE*2], run_data[MAX_LINE];
 
   /* Initialize sequence data */
-  sprintf(seq_data, "seqnum=%d;seqlen=%d;seqhdr=\"%s\"", sctr, slen, header);
+  sprintf(seq_data, "seqnum=%d;seqlen=%d;seqhdr=\"%s\"", seq_counter,
+          seq_length, header);
 
   /* Initialize run data string */
-  if(mode == MODE_ANON) {
+  if (mode == MODE_ANON)
+  {
     sprintf(run_data, "version=Prodigal.v%s;run_type=Anonymous;", version);
-    sprintf(run_data, "%smodel=\"%s\";", run_data, mdesc);
+    sprintf(run_data, "%smodel=\"%s\";", run_data, preset_data);
   }
-  else {
+  else
+  {
     sprintf(run_data, "version=Prodigal.v%s;run_type=Normal;", version);
     sprintf(run_data, "%smodel=\"Ab initio\";", run_data);
   }
   sprintf(run_data, "%sgc_cont=%.2f;transl_table=%d;uses_sd=%d", run_data,
-          tinf->gc*100.0, tinf->trans_table, tinf->uses_sd);
+          train_data->gc*100.0, train_data->trans_table, train_data->uses_sd);
 
   strcpy(sd_string[0], "None");
   strcpy(sd_spacer[0], "None");
@@ -614,66 +907,93 @@ void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
   strcpy(sd_string[27], "AGGAGG");
   strcpy(sd_spacer[27], "5-10bp");
 
-  qsort(nod, nn, sizeof(struct _node), &stopcmp_nodes);
+  qsort(nodes, num_nodes, sizeof(struct _node), &stopcmp_nodes);
 
   fprintf(fh, "# Sequence Data: %s\n", seq_data);
   fprintf(fh, "# Run Data: %s\n\n", run_data);
 
   fprintf(fh, "Beg\tEnd\tStd\tTotal\tCodPot\tStrtSc\tCodon\tRBSMot\t");
   fprintf(fh, "Spacer\tRBSScr\tUpsScr\tTypeScr\tGCCont\n");
-  for(i = 0; i < nn; i++) {
-    if(nod[i].type == STOP) continue;
-    if(nod[i].edge == 1) st_type = 3;
-    else st_type = nod[i].type;
-    if(nod[i].stop_val != prev_stop || nod[i].strand != prev_strand) {
-      prev_stop = nod[i].stop_val;
-      prev_strand = nod[i].strand;
+  for (i = 0; i < num_nodes; i++)
+  {
+    if (is_stop_node(&nodes[i]) == 1)
+    {
+      continue;
+    }
+    if (nodes[i].edge == 1)
+    {
+      start_type = 4;
+    }
+    else
+    {
+      start_type = nodes[i].type;
+    }
+    if (nodes[i].stop_val != prev_stop || nodes[i].strand != prev_strand)
+    {
+      prev_stop = nodes[i].stop_val;
+      prev_strand = nodes[i].strand;
       fprintf(fh, "\n");
     }
-    if(nod[i].strand == 1)
-      fprintf(fh, "%d\t%d\t+\t%.2f\t%.2f\t%.2f\t%s\t", nod[i].ndx+1,
-              nod[i].stop_val+3, nod[i].cscore+nod[i].sscore, nod[i].cscore,
-              nod[i].sscore, type_string[st_type]);
-    if(nod[i].strand == -1)
-      fprintf(fh, "%d\t%d\t-\t%.2f\t%.2f\t%.2f\t%s\t", nod[i].stop_val-1,
-              nod[i].ndx+1, nod[i].cscore+nod[i].sscore, nod[i].cscore,
-              nod[i].sscore, type_string[st_type]);
-    rbs1 = tinf->rbs_wt[nod[i].rbs[0]]*tinf->st_wt;
-    rbs2 = tinf->rbs_wt[nod[i].rbs[1]]*tinf->st_wt;
-    if(tinf->uses_sd == 1) {
-      if(rbs1 > rbs2) {
-        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[0]],
-                sd_spacer[nod[i].rbs[0]], nod[i].rscore);
+    if (nodes[i].strand == 1)
+    {
+      fprintf(fh, "%d\t%d\t+\t%.2f\t%.2f\t%.2f\t%s\t", nodes[i].index+1,
+              nodes[i].stop_val+3, nodes[i].cscore+nodes[i].sscore,
+              nodes[i].cscore, nodes[i].sscore, type_string[start_type]);
+    }
+    if (nodes[i].strand == -1)
+    {
+      fprintf(fh, "%d\t%d\t-\t%.2f\t%.2f\t%.2f\t%s\t", nodes[i].stop_val-1,
+              nodes[i].index+1, nodes[i].cscore+nodes[i].sscore,
+              nodes[i].cscore, nodes[i].sscore, type_string[start_type]);
+    }
+    rbs1 = train_data->rbs_wt[nodes[i].rbs[0]]*train_data->start_weight;
+    rbs2 = train_data->rbs_wt[nodes[i].rbs[1]]*train_data->start_weight;
+    if (train_data->uses_sd == 1)
+    {
+      if (rbs1 > rbs2)
+      {
+        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nodes[i].rbs[0]],
+                sd_spacer[nodes[i].rbs[0]], nodes[i].rscore);
       }
-      else {
-        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[1]],
-                sd_spacer[nod[i].rbs[1]], nod[i].rscore);
+      else
+      {
+        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nodes[i].rbs[1]],
+                sd_spacer[nodes[i].rbs[1]], nodes[i].rscore);
       }
     }
-    else {
-      mer_text(qt, nod[i].mot.len, nod[i].mot.ndx);
-      if(tinf->no_mot > -0.5 && rbs1 > rbs2 && rbs1 > nod[i].mot.score *
-         tinf->st_wt) {
-        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[0]],
-                sd_spacer[nod[i].rbs[0]], nod[i].rscore);
+    else
+    {
+      mer_text(motif, nodes[i].mot.len, nodes[i].mot.index);
+      if (train_data->no_mot > -0.5 && rbs1 > rbs2 &&
+          rbs1 > nodes[i].mot.score * train_data->start_weight)
+      {
+        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nodes[i].rbs[0]],
+                sd_spacer[nodes[i].rbs[0]], nodes[i].rscore);
       }
-      else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && rbs2 > nod[i].mot.score *
-              tinf->st_wt) {
-        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[1]],
-                sd_spacer[nod[i].rbs[1]], nod[i].rscore);
+      else if (train_data->no_mot > -0.5 && rbs2 >= rbs1 &&
+               rbs2 > nodes[i].mot.score * train_data->start_weight)
+      {
+        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nodes[i].rbs[1]],
+                sd_spacer[nodes[i].rbs[1]], nodes[i].rscore);
       }
-      else {
-        if(nod[i].mot.len == 0) fprintf(fh, "None\tNone\t%.2f\t",
-                                      nod[i].rscore);
-        else fprintf(fh, "%s\t%dbp\t%.2f\t", qt, nod[i].mot.spacer,
-                     nod[i].rscore);
+      else
+      {
+        if (nodes[i].mot.len == 0)
+        {
+          fprintf(fh, "None\tNone\t%.2f\t", nodes[i].rscore);
+        }
+        else
+        {
+          fprintf(fh, "%s\t%dbp\t%.2f\t", motif, nodes[i].mot.spacer,
+                  nodes[i].rscore);
+        }
       }
     }
-    fprintf(fh, "%.2f\t%.2f\t%.3f\n", nod[i].uscore, nod[i].tscore,
-            nod[i].gc_cont);
+    fprintf(fh, "%.2f\t%.2f\t%.3f\n", nodes[i].uscore, nodes[i].tscore,
+            nodes[i].gc_cont);
   }
   fprintf(fh, "\n");
-  qsort(nod, nn, sizeof(struct _node), &compare_nodes);
+  qsort(nodes, num_nodes, sizeof(struct _node), &compare_nodes);
 }
 
 /* Convert score to a percent confidence */
@@ -681,11 +1001,18 @@ double calculate_confidence(double score, double start_weight)
 {
   double conf;
 
-  if(score/start_weight < 41) {
+  if (score/start_weight < 41)
+  {
     conf = exp(score/start_weight);
-    conf = (conf/(conf+1))*100.0;
+    conf = (conf/(conf+1)) * 100.0;
   }
-  else conf = 99.99;
-  if(conf <= 50.00) { conf = 50.00; }
+  else
+  {
+    conf = 99.99;
+  }
+  if (conf <= 50.00)
+  {
+    conf = 50.00;
+  }
   return conf;
 }

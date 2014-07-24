@@ -21,95 +21,175 @@
 #include "dprog.h"
 
 /******************************************************************************
-  Basic dynamic programming routine for predicting genes.  The 'flag' variable
-  is set to 0 for the initial dynamic programming routine based solely on GC
-  frame plot (used to construct a training set.  If the flag is set to 1, the
-  routine does the final dynamic programming based on
-  coding, RBS scores, etc.
+  Basic dynamic programming routine to find the optimal path of potential
+  genes through the genome.  The routine is complicated by the fact genes
+  can and frequently do overlap, but we've recorded information about
+  optimal overlaps before executing this function.
+
+  The 'stage' variable determines which of two scoring functions is used
+  for the dynamic programming.
+    stage = 0: The GC frame bias is used as the coding score.
+    stage = 1: The hexamer coding scores are used instead.
 ******************************************************************************/
-
-int dprog(struct _node *nod, int nn, struct _training *tinf, int flag)
+int dynamic_programming(struct _node *nodes, int num_nodes, double *frame_bias,
+                        double start_weight, int stage)
 {
-  int i, j, min, max_ndx = -1, path, nxt, tmp;
-  double max_sc = -1.0;
+  int i, j, initial_node, max_index = -1, path, nxt, tmp;
+  double max_score = -1.0;
 
-  if(nn == 0) return -1;
-  for(i = 0; i < nn; i++) {
-    nod[i].score = 0;
-    nod[i].traceb = -1;
-    nod[i].tracef = -1;
+  if (num_nodes == 0)
+  {
+    return -1;
   }
-  for(i = 0; i < nn; i++) {
+  for (i = 0; i < num_nodes; i++)
+  {
+    nodes[i].score = 0;
+    nodes[i].trace_back = -1;
+    nodes[i].trace_forward = -1;
+  }
+  for (i = 0; i < num_nodes; i++)
+  {
 
-    /* Set up distance constraints for making connections, */
-    /* but make exceptions for giant ORFS.                 */
-    if(i < MAX_NODE_DIST) min = 0; else min = i-MAX_NODE_DIST;
-    if(nod[i].strand == -1 && nod[i].type != STOP && nod[min].ndx >=
-       nod[i].stop_val)
-      while(min >= 0 && nod[min].ndx != nod[i].stop_val) min--;
-    if(nod[i].strand == 1 && nod[i].type == STOP && nod[min].ndx >=
-       nod[i].stop_val)
-      while(min >= 0 && nod[min].ndx != nod[i].stop_val) min--;
-    if(min < MAX_NODE_DIST) min = 0;
-    else min = min-MAX_NODE_DIST;
-    for(j = min; j < i; j++) {
-      score_connection(nod, j, i, tinf, flag);
+    /* Dynamic programming is n log n, so we set up a distance constraint */
+    /* so that we will only try to connect two nodes within MAX_NODE_DIST */
+    /* of each other in the sorted list of nodes.  We make an exception   */
+    /* for same-gene connections that represent giant ORFs. */
+    if (i < MAX_NODE_DIST)
+    {
+      initial_node = 0;
+    }
+    else
+    {
+      initial_node = i-MAX_NODE_DIST;
+    }
+    if (nodes[i].strand == -1 && is_start_node(&nodes[i]) == 1 &&
+        nodes[initial_node].index >= nodes[i].stop_val)
+    {
+      while (initial_node >= 0 &&
+             nodes[initial_node].index != nodes[i].stop_val)
+      {
+        initial_node--;
+      }
+    }
+    if (nodes[i].strand == 1 && is_stop_node(&nodes[i]) == 1 &&
+        nodes[initial_node].index >= nodes[i].stop_val)
+    {
+      while (initial_node >= 0 &&
+             nodes[initial_node].index != nodes[i].stop_val)
+      {
+        initial_node--;
+      }
+    }
+    if (initial_node < MAX_NODE_DIST)
+    {
+      initial_node = 0;
+    }
+    else
+    {
+      initial_node = initial_node-MAX_NODE_DIST;
+    }
+    /* Score all connections from nodes between initial_node and the current
+       node-1 with the current_node */
+    for (j = initial_node; j < i; j++)
+    {
+      score_connection(nodes, j, i, frame_bias, start_weight, stage);
     }
   }
-  for(i = nn-1; i >= 0; i--) {
-    if(nod[i].strand == 1 && nod[i].type != STOP) continue;
-    if(nod[i].strand == -1 && nod[i].type == STOP) continue;
-    if(nod[i].score > max_sc) { max_sc = nod[i].score; max_ndx = i; }
+  /* Locate the highest scoring node in the traceback and record its index */
+  for (i = num_nodes-1; i >= 0; i--)
+  {
+    if (nodes[i].strand == 1 && is_start_node(&nodes[i]) == 1)
+    {
+      continue;
+    }
+    if (nodes[i].strand == -1 && is_stop_node(&nodes[i]) == 1)
+    {
+      continue;
+    }
+    if (nodes[i].score > max_score)
+    {
+      max_score = nodes[i].score;
+      max_index = i;
+    }
   }
 
-  /* First Pass: untangle the triple overlaps */
-  path = max_ndx;
-  while(nod[path].traceb != -1) {
-    nxt = nod[path].traceb;
-    if(nod[path].strand == -1 && nod[path].type == STOP &&
-      nod[nxt].strand == 1 && nod[nxt].type == STOP &&
-      nod[path].ov_mark != -1 && nod[path].ndx > nod[nxt].ndx) {
-      tmp = nod[path].star_ptr[nod[path].ov_mark];
-      for(i = tmp; nod[i].ndx != nod[tmp].stop_val; i--);
-      nod[path].traceb = tmp;
-      nod[tmp].traceb = i;
-      nod[i].ov_mark = -1;
-      nod[i].traceb = nxt;
+  /* Dynamic programming is done but we now have to untangle   */
+  /* the overlaps and connect nodes in the proper order (i.e.  */
+  /* start to stop to start to stop), which sometimes involves */
+  /* going backwards due to overlapping genes. */
+
+  /* First Pass: untangle the triple overlaps, cases where two
+     consecutive genes overlap with a third gene inside the
+     overlap */
+  path = max_index;
+  while (nodes[path].trace_back != -1)
+  {
+    nxt = nodes[path].trace_back;
+    if (nodes[path].strand == -1 && is_stop_node(&nodes[path]) == 1 &&
+        nodes[nxt].strand == 1 && is_stop_node(&nodes[nxt]) == 1 &&
+        nodes[path].overlap_frame != -1 &&
+        nodes[path].index > nodes[nxt].index)
+    {
+      tmp = nodes[path].star_ptr[nodes[path].overlap_frame];
+      for (i = tmp; nodes[i].index != nodes[tmp].stop_val; i--)
+      {
+      }
+      nodes[path].trace_back = tmp;
+      nodes[tmp].trace_back = i;
+      nodes[i].overlap_frame = -1;
+      nodes[i].trace_back = nxt;
     }
-    path = nod[path].traceb;
+    path = nodes[path].trace_back;
   }
 
   /* Second Pass: Untangle the simple overlaps */
-  path = max_ndx;
-  while(nod[path].traceb != -1) {
-    nxt = nod[path].traceb;
-    if(nod[path].strand == -1 && nod[path].type != STOP && nod[nxt].strand == 1
-       && nod[nxt].type == STOP) {
-      for(i = path; nod[i].ndx != nod[path].stop_val; i--);
-      nod[path].traceb = i; nod[i].traceb = nxt;
+  path = max_index;
+  while (nodes[path].trace_back != -1)
+  {
+    nxt = nodes[path].trace_back;
+    if (nodes[path].strand == -1 && is_start_node(&nodes[path]) == 1 &&
+        nodes[nxt].strand == 1 && is_stop_node(&nodes[nxt]) == 1)
+    {
+      for (i = path; nodes[i].index != nodes[path].stop_val; i--)
+      {
+      }
+      nodes[path].trace_back = i;
+      nodes[i].trace_back = nxt;
     }
-    if(nod[path].strand == 1 && nod[path].type == STOP && nod[nxt].strand == 1
-       && nod[nxt].type == STOP) {
-      nod[path].traceb = nod[nxt].star_ptr[(nod[path].ndx)%3];
-      nod[nod[path].traceb].traceb = nxt;
+    if (nodes[path].strand == 1 && is_stop_node(&nodes[path]) == 1 &&
+        nodes[nxt].strand == 1 && is_stop_node(&nodes[nxt]) == 1)
+    {
+      nodes[path].trace_back = nodes[nxt].star_ptr[(nodes[path].index)%3];
+      nodes[nodes[path].trace_back].trace_back = nxt;
     }
-    if(nod[path].strand == -1 && nod[path].type == STOP &&
-       nod[nxt].strand == -1 && nod[nxt].type == STOP) {
-      nod[path].traceb = nod[path].star_ptr[(nod[nxt].ndx)%3];
-      nod[nod[path].traceb].traceb = nxt;
+    if (nodes[path].strand == -1 && is_stop_node(&nodes[path]) == 1 &&
+        nodes[nxt].strand == -1 && is_stop_node(&nodes[nxt]) == 1)
+    {
+      nodes[path].trace_back = nodes[path].star_ptr[(nodes[nxt].index)%3];
+      nodes[nodes[path].trace_back].trace_back = nxt;
     }
-    path = nod[path].traceb;
+    path = nodes[path].trace_back;
   }
 
-  /* Mark forward pointers */
-  path = max_ndx;
-  while(nod[path].traceb != -1) {
-    nod[nod[path].traceb].tracef = path;
-    path = nod[path].traceb;
+  /* Dynamic programming did a trace_backack, but now we want to record
+     trace-forward pointers, so we can get the genes in forward order. */
+  path = max_index;
+  while (nodes[path].trace_back != -1)
+  {
+    nodes[nodes[path].trace_back].trace_forward = path;
+    path = nodes[path].trace_back;
   }
 
-  if(nod[max_ndx].traceb == -1) return -1;
-  else return max_ndx;
+  /* Return the starting node of the dynamic programming or -1 if
+     we found no genes in this sequence. */
+  if (nodes[max_index].trace_back == -1)
+  {
+    return -1;
+  }
+  else
+  {
+    return max_index;
+  }
 }
 
 /******************************************************************************
@@ -120,61 +200,110 @@ int dprog(struct _node *nod, int nn, struct _training *tinf, int flag)
   overlaps 5'->3' on the same strand. In this case, 3' connects directly to 3',
   and n3 is used to untangle the 5' end of the second gene.
 ******************************************************************************/
-
-void score_connection(struct _node *nod, int p1, int p2, 
-                      struct _training *tinf, int flag)
+void score_connection(struct _node *nodes, int node_a, int node_b,
+                      double *frame_bias, double start_weight, int stage)
 {
-  struct _node *n1 = &(nod[p1]), *n2 = &(nod[p2]), *n3;
-  int i, left = n1->ndx, right = n2->ndx, bnd, ovlp = 0, maxfr = -1;
-  double score = 0.0, scr_mod = 0.0, maxval;
+  struct _node *n1 = &(nodes[node_a]);
+  struct _node *n2 = &(nodes[node_b]);
+  struct _node *n3 = NULL;
+  int i, left = n1->index, right = n2->index, bound;
+  int overlap = 0, max_frame = -1;
+  double score = 0.0, score_mod = 0.0, max_val;
 
   /***********************/
   /* Invalid Connections */
   /***********************/
 
   /* 5'fwd->5'fwd, 5'rev->5'rev */
-  if(n1->type != STOP && n2->type != STOP && n1->strand == n2->strand) return;
+  if (is_start_node(n1) == 1 && is_start_node(n2) == 1 &&
+      n1->strand == n2->strand)
+  {
+    return;
+  }
 
   /* 5'fwd->5'rev, 5'fwd->3'rev */
-  else if(n1->strand == 1 && n1->type != STOP && n2->strand == -1) return;
+  else if (n1->strand == 1 && is_start_node(n1) == 1 && n2->strand == -1)
+  {
+    return;
+  }
 
   /* 3'rev->5'fwd, 3'rev->3'fwd) */
-  else if(n1->strand == -1 && n1->type == STOP && n2->strand == 1) return;
+  else if (n1->strand == -1 && is_stop_node(n1) == 1 && n2->strand == 1)
+  {
+    return;
+  }
 
   /* 5'rev->3'fwd */
-  else if(n1->strand == -1 && n1->type != STOP && n2->strand == 1 &&
-          n2->type == STOP) return;
+  else if (n1->strand == -1 && is_start_node(n1) == 1 && n2->strand == 1 &&
+           is_stop_node(n2) == 1)
+  {
+    return;
+  }
 
   /******************/
   /* Edge Artifacts */
   /******************/
-  if(n1->traceb == -1 && n1->strand == 1 && n1->type == STOP) return;
-  if(n1->traceb == -1 && n1->strand == -1 && n1->type != STOP) return;
+  if (n1->trace_back == -1 && n1->strand == 1 && is_stop_node(n1) == 1)
+  {
+    return;
+  }
+  if (n1->trace_back == -1 && n1->strand == -1 && is_start_node(n1) == 1)
+  {
+    return;
+  }
 
   /*********/
   /* Genes */
   /*********/
 
   /* 5'fwd->3'fwd */
-  else if(n1->strand == n2->strand && n1->strand == 1 && n1->type != STOP &&
-          n2->type == STOP) {
-    if(n2->stop_val >= n1->ndx) return;
-    if(n1->ndx % 3 != n2->ndx % 3) return;
+  else if (n1->strand == n2->strand && n1->strand == 1 &&
+           is_start_node(n1) == 1 && is_stop_node(n2) == 1)
+  {
+    if (n2->stop_val >= n1->index)
+    {
+      return;
+    }
+    if (n1->index % 3 != n2->index % 3)
+    {
+      return;
+    }
     right += 2;
-    if(flag == 0) scr_mod = tinf->bias[0]*n1->gc_score[0] +
-                  tinf->bias[1]*n1->gc_score[1]+tinf->bias[2]*n1->gc_score[2];
-    else if(flag == 1) score = n1->cscore + n1->sscore;
+    if (stage == 0)
+    {
+      score_mod = frame_bias[0]*n1->gc_score[0] +
+                  frame_bias[1]*n1->gc_score[1] +
+                  frame_bias[2]*n1->gc_score[2];
+    }
+    else if (stage == 1)
+    {
+      score = n1->cscore + n1->sscore;
+    }
   }
 
   /* 3'rev->5'rev */
-  else if(n1->strand == n2->strand && n1->strand == -1 && n1->type == STOP &&
-          n2->type != STOP) {
-    if(n1->stop_val <= n2->ndx) return;
-    if(n1->ndx % 3 != n2->ndx % 3) return;
+  else if (n1->strand == n2->strand && n1->strand == -1 &&
+           is_stop_node(n1) == 1 && is_start_node(n2) == 1)
+  {
+    if (n1->stop_val <= n2->index)
+    {
+      return;
+    }
+    if (n1->index % 3 != n2->index % 3)
+    {
+      return;
+    }
     left -= 2;
-    if(flag == 0) scr_mod = tinf->bias[0]*n2->gc_score[0] +
-                  tinf->bias[1]*n2->gc_score[1]+tinf->bias[2]*n2->gc_score[2];
-    else if(flag == 1) score = n2->cscore + n2->sscore;
+    if (stage == 0)
+    {
+      score_mod = frame_bias[0]*n2->gc_score[0] +
+                  frame_bias[1]*n2->gc_score[1] +
+                  frame_bias[2]*n2->gc_score[2];
+    }
+    else if (stage == 1)
+    {
+      score = n2->cscore + n2->sscore;
+    }
   }
 
   /********************************/
@@ -182,60 +311,114 @@ void score_connection(struct _node *nod, int p1, int p2,
   /********************************/
 
   /* 3'fwd->5'fwd */
-  else if(n1->strand == 1 && n1->type == STOP && n2->strand == 1 && n2->type !=
-          STOP) {
+  else if (n1->strand == 1 && is_stop_node(n1) == 1 && n2->strand == 1 &&
+           is_start_node(n2) == 1)
+  {
     left += 2;
-    if(left >= right) return;
-    if(flag == 1) score = intergenic_mod(n1, n2, tinf->st_wt);
+    if (left >= right)
+    {
+      return;
+    }
+    if (stage == 1)
+    {
+      score = intergenic_mod(n1, n2, start_weight);
+    }
   }
 
   /* 3'fwd->3'rev */
-  else if(n1->strand == 1 && n1->type == STOP && n2->strand == -1 &&
-          n2->type == STOP) {
-    left += 2; right -= 2;
-    if(left >= right) return;
+  else if (n1->strand == 1 && is_stop_node(n1) == 1 && n2->strand == -1 &&
+           is_stop_node(n2) == 1)
+  {
+    left += 2;
+    right -= 2;
+    if (left >= right)
+    {
+      return;
+    }
     /* Overlapping Gene Case 2: Three consecutive overlapping genes f r r */
-    maxfr = -1; maxval = 0.0;
-    for(i = 0; i < 3; i++) {
-      if(n2->star_ptr[i] == -1) continue;
-      n3 = &(nod[n2->star_ptr[i]]);
-      ovlp = left - n3->stop_val + 3;
-      if(ovlp <= 0 || ovlp >= MAX_OPP_OVLP) continue;
-      if(ovlp >= n3->ndx - left) continue;
-      if(n1->traceb == -1) continue;
-      if(ovlp >= n3->stop_val - nod[n1->traceb].ndx - 2) continue;
-      if((flag == 1 && n3->cscore + n3->sscore + 
-          intergenic_mod(n3, n2, tinf->st_wt) > maxval) || (flag == 0 && 
-          tinf->bias[0]*n3->gc_score[0] + tinf->bias[1]*n3->gc_score[1] + 
-          tinf->bias[2]*n3->gc_score[2] > maxval)) {
-        maxfr = i;
-        maxval = n3->cscore + n3->sscore + intergenic_mod(n3, n2, tinf->st_wt);
+    max_frame = -1;
+    max_val = 0.0;
+    for (i = 0; i < 3; i++)
+    {
+      if (n2->star_ptr[i] == -1)
+      {
+        continue;
+      }
+      n3 = &(nodes[n2->star_ptr[i]]);
+      overlap = left - n3->stop_val + 3;
+      if (overlap <= 0 || overlap >= MAX_OPP_OVLP)
+      {
+        continue;
+      }
+      if (overlap >= n3->index - left)
+      {
+        continue;
+      }
+      if (n1->trace_back == -1)
+      {
+        continue;
+      }
+      if (overlap >= n3->stop_val - nodes[n1->trace_back].index - 2)
+      {
+        continue;
+      }
+      if ((stage == 1 && n3->cscore + n3->sscore +
+          intergenic_mod(n3, n2, start_weight) > max_val) || (stage == 0 &&
+          frame_bias[0]*n3->gc_score[0] + frame_bias[1]*n3->gc_score[1] +
+          frame_bias[2]*n3->gc_score[2] > max_val))
+      {
+        max_frame = i;
+        max_val = n3->cscore + n3->sscore +
+                  intergenic_mod(n3, n2, start_weight);
       }
     }
-    if(maxfr != -1) {
-      n3 = &(nod[n2->star_ptr[maxfr]]);
-      if(flag == 0) scr_mod = tinf->bias[0]*n3->gc_score[0] +
-                    tinf->bias[1]*n3->gc_score[1] +
-                    tinf->bias[2]*n3->gc_score[2];
-      else if(flag == 1) score = n3->cscore + n3->sscore +
-              intergenic_mod(n3, n2, tinf->st_wt);
+    if (max_frame != -1)
+    {
+      n3 = &(nodes[n2->star_ptr[max_frame]]);
+      if (stage == 0)
+      {
+        score_mod = frame_bias[0]*n3->gc_score[0] +
+                    frame_bias[1]*n3->gc_score[1] +
+                    frame_bias[2]*n3->gc_score[2];
+      }
+      else if (stage == 1)
+      {
+        score = n3->cscore + n3->sscore + intergenic_mod(n3, n2, start_weight);
+      }
     }
-    else if(flag == 1) score = intergenic_mod(n1, n2, tinf->st_wt);
+    else if (stage == 1)
+    {
+      score = intergenic_mod(n1, n2, start_weight);
+    }
   }
 
   /* 5'rev->3'rev */
-  else if(n1->strand == -1 && n1->type != STOP && n2->strand == -1 && n2->type
-          == STOP) {
+  else if (n1->strand == -1 && is_start_node(n1) == 1 && n2->strand == -1 &&
+           is_stop_node(n2) == 1)
+  {
     right -= 2;
-    if(left >= right) return;
-    if(flag == 1) score = intergenic_mod(n1, n2, tinf->st_wt);
+    if (left >= right)
+    {
+      return;
+    }
+    if (stage == 1)
+    {
+      score = intergenic_mod(n1, n2, start_weight);
+    }
   }
 
   /* 5'rev->5'fwd */
-  else if(n1->strand == -1 && n1->type != STOP && n2->strand == 1 && n2->type
-          != STOP) {
-    if(left >= right) return;
-    if(flag == 1) score = intergenic_mod(n1, n2, tinf->st_wt);
+  else if (n1->strand == -1 && is_start_node(n1) == 1 && n2->strand == 1 &&
+           is_start_node(n2) == 1)
+  {
+    if (left >= right)
+    {
+      return;
+    }
+    if (stage == 1)
+    {
+      score = intergenic_mod(n1, n2, start_weight);
+    }
   }
 
   /********************/
@@ -243,29 +426,57 @@ void score_connection(struct _node *nod, int p1, int p2,
   /********************/
 
   /* 3'fwd->3'fwd, check for a start just to left of first 3' */
-  else if(n1->strand == 1 && n2->strand == 1 && n1->type == STOP && n2->type ==
-          STOP) {
-    if(n2->stop_val >= n1->ndx) return;
-    if(n1->star_ptr[n2->ndx%3] == -1) return;
-    n3 = &(nod[n1->star_ptr[n2->ndx%3]]);
-    left = n3->ndx; right += 2;
-    if(flag == 0) scr_mod = tinf->bias[0]*n3->gc_score[0] +
-                  tinf->bias[1]*n3->gc_score[1]+tinf->bias[2]*n3->gc_score[2];
-    else if(flag == 1) score = n3->cscore + n3->sscore +
-                       intergenic_mod(n1, n3, tinf->st_wt);
+  else if (n1->strand == 1 && n2->strand == 1 && is_stop_node(n1) == 1 &&
+           is_stop_node(n2) == 1)
+  {
+    if (n2->stop_val >= n1->index)
+    {
+      return;
+    }
+    if (n1->star_ptr[n2->index%3] == -1)
+    {
+      return;
+    }
+    n3 = &(nodes[n1->star_ptr[n2->index%3]]);
+    left = n3->index;
+    right += 2;
+    if (stage == 0)
+    {
+      score_mod = frame_bias[0]*n3->gc_score[0] +
+                  frame_bias[1]*n3->gc_score[1] +
+                  frame_bias[2]*n3->gc_score[2];
+    }
+    else if (stage == 1)
+    {
+      score = n3->cscore + n3->sscore + intergenic_mod(n1, n3, start_weight);
+    }
   }
 
   /* 3'rev->3'rev, check for a start just to right of second 3' */
-  else if(n1->strand == -1 && n1->type == STOP && n2->strand == -1 && n2->type
-          == STOP) {
-    if(n1->stop_val <= n2->ndx) return;
-    if(n2->star_ptr[n1->ndx%3] == -1) return;
-    n3 = &(nod[n2->star_ptr[n1->ndx%3]]);
-    left -= 2; right = n3->ndx;
-    if(flag == 0) scr_mod = tinf->bias[0]*n3->gc_score[0] +
-                  tinf->bias[1]*n3->gc_score[1]+tinf->bias[2]*n3->gc_score[2];
-    else if(flag == 1) score = n3->cscore + n3->sscore +
-                       intergenic_mod(n3, n2, tinf->st_wt);
+  else if (n1->strand == -1 && is_stop_node(n1) == 1 && n2->strand == -1 &&
+           is_stop_node(n2) == 1)
+  {
+    if (n1->stop_val <= n2->index)
+    {
+      return;
+    }
+    if (n2->star_ptr[n1->index%3] == -1)
+    {
+      return;
+    }
+    n3 = &(nodes[n2->star_ptr[n1->index%3]]);
+    left -= 2;
+    right = n3->index;
+    if (stage == 0)
+    {
+      score_mod = frame_bias[0]*n3->gc_score[0] +
+                  frame_bias[1]*n3->gc_score[1] +
+                  frame_bias[2]*n3->gc_score[2];
+    }
+    else if (stage == 1)
+    {
+      score = n3->cscore + n3->sscore + intergenic_mod(n3, n2, start_weight);
+    }
   }
 
   /***************************************/
@@ -273,27 +484,58 @@ void score_connection(struct _node *nod, int p1, int p2,
   /***************************************/
 
   /* 3'for->5'rev */
-  else if(n1->strand == 1 && n1->type == STOP && n2->strand == -1 && n2->type
-          != STOP) {
-    if(n2->stop_val-2 >= n1->ndx+2) return;
-    ovlp = (n1->ndx+2) - (n2->stop_val-2) + 1;
-    if(ovlp >= MAX_OPP_OVLP) return;
-    if((n1->ndx+2 - n2->stop_val-2 + 1) >= (n2->ndx -n1->ndx+3 + 1)) return;
-    if(n1->traceb == -1) bnd = 0;
-    else bnd = nod[n1->traceb].ndx;
-    if((n1->ndx+2 - n2->stop_val-2 + 1) >= (n2->stop_val-3 - bnd + 1)) return;
+  else if (n1->strand == 1 && is_stop_node(n1) == 1 && n2->strand == -1 &&
+           is_start_node(n2) == 1)
+  {
+    if (n2->stop_val-2 >= n1->index+2)
+    {
+      return;
+    }
+    overlap = (n1->index+2) - (n2->stop_val-2) + 1;
+    if (overlap >= MAX_OPP_OVLP)
+    {
+      return;
+    }
+    if ((n1->index+2 - n2->stop_val-2 + 1) >= (n2->index -n1->index+3 + 1))
+    {
+      return;
+    }
+    if (n1->trace_back == -1)
+    {
+      bound = 0;
+    }
+    else
+    {
+      bound = nodes[n1->trace_back].index;
+    }
+    if ((n1->index+2 - n2->stop_val-2 + 1) >= (n2->stop_val-3 - bound + 1))
+    {
+      return;
+    }
     left = n2->stop_val-2;
-    if(flag == 0) scr_mod = tinf->bias[0]*n2->gc_score[0] +
-                  tinf->bias[1]*n2->gc_score[1]+tinf->bias[2]*n2->gc_score[2];
-    else if(flag == 1) score = n2->cscore + n2->sscore - 0.15*tinf->st_wt;
+    if (stage == 0)
+    {
+      score_mod = frame_bias[0]*n2->gc_score[0] +
+                  frame_bias[1]*n2->gc_score[1] +
+                  frame_bias[2]*n2->gc_score[2];
+    }
+    else if (stage == 1)
+    {
+      score = n2->cscore + n2->sscore - 0.15*start_weight;
+    }
   }
 
-  if(flag == 0) score = ((double)(right-left+1-(ovlp*2)))*scr_mod;
+  if (stage == 0)
+  {
+    score = ((double)(right-left+1-(overlap*2)))*score_mod;
+  }
 
-  if(n1->score + score >= n2->score) {
+  /* New best score for this node */
+  if (n1->score + score >= n2->score)
+  {
     n2->score = n1->score + score;
-    n2->traceb = p1;
-    n2->ov_mark = maxfr;
+    n2->trace_back = node_a;
+    n2->overlap_frame = max_frame;
   }
 
   return;
@@ -302,37 +544,60 @@ void score_connection(struct _node *nod, int p1, int p2,
 /******************************************************************************
   Sometimes bad genes creep into the model due to the node distance constraint
   in the dynamic programming routine.  This routine just does a sweep through
-  the genes and eliminates ones with negative scores.
+  the genes and eliminates ones with negative scores.  The "elim" flag is
+  set to 1 for nodes that should be ignored when building the list of genes.
 ******************************************************************************/
-
-void eliminate_bad_genes(struct _node *nod, int dbeg, struct _training *tinf)
+void eliminate_bad_genes(struct _node *nodes, int initial_node,
+                         double start_weight)
 {
   int path;
 
-  if(dbeg == -1) return;
-  path = dbeg;
-  while(nod[path].traceb != -1) path = nod[path].traceb;
-  while(nod[path].tracef != -1) {
-    if(nod[path].strand == 1 && nod[path].type == STOP)
-      nod[nod[path].tracef].sscore += intergenic_mod(&nod[path],
-                                      &nod[nod[path].tracef], tinf->st_wt);
-    if(nod[path].strand == -1 && nod[path].type != STOP)
-      nod[path].sscore += intergenic_mod(&nod[path], &nod[nod[path].tracef],
-                          tinf->st_wt);
-    path = nod[path].tracef;
+  if (initial_node == -1)
+  {
+    return;
+  }
+  path = initial_node;
+  while (nodes[path].trace_back != -1)
+  {
+    path = nodes[path].trace_back;
+  }
+  while (nodes[path].trace_forward != -1)
+  {
+    if (nodes[path].strand == 1 && is_stop_node(&nodes[path]) == 1)
+    {
+      nodes[nodes[path].trace_forward].sscore +=
+        intergenic_mod(&nodes[path], &nodes[nodes[path].trace_forward],
+                       start_weight);
+    }
+    if (nodes[path].strand == -1 && is_start_node(&nodes[path]) == 1)
+    {
+      nodes[path].sscore +=
+        intergenic_mod(&nodes[path], &nodes[nodes[path].trace_forward],
+                       start_weight);
+    }
+    path = nodes[path].trace_forward;
   }
 
-  path = dbeg;
-  while(nod[path].traceb != -1) path = nod[path].traceb;
-  while(nod[path].tracef != -1) {
-    if(nod[path].strand == 1 && nod[path].type != STOP &&
-       nod[path].cscore + nod[path].sscore < 0) {
-      nod[path].elim = 1; nod[nod[path].tracef].elim = 1;
+  path = initial_node;
+  while (nodes[path].trace_back != -1)
+  {
+    path = nodes[path].trace_back;
+  }
+  while (nodes[path].trace_forward != -1)
+  {
+    if (nodes[path].strand == 1 && is_start_node(&nodes[path]) == 1 &&
+        nodes[path].cscore + nodes[path].sscore < 0)
+    {
+      nodes[path].eliminate = 1;
+      nodes[nodes[path].trace_forward].eliminate = 1;
     }
-    if(nod[path].strand == -1 && nod[path].type == STOP &&
-       nod[nod[path].tracef].cscore + nod[nod[path].tracef].sscore < 0) {
-      nod[path].elim = 1; nod[nod[path].tracef].elim = 1;
+    if (nodes[path].strand == -1 && is_stop_node(&nodes[path]) == 1 &&
+        nodes[nodes[path].trace_forward].cscore +
+        nodes[nodes[path].trace_forward].sscore < 0)
+    {
+      nodes[path].eliminate = 1;
+      nodes[nodes[path].trace_forward].eliminate = 1;
     }
-    path = nod[path].tracef;
+    path = nodes[path].trace_forward;
   }
 }

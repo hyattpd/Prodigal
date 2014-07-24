@@ -87,7 +87,7 @@ void help()
   printf("  -d, --mrna_file:      Write nucleotide sequences of genes to the");
   printf("\n");
   printf("                        named file.\n");
-  printf("  -w, --summ_file:      Write summary statistics to the named "); 
+  printf("  -w, --summ_file:      Write summary statistics to the named ");
   printf("file.\n");
   printf("  -s, --start_file:     Write all potential genes (with scores) to");
   printf(" the\n                        named file.\n");
@@ -108,83 +108,91 @@ void help()
 /* Allocates memory for data structures and memsets them all to 0 */
 int initialize_data_structures(unsigned char **seq, unsigned char **rseq,
                                 unsigned char **useq, struct _node **nodes,
-                                struct _gene **genes, struct _training *tinf,
-                                struct _preset_genome_bin *presets, struct
-                                _gene *anon_genes, struct _summary *statistics)
+                                struct _gene **genes,
+                                struct _gene_data **gene_data,
+                                struct _preset_genome_bin *presets,
+                                struct _gene ***anon_genes)
 {
   int i;
 
-  *seq = (unsigned char *)malloc(MAX_SEQ/4*sizeof(unsigned char));
-  *rseq = (unsigned char *)malloc(MAX_SEQ/4*sizeof(unsigned char));
-  *useq = (unsigned char *)malloc(MAX_SEQ/8*sizeof(unsigned char));
-  *nodes = (struct _node *)malloc(STT_NOD*sizeof(struct _node));
-  *genes = (struct _gene *)malloc(MAX_GENES*sizeof(struct _gene));
-  if(*seq == NULL || *rseq == NULL || *nodes == NULL || *genes == NULL) 
+  *seq = (unsigned char *)calloc(MAX_SEQ/4, sizeof(unsigned char));
+  *rseq = (unsigned char *)calloc(MAX_SEQ/4, sizeof(unsigned char));
+  *useq = (unsigned char *)calloc(MAX_SEQ/8, sizeof(unsigned char));
+  *nodes = (struct _node *)calloc(STT_NOD, sizeof(struct _node));
+  *genes = (struct _gene *)calloc(MAX_GENES, sizeof(struct _gene));
+  *gene_data = (struct _gene_data*)calloc(MAX_GENES,
+                                          sizeof(struct _gene_data));
+  *anon_genes = (struct _gene **)calloc(NUM_PRESET_GENOME,
+                                        sizeof(struct _gene *));
+  if(*seq == NULL || *rseq == NULL || *nodes == NULL || *genes == NULL)
     return -1;
-  memset(*seq, 0, MAX_SEQ/4*sizeof(unsigned char));
-  memset(*rseq, 0, MAX_SEQ/4*sizeof(unsigned char));
-  memset(*useq, 0, MAX_SEQ/8*sizeof(unsigned char));
-  memset(*nodes, 0, STT_NOD*sizeof(struct _node));
-  memset(*genes, 0, MAX_GENES*sizeof(struct _gene));
-  memset(tinf, 0, sizeof(struct _training));
-  memset(statistics, 0, sizeof(struct _summary));
 
-  for(i = 0; i < NUM_PRESET_GENOME; i++) {
-    memset(&presets[i], 0, sizeof(struct _preset_genome_bin));
-    memset(&anon_genes[i], 0, sizeof(struct _gene));
+  for(i = 0; i < NUM_PRESET_GENOME; i++)
+  {
+    (*anon_genes)[i] = (struct _gene *)calloc(MAX_GENES, sizeof(struct _gene));
     strcpy(presets[i].desc, "None");
-    presets[i].tinf = (struct _training *)malloc(sizeof(struct _training));
-    if(presets[i].tinf == NULL) return -1;
-    memset(presets[i].tinf, 0, sizeof(struct _training));
+    presets[i].tinf = (struct _training *)calloc(1, sizeof(struct _training));
+    if(presets[i].tinf == NULL)
+      return -1;
   }
   return 0;
 }
 
 /* Initialize argument variables, parse command line arguments, */
 /* and validate the arguments for consistency. */
-void parse_arguments(int argc, char **argv, char *input_file, char 
+void parse_arguments(int argc, char **argv, char *input_file, char
                      *output_file, char *train_file, char *amino_file, char
                      *nuc_file, char *start_file, char *summ_file, int *mode,
-                     int *outfmt, int *genetic_code, int *closed, int 
+                     int *outfmt, int *genetic_code, int *closed, int
                      *cross_gaps, int *quiet)
 {
   int i, j;
   char digits[10];
 
-  input_file[0] = '\0'; output_file[0] = '\0'; train_file[0] = '\0';
-  start_file[0] = '\0'; summ_file[0] = '\0'; 
-  amino_file[0] = '\0'; nuc_file[0] = '\0'; 
-  *mode = 0; *outfmt = -1; *genetic_code = -1; 
-  *closed = 0; *cross_gaps = 0; *quiet = 0;
+  input_file[0] = '\0';
+  output_file[0] = '\0';
+  train_file[0] = '\0';
+  start_file[0] = '\0';
+  summ_file[0] = '\0';
+  amino_file[0] = '\0';
+  nuc_file[0] = '\0';
+  *mode = 0;
+  *outfmt = -1;
+  *genetic_code = -1;
+  *closed = 0;
+  *cross_gaps = 0;
+  *quiet = 0;
   strcpy(digits, "0123456789");
 
-  for(i = 1; i < argc; i++) {
+  for(i = 1; i < argc; i++)
+  {
     if(argv[i][0] == '-')
-      for(j = 0; j < strlen(argv[i]); j++) 
+      for(j = 0; j < strlen(argv[i]); j++)
         argv[i][j] = tolower(argv[i][j]);
   }
-  for(i = 1; i < argc; i++) {
-    if((i == argc-1 || argv[i+1][0] == '-') && 
-       (strcmp(argv[i], "-t") == 0 || 
+  for(i = 1; i < argc; i++)
+  {
+    if((i == argc-1 || argv[i+1][0] == '-') &&
+       (strcmp(argv[i], "-t") == 0 ||
        strcmp(argv[i], "--training_file") == 0 ||
-       strcmp(argv[i], "-a") == 0 || 
+       strcmp(argv[i], "-a") == 0 ||
        strcmp(argv[i], "--protein_file") == 0 ||
-       strcmp(argv[i], "-d") == 0 || 
+       strcmp(argv[i], "-d") == 0 ||
        strcmp(argv[i], "--mrna_file") == 0 ||
-       strcmp(argv[i], "-g") == 0 || 
+       strcmp(argv[i], "-g") == 0 ||
        strcmp(argv[i], "--trans_table") == 0 ||
-       strcmp(argv[i], "-f") == 0 || 
+       strcmp(argv[i], "-f") == 0 ||
        strcmp(argv[i], "--output_format") == 0 ||
-       strcmp(argv[i], "-s") == 0 || 
+       strcmp(argv[i], "-s") == 0 ||
        strcmp(argv[i], "--start_file") == 0 ||
-       strcmp(argv[i], "-w") == 0 || 
+       strcmp(argv[i], "-w") == 0 ||
        strcmp(argv[i], "--summ_file") == 0 ||
-       strcmp(argv[i], "-i") == 0 || 
+       strcmp(argv[i], "-i") == 0 ||
        strcmp(argv[i], "--input_file") == 0 ||
-       strcmp(argv[i], "-o") == 0 || 
+       strcmp(argv[i], "-o") == 0 ||
        strcmp(argv[i], "--output_file") == 0 ||
-       strcmp(argv[i], "-m") == 0 || 
-       strcmp(argv[i], "-p") == 0 || 
+       strcmp(argv[i], "-m") == 0 ||
+       strcmp(argv[i], "-p") == 0 ||
        strcmp(argv[i], "--mode") == 0))
       usage("-a/-d/-f/-g/-i/-m/-o/-s/-t/-w options require valid parameters.");
     else if(strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--nopartial") == 0)
@@ -193,12 +201,13 @@ void parse_arguments(int argc, char **argv, char *input_file, char
       *quiet = 1;
     else if(strcmp(argv[i], "-n") == 0 || strcmp(argv[i], "--nogaps") == 0)
       *cross_gaps = 1;
-    else if(strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) 
+    else if(strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
       help();
-    else if(strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) 
+    else if(strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0)
       version();
-    else if(strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--protein_file") 
-            == 0) {
+    else if(strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--protein_file")
+            == 0)
+    {
       strcpy(amino_file, argv[i+1]);
       i++;
     }
@@ -207,35 +216,41 @@ void parse_arguments(int argc, char **argv, char *input_file, char
       strcpy(nuc_file, argv[i+1]);
       i++;
     }
-    else if(strcmp(argv[i], "-i") == 0 || 
-            strcmp(argv[i], "--input_file") == 0) {
+    else if(strcmp(argv[i], "-i") == 0 ||
+            strcmp(argv[i], "--input_file") == 0)
+    {
       strcpy(input_file, argv[i+1]);
       i++;
     }
-    else if(strcmp(argv[i], "-o") == 0 || 
-            strcmp(argv[i], "--output_file") == 0) {
+    else if(strcmp(argv[i], "-o") == 0 ||
+            strcmp(argv[i], "--output_file") == 0)
+    {
       strcpy(output_file, argv[i+1]);
       i++;
     }
-    else if(strcmp(argv[i], "-s") == 0 || 
-            strcmp(argv[i], "--start_file") == 0) {
+    else if(strcmp(argv[i], "-s") == 0 ||
+            strcmp(argv[i], "--start_file") == 0)
+    {
       strcpy(start_file, argv[i+1]);
       i++;
     }
-    else if(strcmp(argv[i], "-w") == 0 || 
-            strcmp(argv[i], "--summ_file") == 0) {
+    else if(strcmp(argv[i], "-w") == 0 ||
+            strcmp(argv[i], "--summ_file") == 0)
+    {
       strcpy(summ_file, argv[i+1]);
       i++;
     }
-    else if(strcmp(argv[i], "-t") == 0 || 
-            strcmp(argv[i], "--training_file") == 0) {
+    else if(strcmp(argv[i], "-t") == 0 ||
+            strcmp(argv[i], "--training_file") == 0)
+    {
       strcpy(train_file, argv[i+1]);
       i++;
     }
-    else if(strcmp(argv[i], "-g") == 0 || 
-            strcmp(argv[i], "--trans_table") == 0) {
-      if(strcmp(argv[i+1], "auto") == 0);
-      else {
+    else if(strcmp(argv[i], "-g") == 0 ||
+            strcmp(argv[i], "--trans_table") == 0)
+    {
+      if(strcmp(argv[i+1], "auto") != 0)
+      {
         *genetic_code = atoi(argv[i+1]);
         if(strspn(argv[i+1], digits) != strlen(argv[i+1]) ||
            *genetic_code < 1 || *genetic_code > 25 || *genetic_code == 7
@@ -245,23 +260,37 @@ void parse_arguments(int argc, char **argv, char *input_file, char
       }
       i++;
     }
-    else if(strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--mode") == 0) {
-      if(argv[i+1][0] == 'n') *mode = 0;
-      else if(argv[i+1][0] == 't') *mode = 1; 
-      else if(argv[i+1][0] == 'a') *mode = 2; 
-      else usage("Invalid mode specified (should be normal, train, or anon).");
+    else if(strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--mode") == 0)
+    {
+      if(argv[i+1][0] == 'n')
+        *mode = 0;
+      else if(argv[i+1][0] == 't')
+        *mode = 1;
+      else if(argv[i+1][0] == 'a')
+        *mode = 2;
+      else
+      {
+        usage("Invalid mode specified (should be normal, train, or anon).");
+      }
       i++;
     }
-    else if(strcmp(argv[i], "-p") == 0) { /* deprecated but preserved atm */
-      if(argv[i+1][0] == 's') *mode = 0;
-      else if(argv[i+1][0] == 'm') *mode = 2; 
-      else usage("Invalid procedure specified (should be single or meta).");
+    else if(strcmp(argv[i], "-p") == 0) /* deprecated but preserved atm */
+    {
+      if(argv[i+1][0] == 's')
+        *mode = 0;
+      else if(argv[i+1][0] == 'm')
+        *mode = 2;
+      else
+      {
+        usage("Invalid procedure specified (should be single or meta).");
+      }
       fprintf(stderr, "Warning: '-p meta' is deprecated.  Should use ");
       fprintf(stderr, "'-m anon' instead for metagenomic sequences.\n");
       i++;
     }
-    else if(strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--output_format") 
-            == 0) {
+    else if(strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--output_format")
+            == 0)
+    {
       if(strncmp(argv[i+1], "0", 1) == 0 || strcmp(argv[i+1], "gbk") == 0)
         *outfmt = 0;
       else if(strncmp(argv[i+1], "1", 1) == 0 || strcmp(argv[i+1], "gca") == 0)
@@ -272,10 +301,14 @@ void parse_arguments(int argc, char **argv, char *input_file, char
         *outfmt = 3;
       else if(strncmp(argv[i+1], "4", 1) == 0 || strcmp(argv[i+1], "sqn") == 0)
         *outfmt = 4;
-      else usage("Invalid output format specified.");
+      else
+      {
+        usage("Invalid output format specified.");
+      }
       i++;
     }
-    else {
+    else
+    {
       fprintf(stderr, "Unknown option '%s'.", argv[i]);
       usage("");
     }
@@ -285,21 +318,18 @@ void parse_arguments(int argc, char **argv, char *input_file, char
 
   /* Training mode can't have output format or extra files specified. */
   if(*mode == 1 && (strlen(start_file) > 0 || strlen(nuc_file) > 0 ||
-     strlen(amino_file) > 0 || strlen(summ_file) > 0 || *outfmt != -1)) {
+     strlen(amino_file) > 0 || strlen(summ_file) > 0 || *outfmt != -1))
     usage("-a/-d/-f/-s/-w options cannot be used in training mode.");
-  }
 
   /* Normal/anonymous can't have training files specified. */
-  if(*mode != 0 && strlen(train_file) > 0) {
+  if(*mode != 0 && strlen(train_file) > 0)
     usage("Can only specify training file in normal mode.");
-  }
 
   /* Anonymous mode can't have a specified value for genetic code. */
   /* Nor can normal mode if using a training file. */
   if((*mode == 2 || (*mode == 0 && strlen(train_file) > 0)) &&
-     *genetic_code != -1) {
+     *genetic_code != -1)
     usage("Can't specify translation table with anon. mode or training file.");
-  }
 }
 
 /* Print the header */
@@ -310,9 +340,12 @@ void header(int mode)
   fprintf(stderr, "Univ of Tenn / Oak Ridge National Lab\n");
   fprintf(stderr, "Doug Hyatt, Loren Hauser, et al.     \n");
   fprintf(stderr, "-------------------------------------\n");
-  if(mode == 0) fprintf(stderr, "Mode: Normal, Phase: Training\n");
-  else if(mode == 1) fprintf(stderr, "Mode: Training, Phase: Training\n");
-  else if(mode == 2) fprintf(stderr, "Mode: Anonymous, Phase: Training\n");
+  if(mode == 0)
+    fprintf(stderr, "Mode: Normal, Phase: Training\n");
+  else if(mode == 1)
+    fprintf(stderr, "Mode: Training, Phase: Training\n");
+  else if(mode == 2)
+    fprintf(stderr, "Mode: Anonymous, Phase: Training\n");
 }
 
 /* If we're in normal mode and not reading from a training file, */
@@ -322,7 +355,7 @@ void header(int mode)
 /* in Windows. If there's nothing present on stdin, we print     */
 /* the help message and exit. Returns a 1 if piped input is      */
 /* detected, 0 otherwise.                                        */
-int detect_input_and_handle_windows_stdin(int argc, int quiet, 
+int detect_input_and_handle_windows_stdin(int argc, int quiet,
                                            char *input_file)
 {
   int fnum, piped = 0;
@@ -334,22 +367,31 @@ int detect_input_and_handle_windows_stdin(int argc, int quiet,
   sprintf(input_copy, "tmp.prodigal.stdin.%d", pid);
 
   fnum = fileno(stdin);
-  if(fstat(fnum, &fbuf) == -1) {
+  if(fstat(fnum, &fbuf) == -1)
+  {
     fprintf(stderr, "\nError: can't fstat standard input.\n\n");
     exit(3);
   }
-  if(S_ISCHR(fbuf.st_mode)) {
-    if(argc == 1) help();
-    else {
+  if(S_ISCHR(fbuf.st_mode))
+  {
+    if(argc == 1)
+      help();
+    else
+    {
       fprintf(stderr, "\nError: options specified but no input ");
       fprintf(stderr, "detected.\n\n");
       exit(4);
     }
   }
-  else if(S_ISREG(fbuf.st_mode)) { /* do nothing */ }
-  else if(S_ISFIFO(fbuf.st_mode)) {
+  else if(S_ISREG(fbuf.st_mode))
+  {
+    /* do nothing */
+  }
+  else if(S_ISFIFO(fbuf.st_mode))
+  {
     piped = 1;
-    if(copy_standard_input_to_file(input_copy, quiet) == -1) {
+    if(copy_standard_input_to_file(input_copy, quiet) == -1)
+    {
       fprintf(stderr, "\nError: can't copy stdin to file.\n\n");
       exit(5);
     }
@@ -364,18 +406,18 @@ int copy_standard_input_to_file(char *path, int quiet)
   char line[MAX_LINE+1];
   FILE *wp;
 
-  if(quiet == 0) {
+  if(quiet == 0)
     fprintf(stderr, "Piped input detected, copying stdin to a tmp file...");
-  }
 
   wp = fopen(path, "w");
-  if(wp == NULL) return -1;
-  while(fgets(line, MAX_LINE, stdin) != NULL) {
+  if(wp == NULL)
+    return -1;
+  while(fgets(line, MAX_LINE, stdin) != NULL)
     fprintf(wp, "%s", line);
-  }
   fclose(wp);
 
-  if(quiet == 0) {
+  if(quiet == 0)
+  {
     fprintf(stderr, "done!\n");
     fprintf(stderr, "-------------------------------------\n");
   }
@@ -388,40 +430,105 @@ void open_files(char *input_file, char *output_file, char *start_file,
                 FILE **input_ptr, FILE **output_ptr, FILE **start_ptr,
                 FILE **amino_ptr, FILE **nuc_ptr, FILE **summ_ptr)
 {
-  if(input_file[0] != '\0') {
+  if(input_file[0] != '\0')
+  {
     *input_ptr = fopen(input_file, "r");
-    if(*input_ptr == NULL) { 
-      perror("\nError: can't open input file."); exit(7);
+    if(*input_ptr == NULL)
+    {
+      perror("\nError: can't open input file.");
+      exit(7);
     }
   }
-  if(output_file[0] != '\0') {
+  if(output_file[0] != '\0')
+  {
     *output_ptr = fopen(output_file, "w");
-    if(*output_ptr == NULL) {
-      perror("\nError: can't open output file."); exit(8);
+    if(*output_ptr == NULL)
+    {
+      perror("\nError: can't open output file.");
+      exit(8);
     }
   }
-  if(start_file[0] != '\0') {
+  if(start_file[0] != '\0')
+  {
     *start_ptr = fopen(start_file, "w");
-    if(*start_ptr == NULL) {
-      perror("\nError: can't open start file."); exit(8);
+    if(*start_ptr == NULL)
+    {
+      perror("\nError: can't open start file.");
+      exit(8);
     }
   }
-  if(amino_file[0] != '\0') {
+  if(amino_file[0] != '\0')
+  {
     *amino_ptr = fopen(amino_file, "w");
-    if(*amino_ptr == NULL) {
-      perror("\nError: can't open translation file."); exit(8);
+    if(*amino_ptr == NULL)
+    {
+      perror("\nError: can't open translation file.");
+      exit(8);
     }
   }
-  if(nuc_file[0] != '\0') {
+  if(nuc_file[0] != '\0')
+  {
     *nuc_ptr = fopen(nuc_file, "w");
-    if(*nuc_ptr == NULL) {
-      perror("\nError: can't open gene nucleotide file."); exit(8);
+    if(*nuc_ptr == NULL)
+    {
+      perror("\nError: can't open gene nucleotide file.");
+      exit(8);
     }
   }
-  if(summ_file[0] != '\0') {
+  if(summ_file[0] != '\0')
+  {
     *summ_ptr = fopen(summ_file, "w");
-    if(*summ_ptr == NULL) {
-      perror("\nError: can't open summary file."); exit(8);
+    if(*summ_ptr == NULL)
+    {
+      perror("\nError: can't open summary file.");
+      exit(8);
     }
   }
+}
+
+/* Free all variables */
+void free_variables(unsigned char *seq, unsigned char *rseq,
+                    unsigned char *useq, struct _node *nodes,
+                    struct _gene *genes, struct _preset_genome_bin *presets,
+                    struct _gene **anon_genes)
+{
+  int i;
+
+  if(seq != NULL)
+    free(seq);
+  if(rseq != NULL)
+    free(rseq);
+  if(useq != NULL)
+    free(useq);
+  if(nodes != NULL)
+    free(nodes);
+  if(genes != NULL)
+    free(genes);
+  for(i = 0; i < NUM_PRESET_GENOME; i++)
+  {
+    if(presets[i].tinf != NULL)
+      free(presets[i].tinf);
+    if(anon_genes[i] != NULL)
+      free(anon_genes[i]);
+  }
+  if(anon_genes != NULL)
+    free(anon_genes);
+}
+
+/* Close all the filehandles */
+void close_filehandles(FILE *input_ptr, FILE *output_ptr, FILE *start_ptr,
+                       FILE *amino_ptr, FILE *nuc_ptr, FILE *summ_ptr)
+{
+  if(input_ptr != stdin)
+    fclose(input_ptr);
+  if(output_ptr != stdout)
+    fclose(output_ptr);
+  if(start_ptr != NULL)
+    fclose(start_ptr);
+  if(amino_ptr != NULL)
+    fclose(amino_ptr);
+  if(nuc_ptr != NULL)
+    fclose(nuc_ptr);
+  if(summ_ptr != NULL)
+    fclose(summ_ptr);
 }

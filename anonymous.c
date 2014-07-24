@@ -22,7 +22,7 @@
 
 /******************************************************************************
   Initialize the preset genome bins with the precalculated training files
-  from the model organisms that best represent all of microbial Genbank.  
+  from the model organisms that best represent all of microbial Genbank.
 ******************************************************************************/
 void initialize_preset_genome_bins(struct _preset_genome_bin *presets)
 {

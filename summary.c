@@ -40,32 +40,66 @@ void calc_avg_training_gene_lens(struct _node *nod, int dbeg, struct _summary
   gstat->avg_comp_gene_len = 0;
   gstat->avg_part_gene_len = 0;
 
-  if(dbeg == -1) return;
+  if (dbeg == -1)
+  {
+    return;
+  }
   path = dbeg;
-  while(nod[path].traceb != -1) path = nod[path].traceb;
-  while(path != -1) {
-    if(nod[path].elim == 1) { path = nod[path].tracef; continue; }
-    if(nod[path].strand == 1 && nod[path].type != STOP) {
-      if(nod[path].cscore > 0.0) left = nod[path].ndx+1;
-      else left = -1;
-      if(nod[path].edge == 0) partial = 0;
-      else partial = 1;
+  while (nod[path].trace_back != -1)
+  {
+    path = nod[path].trace_back;
+  }
+  while (path != -1)
+  {
+    if (nod[path].eliminate == 1)
+    {
+      path = nod[path].trace_forward;
+      continue;
     }
-    if(nod[path].strand == -1 && nod[path].type == STOP) {
-      left = nod[path].ndx-1;
-      if(nod[path].edge == 0) partial = 0;
-      else partial = 1;
+    if (nod[path].strand == 1 && is_start_node(&nod[path]) == 1)
+    {
+      if (nod[path].cscore > 0.0)
+      {
+        left = nod[path].index+1;
+      }
+      else
+      {
+        left = -1;
+      }
+      if (nod[path].edge == 0)
+      {
+        partial = 0;
+      }
+      else
+      {
+        partial = 1;
+      }
     }
-    if(nod[path].strand == 1 && nod[path].type == STOP) {
-      right = nod[path].ndx+3;
-      if(left != -1 && partial == 0 && nod[path].edge == 0) {
+    if (nod[path].strand == -1 && is_stop_node(&nod[path]) == 1)
+    {
+      left = nod[path].index-1;
+      if (nod[path].edge == 0)
+      {
+        partial = 0;
+      }
+      else
+      {
+        partial = 1;
+      }
+    }
+    if (nod[path].strand == 1 && is_stop_node(&nod[path]) == 1)
+    {
+      right = nod[path].index+3;
+      if (left != -1 && partial == 0 && nod[path].edge == 0)
+      {
         ctr = gstat->num_complete_genes;
         gstat->avg_comp_gene_len *= ctr;
         gstat->avg_comp_gene_len += (right-left+1);
         gstat->avg_comp_gene_len /= (++ctr);
         gstat->num_complete_genes++;
       }
-      else if(left != -1) {
+      else if (left != -1)
+      {
         ctr = gstat->num_partial_genes;
         gstat->avg_part_gene_len *= ctr;
         gstat->avg_part_gene_len += (right-left+1);
@@ -73,16 +107,19 @@ void calc_avg_training_gene_lens(struct _node *nod, int dbeg, struct _summary
         gstat->num_partial_genes++;
       }
     }
-    if(nod[path].strand == -1 && nod[path].type != STOP) {
-      right = nod[path].ndx+1;
-      if(nod[path].cscore > 0.0 && partial == 0 && nod[path].edge == 0) {
+    if (nod[path].strand == -1 && is_start_node(&nod[path]) == 1)
+    {
+      right = nod[path].index+1;
+      if (nod[path].cscore > 0.0 && partial == 0 && nod[path].edge == 0)
+      {
         ctr = gstat->num_complete_genes;
         gstat->avg_comp_gene_len *= ctr;
         gstat->avg_comp_gene_len += (right-left+1);
         gstat->avg_comp_gene_len /= (++ctr);
         gstat->num_complete_genes++;
       }
-      else if(nod[path].cscore > 0.0) {
+      else if (nod[path].cscore > 0.0)
+      {
         ctr = gstat->num_partial_genes;
         gstat->avg_part_gene_len *= ctr;
         gstat->avg_part_gene_len += (right-left+1);
@@ -90,33 +127,41 @@ void calc_avg_training_gene_lens(struct _node *nod, int dbeg, struct _summary
         gstat->num_partial_genes++;
       }
     }
-    path = nod[path].tracef;
+    path = nod[path].trace_forward;
   }
 }
 
 /******************************************************************************
   Look at average complete gene length.  If it's above the minimum acceptable
-  length, return 0.  If it's too small, see if this is due to the sequence 
+  length, return 0.  If it's too small, see if this is due to the sequence
   being in tons of contigs.  If so, return 1.  If we still have no explanation
   for why it's low, return 2.
 ******************************************************************************/
 int bad_train_gene_length(struct _summary gstat)
 {
-  if(gstat.avg_comp_gene_len > MIN_AVG_TRAIN_GENE_LEN) return 0;
-  if(gstat.avg_contig_len < MIN_AVG_TRAIN_CTG_LEN ||
-     gstat.num_partial_genes > gstat.num_complete_genes) return 1;
+  if (gstat.avg_comp_gene_len > MIN_AVG_TRAIN_GENE_LEN)
+  {
+    return 0;
+  }
+  if (gstat.avg_contig_len < MIN_AVG_TRAIN_CTG_LEN ||
+      gstat.num_partial_genes > gstat.num_complete_genes)
+  {
+    return 1;
+  }
   return 2;
 }
 
 /* Output a warning for low average gene length */
 void low_gene_len_warning(int flag, struct _summary gstat)
 {
-  if(flag < 2) {
+  if (flag < 2)
+  {
     fprintf(stderr, "\nWarning: training sequence is highly fragmented.\n");
     fprintf(stderr, "You may get better results with the ");
     fprintf(stderr, "'-m anon' option.\n\n");
   }
-  else {
+  else
+  {
     fprintf(stderr, "\nWarning: Average training gene length is");
     fprintf(stderr, " low (%.1f).\n", gstat.avg_comp_gene_len);
     fprintf(stderr, "Double check translation table or check for");

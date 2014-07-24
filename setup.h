@@ -29,18 +29,17 @@
 #include "gene.h"
 #include "anonymous.h"
 
-#define VERSION "2.7.0rc1"
-#define DATE "May, 2014"
+#define VERSION "2.7.0"
+#define DATE "August, 2014"
 
 void version();
 void usage(char *);
 void help();
 
-int initialize_data_structures(unsigned char **, unsigned char **, unsigned 
-                               char **, struct _node **, struct _gene **, 
-                               struct _training *, struct 
-                               _preset_genome_bin *, struct _gene *, struct
-                               _summary *);
+int initialize_data_structures(unsigned char **, unsigned char **, unsigned
+                               char **, struct _node **, struct _gene **,
+                               struct _gene_data **,
+                               struct _preset_genome_bin *, struct _gene ***);
 void parse_arguments(int, char **, char *, char *, char *, char *, char *,
                      char *, char *, int *, int *, int *, int *, int *,
                      int *);
@@ -49,5 +48,10 @@ int detect_input_and_handle_windows_stdin(int, int, char *);
 int copy_standard_input_to_file(char *, int);
 void open_files(char *, char *, char *, char *, char *, char *, FILE **,
                 FILE **, FILE **, FILE **, FILE **, FILE **);
+
+void free_variables(unsigned char *, unsigned char *, unsigned char *,
+                    struct _node *, struct _gene *,
+                    struct _preset_genome_bin *, struct _gene **);
+void close_filehandles(FILE *, FILE *, FILE *, FILE *, FILE *, FILE *);
 
 #endif

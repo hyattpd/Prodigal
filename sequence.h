@@ -29,10 +29,6 @@
 #define MAX_SEQ 32000000
 #define MAX_LINE 10000
 #define WINDOW 120
-#define ATG 0
-#define GTG 1
-#define TTG 2
-#define STOP 3
 #define MIN_SINGLE_GENOME 20000
 #define IDEAL_SINGLE_GENOME 100000
 #define IDEAL_AVG_CONTIG_LEN 1500
@@ -57,6 +53,9 @@ int is_start(unsigned char *, int, int);
 int is_atg(unsigned char *, int);
 int is_gtg(unsigned char *, int);
 int is_ttg(unsigned char *, int);
+int is_taa(unsigned char *, int);
+int is_tag(unsigned char *, int);
+int is_tga(unsigned char *, int);
 int is_nnn(unsigned char *, int);
 
 int codon_has_n(unsigned char *, int);
@@ -76,12 +75,14 @@ int max_fr(int, int, int);
 
 int *calc_most_gc_frame(unsigned char *, int);
 
-int mer_ndx(int, unsigned char *, int);
+int mer_index(int, unsigned char *, int);
 void mer_text(char *, int, int);
 void calc_mer_bg(int, unsigned char *, unsigned char *, int, double *);
 
 int shine_dalgarno_exact(unsigned char *, int, int, double *);
 int shine_dalgarno_mm(unsigned char *, int, int, double *);
+
+void zero_sequence(unsigned char *, unsigned char *, unsigned char *, int);
 
 int imin(int, int);
 

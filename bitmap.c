@@ -23,7 +23,7 @@
 /* Test a bit, 0 = not set, 1 = set */
 unsigned char test(unsigned char *bm, int ndx)
 {
-  return ( bm[ndx>>3] & (1 << (ndx&0x07))?1:0 ); 
+  return ( bm[ndx>>3] & (1 << (ndx&0x07))?1:0 );
 }
 
 /* Clear a bit (set it to 0) */
@@ -38,8 +38,8 @@ void set(unsigned char *bm, int ndx)
   bm[ndx>>3] |= (1 << (ndx&0x07));
 }
 
-/* Flip a bit's value 0->1 or 1->0 */
+/* Flip a bit's value 0 to 1 or 1 to 0 */
 void toggle(unsigned char *bm, int ndx)
 {
-  bm[ndx>>3] ^= (1 << (ndx&0x07)); 
+  bm[ndx>>3] ^= (1 << (ndx&0x07));
 }

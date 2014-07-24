@@ -29,8 +29,8 @@
 #define MAX_OPP_OVLP 200
 #define MAX_NODE_DIST 500
 
-int dprog(struct _node *, int, struct _training *, int);
-void score_connection(struct _node *, int, int, struct _training *, int);
-void eliminate_bad_genes(struct _node *, int, struct _training *);
+int dynamic_programming(struct _node *, int, double *, double, int);
+void score_connection(struct _node *, int, int, double *, double, int);
+void eliminate_bad_genes(struct _node *, int, double);
 
 #endif

@@ -39,7 +39,17 @@
 #define MODE_TRN 1
 #define MODE_ANON 2
 
-int add_nodes(unsigned char *, unsigned char *, unsigned char *, int, 
+/* Node Types: We use 0 to 9 as starts and 10 to 19 for stops */
+#define ATG 0
+#define GTG 1
+#define TTG 2
+#define O_START 3 /* Nonstandard start */
+#define TAA 10
+#define TAG 11
+#define TGA 12
+#define O_STOP 13 /* Nonstandard stop */
+
+int add_nodes(unsigned char *, unsigned char *, unsigned char *, int,
               struct _node *, int, int, int);
 void zero_nodes(struct _node *, int);
 void reset_node_scores(struct _node *, int);
@@ -63,6 +73,11 @@ void score_upstream_composition(unsigned char *, int, struct _node *,
                                 struct _training *);
 
 double intergenic_mod(struct _node *, struct _node *, double);
+
+int assign_start_value(unsigned char *seq, int);
+int assign_stop_value(unsigned char *seq, int);
+int is_start_node(struct _node *);
+int is_stop_node(struct _node *);
 
 double dmax(double, double);
 double dmin(double, double);
