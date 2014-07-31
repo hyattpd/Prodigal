@@ -21,8 +21,6 @@
 #ifndef _DATA_TYPES_H
 #define _DATA_TYPES_H
 
-#define NUM_PRESET_GENOME 50
-
 /* Basic structure for motifs */
 struct _motif
 {
@@ -61,7 +59,7 @@ struct _node
   int trace_forward;   /* Forward trace */
   int overlap_frame;   /* Points to best frame containing overlapping gene */
   double score;        /* Score of total solution to this point */
-  int eliminate;       /* If set to 1, gene is marked for deletion */
+  int status;          /* 0 = not in the model, 1 = in the predictions */
 };
 
 /* Attributes we've studied/learned for a particular genome */
@@ -97,6 +95,7 @@ struct _gene
   int end;                 /* Right end of the gene */
   int start_index;         /* Index to the start node in the nodes file */
   int stop_index;          /* Index to the stop node in the nodes file */
+  double intergenic_score; /* Score for the intergenic distances */
 };
 
 /* Structure to store text about a particular gene */
@@ -114,7 +113,7 @@ struct _summary
   int contig_len_bins[10]; /* log base 10 scale */
   double avg_contig_gc;
   int contig_gc_bins[12]; /* <25, 25-30, etc., >=75 */
-  int anon_bins[NUM_PRESET_GENOME];
+  int anon_bins[50];
 
   int num_complete_genes;
   double avg_comp_gene_len;
@@ -143,7 +142,7 @@ struct _preset_genome_bin
   char desc[500];               /* Text description of this bin */
   double weight;                /* Current weight/score of this bin */
   double gc;                    /* GC distance from target sequence */
-  struct _training *tinf;       /* Pointer to the training file for this bin */
+  struct _training *data;       /* Pointer to the training file for this bin */
 };
 
 #endif

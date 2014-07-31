@@ -22,11 +22,10 @@
 #define ANON_H_
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
-#include "sequence.h"
+#include "datatypes.h"
 #include "preset.h"
-#include "node.h"
+
+#define NUM_PRESET_GENOME 50
 
 void initialize_preset_genome_bins(struct _preset_genome_bin *);
 

@@ -22,8 +22,7 @@
 #define _DPROG_H
 
 #include <stdio.h>
-#include <math.h>
-#include "sequence.h"
+#include "datatypes.h"
 #include "node.h"
 
 #define MAX_OPP_OVLP 200
@@ -31,6 +30,10 @@
 
 int dynamic_programming(struct _node *, int, double *, double, int);
 void score_connection(struct _node *, int, int, double *, double, int);
-void eliminate_bad_genes(struct _node *, int, double);
+int find_farthest_allowable_node(struct _node *, int);
+void untangle_overlaps(struct _node *, int);
+void record_trace_forward_pointers(struct _node *, int);
+void mark_valid_gene_nodes(struct _node *, int);
+int find_first_node_from_last_node(struct _node *, int);
 
 #endif

@@ -40,17 +40,10 @@ int read_training_file(char *fn, struct _training *tinf)
 }
 
 /* Writes a training file to use for a later run of gene prediction */
-int write_training_file(char *fn, struct _training *tinf)
+int write_training_file(FILE *fh, struct _training *tinf)
 {
   size_t rv;
-  FILE *fh;
-  fh = fopen(fn, "wb");
-  if (fh == NULL)
-  {
-    return -1;
-  }
   rv = fwrite(tinf, sizeof(struct _training), 1, fh);
-  fclose(fh);
   if (rv != 1)
   {
     return -1;
@@ -58,55 +51,135 @@ int write_training_file(char *fn, struct _training *tinf)
   return 0;
 }
 
-/* Build the training set using the supplied genetic code */
-void build_training_set(struct _node *nodes, struct _training *tinf, struct
-                        _summary *statistics, unsigned char *seq, unsigned
-                        char *rseq, unsigned char *useq, int slen, int
-                        *num_node, int closed, int cross_gaps)
+/* Build the training set, check its quality, and rebuild it with */
+/* genetic code 4 if quality is low and in auto mode for genetic code */
+void build_training_set_full(struct _node *nodes, struct _training *train_data,
+                             struct _summary *statistics, unsigned char *seq,
+                             unsigned char *rseq, unsigned char *useq,
+                             int seq_length, int *num_nodes,
+                             int no_partial_genes, int cross_gaps, int num_seq,
+                             int genetic_code, int quiet)
 {
-  int nn = 0, ipath = 0;
+  int train_qual = 0;
+  char text[10000] = "";
+
+  sprintf(text, "Building training set using genetic code %d...",
+          train_data->trans_table);
+  log_text(quiet, text);
+  build_training_set(nodes, train_data, statistics, seq, rseq, useq,
+                     seq_length, num_nodes, no_partial_genes, cross_gaps,
+                     num_seq);
+  log_text(quiet, "done!\n");
+
+  /***********************************************************************
+    Check average gene length to see if translation table looks good or
+    if there is substantial gene decay.  If no genetic code was specified,
+    try genetic code 4 to see if it solves the problem.
+  ***********************************************************************/
+  log_text(quiet, "Checking average training gene length...");
+  train_qual = training_set_quality(statistics);
+  /* Looks ok */
+  if (train_qual == 0)
+  {
+    sprintf(text, "%.1f, looks ok.\n", statistics->avg_comp_gene_len);
+    log_text(quiet, text);
+  }
+  /* Too many partial genes */
+  else if (train_qual == 1)
+  {
+    log_text(quiet, "low but sequence is really drafty.\n");
+    low_gene_len_warning(train_qual, statistics);
+  }
+  /* Poor average gene length */
+  else if (train_qual == 2)
+  {
+    sprintf(text, "%.1f, too low.\n", statistics->avg_comp_gene_len);
+    log_text(quiet, text);
+    if (genetic_code == 0)
+    {
+      log_text(quiet, "Trying genetic code 4...");
+      train_data->trans_table = 4;
+      build_training_set(nodes, train_data, statistics, seq, rseq, useq,
+                         seq_length, num_nodes, no_partial_genes,
+                         cross_gaps, num_seq);
+      train_qual = training_set_quality(statistics);
+      if (train_qual < 2)
+      {
+        log_text(quiet, "looks good, going with genetic code 4.\n");
+      }
+      else
+      {
+        log_text(quiet, "still bad, switching back to genetic code 11.\n");
+        log_text(quiet, "Redoing genome with genetic code 11...");
+        train_data->trans_table = 11;
+        build_training_set(nodes, train_data, statistics, seq, rseq, useq,
+                           seq_length, num_nodes, no_partial_genes,
+                           cross_gaps, num_seq);
+        log_text(quiet, "done.\n");
+        low_gene_len_warning(train_qual, statistics);
+      }
+    }
+    else
+    {
+      low_gene_len_warning(train_qual, statistics);
+    }
+  }
+}
+
+/* Build the training set using the supplied genetic code */
+void build_training_set(struct _node *nodes, struct _training *train_data,
+                        struct _summary *statistics, unsigned char *seq,
+                        unsigned char *rseq, unsigned char *useq,
+                        int seq_length, int *num_nodes, int no_partial,
+                        int cross_gaps, int num_seq)
+{
+  int initial_node = -1;
+  int last_node = -1;
 
   /***********************************************************************
     Find all the potential starts and stops, sort them, and create a
     comprehensive list of nodes for dynamic programming.
   ***********************************************************************/
-  if (*num_node > 0)
+  if (*num_nodes > 0)
   {
-    zero_nodes(nodes, *num_node);
+    zero_nodes(nodes, *num_nodes);
   }
-  nn = add_nodes(seq, rseq, useq, slen, nodes, closed, cross_gaps,
-                 tinf->trans_table);
-  *num_node = nn;
-  qsort(nodes, nn, sizeof(struct _node), &compare_nodes);
+  *num_nodes = add_nodes(seq, rseq, useq, seq_length, nodes, no_partial,
+                         cross_gaps, train_data->trans_table);
+  qsort(nodes, *num_nodes, sizeof(struct _node), &compare_nodes);
 
   /***********************************************************************
     Scan all the ORFS looking for a potential GC bias in a particular
     codon position.  This information will be used to acquire a good
     initial set of genes.
   ***********************************************************************/
-  record_gc_frame_bias(tinf, seq, slen, nodes, nn);
+  record_gc_frame_bias(train_data, seq, seq_length, nodes, *num_nodes);
 
   /***********************************************************************
     Do an initial dynamic programming routine with just the GC frame
     bias used as a scoring function.  This will get an initial set of
     genes to train on.
   ***********************************************************************/
-  record_overlapping_starts(nodes, nn, tinf->start_weight, 0);
-  ipath = dynamic_programming(nodes, nn, tinf->bias, tinf->start_weight, 0);
+  record_overlapping_starts(nodes, *num_nodes, train_data->start_weight, 0);
+  last_node = dynamic_programming(nodes, *num_nodes, train_data->bias,
+                                  train_data->start_weight, 0);
+  initial_node = find_first_node_from_last_node(nodes, last_node); 
 
   /***********************************************************************
     Gather dicodon statistics for the training set.  Score the entire set
     of nodes.
   ***********************************************************************/
-  calc_dicodon_gene(tinf, seq, rseq, slen, nodes, ipath);
-  raw_coding_score(seq, rseq, slen, nodes, nn, tinf->trans_table, tinf->gc,
-                   tinf->gene_dc);
+  calc_dicodon_gene(train_data, seq, rseq, seq_length, nodes, last_node);
+  raw_coding_score(seq, rseq, seq_length, nodes, *num_nodes,
+                   train_data->trans_table, train_data->gc,
+                   train_data->gene_dc);
 
   /***********************************************************************
     Gather statistics about average gene length to see if the training
     set looks good.
   ***********************************************************************/
-  calc_avg_training_gene_lens(nodes, ipath, statistics);
+  calc_training_set_stats(nodes, initial_node, statistics, num_seq,
+                          seq_length);
 }
 
 /* Records the GC frame bias from the node GC statistics */
@@ -223,6 +296,47 @@ void calc_dicodon_gene(struct _training *tinf, unsigned char *seq, unsigned
     {
       tinf->gene_dc[i] = -5.0;
     }
+  }
+}
+
+/******************************************************************************
+  Look at average complete gene length.  If it's above the minimum acceptable
+  length, return 0.  If it's too small, see if this is due to the sequence
+  being in tons of contigs.  If so, return 1.  If we still have no explanation
+  for why it's low, return 2.
+******************************************************************************/
+int training_set_quality(struct _summary *genome_data)
+{
+  if (genome_data->avg_comp_gene_len > MIN_AVG_TRAIN_GENE_LEN)
+  {
+    return 0;
+  }
+  else if (genome_data->avg_contig_len < MIN_AVG_TRAIN_CTG_LEN ||
+           genome_data->num_partial_genes > genome_data->num_complete_genes)
+  {
+    return 1;
+  }
+  else
+  {
+    return 2;
+  }
+}
+
+/* Output a warning for low average gene length */
+void low_gene_len_warning(int flag, struct _summary *genome_data)
+{
+  if (flag < 2)
+  {
+    fprintf(stderr, "\nWarning: training sequence is highly fragmented.\n");
+    fprintf(stderr, "You may get better results with the ");
+    fprintf(stderr, "'-m anon' option.\n\n");
+  }
+  else
+  {
+    fprintf(stderr, "\nWarning: Average training gene length is");
+    fprintf(stderr, " low (%.1f).\n", genome_data->avg_comp_gene_len);
+    fprintf(stderr, "Double check translation table or check for");
+    fprintf(stderr, " pseudogenes/gene decay.\n\n");
   }
 }
 

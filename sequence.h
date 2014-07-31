@@ -37,7 +37,7 @@ int read_seq_training(FILE *, unsigned char *, unsigned char *, double *, int,
                       int *);
 int next_seq_multi(FILE *, unsigned char *, unsigned char *, int *, double *,
                    char *, char *);
-void rcom_seq(unsigned char *, unsigned char *, unsigned char *, int);
+void reverse_seq(unsigned char *, unsigned char *, unsigned char *, int);
 
 void calc_short_header(char *header, char *short_header, int);
 

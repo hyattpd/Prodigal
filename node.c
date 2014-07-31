@@ -217,8 +217,25 @@ void zero_nodes(struct _node *nod, int num_nodes)
   memset(nod, 0, num_nodes * sizeof(struct _node));
 }
 
-/* Simple routine to zero out the node scores */
+/* Check node allocation and realloc memory if we */
+/* need more space. */
+void check_node_allocation(struct _node **nodes, int seq_length)
+{
+  /* Grab more memory if sequence is larger than our default allocation */
+  if (seq_length > STT_NOD*8)
+  {
+    *nodes = (struct _node *)
+              realloc(*nodes, (int)(seq_length/8) * sizeof(struct _node));
+    if (*nodes == NULL)
+    {
+      perror("Realloc failed on nodes\n\n");
+      exit(11);
+    }
+  }
+  zero_nodes(*nodes, seq_length/8);
+}
 
+/* Simple routine to zero out the node scores */
 void reset_node_scores(struct _node *nod, int nn)
 {
   int i, j;
@@ -242,7 +259,7 @@ void reset_node_scores(struct _node *nod, int nn)
     nod[i].trace_back = -1;
     nod[i].trace_forward = -1;
     nod[i].overlap_frame = -1;
-    nod[i].eliminate = 0;
+    nod[i].status = 0;
     nod[i].gc_bias = 0;
     memset(&nod[i].mot, 0, sizeof(struct _motif));
   }

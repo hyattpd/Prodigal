@@ -30,7 +30,6 @@ SRC=	main.c \
 	sequence.c \
 	training.c \
 	preset.c \
-	setup.c \
 	bitmap.c
 
 EXEC=	prodigal

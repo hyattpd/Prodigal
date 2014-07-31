@@ -21,17 +21,11 @@
 #ifndef _SUMMARY_H
 #define _SUMMARY_H
 
-#include <stdio.h>
+#include <string.h>
+#include "datatypes.h"
 #include "node.h"
-#include "gene.h"
-
-#define MIN_AVG_TRAIN_GENE_LEN 600
-#define MIN_AVG_TRAIN_CTG_LEN 3000
 
 void zero_statistics(struct _summary *);
-int bad_train_gene_length(struct _summary);
-void low_gene_len_warning(int, struct _summary);
-void calc_avg_train_contig_len(struct _summary *, int);
-void calc_avg_training_gene_lens(struct _node *, int, struct _summary *);
+void calc_training_set_stats(struct _node *, int, struct _summary *, int, int);
 
 #endif

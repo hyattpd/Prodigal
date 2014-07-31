@@ -21,8 +21,6 @@
 #ifndef _PRESET_H
 #define _PRESET_H
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include "datatypes.h"
 

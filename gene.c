@@ -26,26 +26,19 @@
 ******************************************************************************/
 int add_genes(struct _gene *genes, struct _node *nodes, int initial_node)
 {
-  int path, counter;
+  int path = initial_node;   /* Traversal variable */
+  int counter = 0;           /* Count number of genes */
 
+  /* If there are no genes, return */
   if (initial_node == -1)
   {
     return 0;
   }
-
-  /* Trace back to starting node */
-  path = initial_node;
-  counter = 0;
-  while (nodes[path].trace_back != -1)
-  {
-    path = nodes[path].trace_back;
-  }
-
   /* Find the genes */
   while (path != -1)
   {
     /* Ignore deleted genes */
-    if (nodes[path].eliminate == 1)
+    if (nodes[path].status == 0)
     {
       path = nodes[path].trace_forward;
       continue;
@@ -56,18 +49,18 @@ int add_genes(struct _gene *genes, struct _node *nodes, int initial_node)
       genes[counter].begin = nodes[path].index+1;
       genes[counter].start_index = path;
     }
-    if (nodes[path].strand == -1 && is_stop_node(&nodes[path]) == 1)
+    else if (nodes[path].strand == -1 && is_stop_node(&nodes[path]) == 1)
     {
       genes[counter].begin = nodes[path].index-1;
       genes[counter].stop_index = path;
     }
-    if (nodes[path].strand == 1 && is_stop_node(&nodes[path]) == 1)
+    else if (nodes[path].strand == 1 && is_stop_node(&nodes[path]) == 1)
     {
       genes[counter].end = nodes[path].index+3;
       genes[counter].stop_index = path;
       counter++;
     }
-    if (nodes[path].strand == -1 && is_start_node(&nodes[path]) == 1)
+    else if (nodes[path].strand == -1 && is_start_node(&nodes[path]) == 1)
     {
       genes[counter].end = nodes[path].index+1;
       genes[counter].start_index = path;
@@ -96,16 +89,26 @@ int add_genes(struct _gene *genes, struct _node *nodes, int initial_node)
   to whatever start we initially chose.
 
   This routine was tested on numerous genomes and found to increase overall
-  performance.
+  performance.  Having said that, this function is kind of clunky and we
+  should really be able to fix the dynamic programming so as not to be
+  necessary.
 ******************************************************************************/
-void adjust_close_starts(struct _gene *genes, int num_genes,
-                         struct _node *nodes, int num_nodes,
-                         double start_weight)
+void adjust_starts(struct _gene *genes, int num_genes, struct _node *nodes,
+                   int num_nodes, double start_weight)
 {
-  int i, j, index, tmp_index, max_index[2];
-  double score, max_score[2];
+  int i = 0;
+  int j = 0;
+  /* Tracking variables for indices of top 3 starts */
+  int index = 0;
+  int tmp_index = 0;
+  int max_index[2] = {0};
+  /* Score tracking variables */
+  double score = 0.0;
+  double max_score[2] = {0};
+  int valid_distance = 0;
   /* Variables to track modifications to the score for intergenic distance */
-  double ig_mod, tmp_ig_mod, max_ig_mod[2];
+  double ig_mod = 0.0;
+  double max_ig_mod[2] = {0};
 
   for (i = 0; i < num_genes; i++)
   {
@@ -113,118 +116,14 @@ void adjust_close_starts(struct _gene *genes, int num_genes,
        due to intergenic distance with the gene upstream from the start. */
     index = genes[i].start_index;
     score = nodes[index].sscore + nodes[index].cscore;
-    ig_mod = 0.0;
-    if (i > 0 && nodes[index].strand == 1 &&
-        nodes[genes[i-1].start_index].strand == 1)
-    {
-      ig_mod = intergenic_mod(&nodes[genes[i-1].stop_index], &nodes[index],
-                              start_weight);
-    }
-    if (i > 0 && nodes[index].strand == 1 &&
-        nodes[genes[i-1].start_index].strand == -1)
-    {
-      ig_mod = intergenic_mod(&nodes[genes[i-1].start_index], &nodes[index],
-                              start_weight);
-    }
-    if (i < num_genes-1 && nodes[index].strand == -1 &&
-        nodes[genes[i + 1].start_index].strand == 1)
-    {
-      ig_mod = intergenic_mod(&nodes[index], &nodes[genes[i + 1].start_index],
-                              start_weight);
-    }
-    if (i < num_genes-1 && nodes[index].strand == -1 &&
-        nodes[genes[i + 1].start_index].strand == -1)
-    {
-      ig_mod = intergenic_mod(&nodes[index], &nodes[genes[i + 1].stop_index],
-                              start_weight);
-    }
+    ig_mod = get_intergenic_score(genes, num_genes, i, nodes, index,
+                                  start_weight, &valid_distance);
 
-    /* Search upstream and downstream for the #2 and #3 scoring starts */
-    /* We store these in indices '0' and '1' in an array of size two. */
-    max_index[0] = -1;
-    max_index[1] = -1;
-    max_score[0] = 0;
-    max_score[1] = 0;
-    max_ig_mod[0] = 0;
-    max_ig_mod[1] = 0;
-    for (j = index-100; j < index+100; j++)
-    {
-      if (j < 0 || j >= num_nodes || j == index)
-      {
-        continue;
-      }
-      if (is_stop_node(&nodes[j]) == 1 ||
-          nodes[j].stop_val != nodes[index].stop_val)
-      {
-        continue;
-      }
-
-      tmp_ig_mod = 0.0;
-      if (i > 0 && nodes[j].strand == 1 &&
-          nodes[genes[i-1].start_index].strand == 1)
-      {
-        if (nodes[genes[i-1].stop_index].index - nodes[j].index > MAX_SAM_OVLP)
-        {
-          continue;
-        }
-        tmp_ig_mod = intergenic_mod(&nodes[genes[i-1].stop_index], &nodes[j],
-                                    start_weight);
-      }
-      if (i > 0 && nodes[j].strand == 1 &&
-          nodes[genes[i-1].start_index].strand == -1)
-      {
-        if (nodes[genes[i-1].start_index].index - nodes[j].index >= 0)
-        {
-          continue;
-        }
-        tmp_ig_mod = intergenic_mod(&nodes[genes[i-1].start_index], &nodes[j],
-                                    start_weight);
-      }
-      if (i < num_genes-1 && nodes[j].strand == -1 &&
-          nodes[genes[i + 1].start_index].strand == 1)
-      {
-        if (nodes[j].index - nodes[genes[i + 1].start_index].index >= 0)
-        {
-          continue;
-        }
-        tmp_ig_mod = intergenic_mod(&nodes[j], &nodes[genes[i+1].start_index],
-                                    start_weight);
-      }
-      if (i < num_genes-1 && nodes[j].strand == -1 &&
-          nodes[genes[i + 1].start_index].strand == -1)
-      {
-        if (nodes[j].index - nodes[genes[i+1].stop_index].index > MAX_SAM_OVLP)
-        {
-          continue;
-        }
-        tmp_ig_mod = intergenic_mod(&nodes[j], &nodes[genes[i+1].stop_index],
-                                    start_weight);
-      }
-
-      /* If it's one of the top two alternatives, add it to our array */
-      if (max_index[0] == -1)
-      {
-        max_index[0] = j;
-        max_score[0] = nodes[j].cscore + nodes[j].sscore;
-        max_ig_mod[0] = tmp_ig_mod;
-      }
-      else if (nodes[j].cscore + nodes[j].sscore + tmp_ig_mod > max_score[0])
-      {
-        max_index[1] = max_index[0];
-        max_score[1] = max_score[0];
-        max_ig_mod[1] = max_ig_mod[0];
-        max_index[0] = j;
-        max_score[0] = nodes[j].cscore + nodes[j].sscore;
-        max_ig_mod[0] = tmp_ig_mod;
-      }
-      else if (max_index[1] == -1 || nodes[j].cscore + nodes[j].sscore +
-               tmp_ig_mod > max_score[1])
-      {
-        max_index[1] = j;
-        max_score[1] = nodes[j].cscore + nodes[j].sscore;
-        max_ig_mod[1] = tmp_ig_mod;
-      }
-    }
+    /* Find the best two alternative starts and store their indices, */
+    /* scores, and intergenic distance scores in three arrays. */
+    get_best_two_alternative_starts(genes, num_genes, i, nodes, num_nodes,
+                                    index, start_weight, max_index, max_score,
+                                    max_ig_mod);
 
     /* Now we look at the 2nd and 3rd best starts to see if we can find a */
     /* reason to make them our preferred start. */
@@ -270,7 +169,6 @@ void adjust_close_starts(struct _gene *genes, int num_genes,
           max_score[j] += ig_mod - max_ig_mod[j];
         }
       }
-
       else
       {
         max_score[j] = -1000.0;
@@ -308,6 +206,150 @@ void adjust_close_starts(struct _gene *genes, int num_genes,
   }
 }
 
+/* Given a particular gene and an address of a start node which might */
+/* be the start for that gene, return the intergenic distance score */
+/* between that start and the gene closest to that start.  Set valid */
+/* distance to 0 if this start would cause an unacceptable overlap. */
+double get_intergenic_score(struct _gene *genes, int num_genes,
+                            int gene_ndx, struct _node *nodes,
+                            int node_ndx, double start_weight,
+                            int *valid_distance)
+{
+  *valid_distance = 1;
+  if (gene_ndx > 0 && nodes[node_ndx].strand == 1 &&
+      nodes[genes[gene_ndx-1].start_index].strand == 1)
+  {
+    if (nodes[genes[gene_ndx-1].stop_index].index - nodes[node_ndx].index >
+        MAX_SAM_OVLP)
+    {
+      *valid_distance = 0;
+      return 0.0;
+    }
+    else
+    {
+      return intergenic_mod(&nodes[genes[gene_ndx-1].stop_index],
+                            &nodes[node_ndx], start_weight);
+    }
+  }
+  else if (gene_ndx > 0 && nodes[node_ndx].strand == 1 &&
+           nodes[genes[gene_ndx-1].start_index].strand == -1)
+  {
+    if (nodes[genes[gene_ndx-1].start_index].index -
+        nodes[node_ndx].index >= 0)
+    {
+      *valid_distance = 0;
+      return 0.0;
+    }
+    else
+    {
+      return intergenic_mod(&nodes[genes[gene_ndx-1].start_index],
+                            &nodes[node_ndx], start_weight);
+    }
+  }
+  else if (gene_ndx < num_genes-1 && nodes[node_ndx].strand == -1 &&
+           nodes[genes[gene_ndx+1].start_index].strand == 1)
+  {
+    if (nodes[node_ndx].index -
+        nodes[genes[gene_ndx+1].start_index].index >= 0)
+    {
+      *valid_distance = 0;
+      return 0.0;
+    }
+    else
+    {
+      return intergenic_mod(&nodes[node_ndx],
+                            &nodes[genes[gene_ndx+1].start_index],
+                            start_weight);
+    }
+  }
+  else if (gene_ndx < num_genes-1 && nodes[node_ndx].strand == -1 &&
+           nodes[genes[gene_ndx+1].start_index].strand == -1)
+  {
+    if (nodes[node_ndx].index -
+        nodes[genes[gene_ndx+1].stop_index].index >= 0)
+    {
+      *valid_distance = 0;
+      return 0.0;
+    }
+    else
+    {
+      return intergenic_mod(&nodes[node_ndx],
+                            &nodes[genes[gene_ndx+1].stop_index],
+                            start_weight);
+    }
+  }
+  else
+  {
+    return 0.0;
+  }
+}
+
+/* This function finds the best two alternative starts and puts their */
+/* indices into the "max_index" array.  If two positive-scoring starts */
+/* can't be located, stores a -1 in the index array.  Also stores */
+/* scoring information in the max_score and max_ig_mod arrays. */
+void get_best_two_alternative_starts(struct _gene *genes, int num_genes,
+                                     int gene_ndx, struct _node *nodes,
+                                     int num_nodes, int node_ndx,
+                                     double start_weight, int *max_index,
+                                     double *max_score, double *max_ig_mod)
+{
+  int valid_distance = 0;
+  int i = 0;
+  double tmp_ig_mod = 0.0;
+
+  max_index[0] = -1;
+  max_index[1] = -1;
+  max_score[0] = 0.0;
+  max_score[1] = 0.0;
+  max_ig_mod[0] = 0.0;
+  max_ig_mod[1] = 0.0;
+
+  /* Look up and down 100 nodes to find all the close starts */
+  for (i = node_ndx-100; i < node_ndx+100; i++)
+  {
+    if (i < 0 || i >= num_nodes || i == node_ndx)
+    {
+      continue;
+    }
+    if (is_stop_node(&nodes[i]) == 1 ||
+        nodes[i].stop_val != nodes[node_ndx].stop_val)
+    {
+      continue;
+    }
+    tmp_ig_mod = get_intergenic_score(genes, num_genes, gene_ndx, nodes, i,
+                                      start_weight, &valid_distance);
+    if (valid_distance == 0)
+    {
+      continue;
+    }
+
+    /* If it's one of the top two alternatives, add it to our array */
+    if (max_index[0] == -1)
+    {
+      max_index[0] = i;
+      max_score[0] = nodes[i].cscore + nodes[i].sscore;
+      max_ig_mod[0] = tmp_ig_mod;
+    }
+    else if (nodes[i].cscore + nodes[i].sscore + tmp_ig_mod > max_score[0])
+    {
+      max_index[1] = max_index[0];
+      max_score[1] = max_score[0];
+      max_ig_mod[1] = max_ig_mod[0];
+      max_index[0] = i;
+      max_score[0] = nodes[i].cscore + nodes[i].sscore;
+      max_ig_mod[0] = tmp_ig_mod;
+    }
+    else if (max_index[1] == -1 || nodes[i].cscore + nodes[i].sscore +
+             tmp_ig_mod > max_score[1])
+    {
+      max_index[1] = i;
+      max_score[1] = nodes[i].cscore + nodes[i].sscore;
+      max_ig_mod[1] = tmp_ig_mod;
+    }
+  }
+}
+
 /* This function records the metadata associated with a gene into */
 /* two text strings: gene_data for start type/RBS motif/etc. and score_data */
 /* for the actual numerical scores. */
@@ -315,10 +357,18 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
                       int num_genes, struct _node *nodes,
                       struct _training *train_data, int seq_counter)
 {
-
-  int i, index, sindex, partial_left, partial_right, start_type;
-  double rbs1, rbs2, confidence;
-  char sd_string[28][100], sd_spacer[28][20], motif[10];
+  int i = 0;
+  int beg_node = 0;
+  int end_node = 0;
+  int partial_left = 0;
+  int partial_right = 0;
+  int start_type = 0;
+  double rbs1 = 0.0;
+  double rbs2 = 0.0;
+  double confidence = 0.0;
+  char sd_string[28][100] = {{0}};
+  char sd_spacer[28][20] = {{0}};
+  char motif[10] = "";
   char type_string[5][20] = { "ATG", "GTG", "TTG" , "Nonstandard", "Edge" };
 
   /* Initialize RBS string information for default SD */
@@ -382,12 +432,12 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
   /* Go through each gene and record its information */
   for (i = 0; i < num_genes; i++)
   {
-    index = genes[i].start_index;
-    sindex = genes[i].stop_index;
+    beg_node = genes[i].start_index;
+    end_node = genes[i].stop_index;
 
     /* Record basic gene data */
-    if ((nodes[index].edge == 1 && nodes[index].strand == 1) ||
-        (nodes[sindex].edge == 1 && nodes[index].strand == -1))
+    if ((nodes[beg_node].edge == 1 && nodes[beg_node].strand == 1) ||
+        (nodes[end_node].edge == 1 && nodes[beg_node].strand == -1))
     {
       partial_left = 1;
     }
@@ -395,8 +445,8 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
     {
       partial_left = 0;
     }
-    if ((nodes[sindex].edge == 1 && nodes[index].strand == 1) ||
-        (nodes[index].edge == 1 && nodes[index].strand == -1))
+    if ((nodes[end_node].edge == 1 && nodes[beg_node].strand == 1) ||
+        (nodes[beg_node].edge == 1 && nodes[beg_node].strand == -1))
     {
       partial_right = 1;
     }
@@ -404,13 +454,13 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
     {
       partial_right = 0;
     }
-    if (nodes[index].edge == 1)
+    if (nodes[beg_node].edge == 1)
     {
       start_type = 4;
     }
     else
     {
-      start_type = nodes[index].type;
+      start_type = nodes[beg_node].type;
     }
 
     sprintf(gene_data[i].gene_data, "ID=%d_%d;partial=%d%d;start_type=%s;",
@@ -418,41 +468,41 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
             type_string[start_type]);
 
     /* Record rbs data */
-    rbs1 = train_data->rbs_wt[nodes[index].rbs[0]]*train_data->start_weight;
-    rbs2 = train_data->rbs_wt[nodes[index].rbs[1]]*train_data->start_weight;
+    rbs1 = train_data->rbs_wt[nodes[beg_node].rbs[0]]*train_data->start_weight;
+    rbs2 = train_data->rbs_wt[nodes[beg_node].rbs[1]]*train_data->start_weight;
     if (train_data->uses_sd == 1)
     {
       if (rbs1 > rbs2)
       {
         sprintf(gene_data[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s",
-                gene_data[i].gene_data, sd_string[nodes[index].rbs[0]],
-                sd_spacer[nodes[index].rbs[0]]);
+                gene_data[i].gene_data, sd_string[nodes[beg_node].rbs[0]],
+                sd_spacer[nodes[beg_node].rbs[0]]);
       }
       else
       {
         sprintf(gene_data[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s",
-                gene_data[i].gene_data, sd_string[nodes[index].rbs[1]],
-                sd_spacer[nodes[index].rbs[1]]);
+                gene_data[i].gene_data, sd_string[nodes[beg_node].rbs[1]],
+                sd_spacer[nodes[beg_node].rbs[1]]);
       }
     }
     else
     {
-      mer_text(motif, nodes[index].mot.len, nodes[index].mot.index);
+      mer_text(motif, nodes[beg_node].mot.len, nodes[beg_node].mot.index);
       if (train_data->no_mot > -0.5 && rbs1 > rbs2 &&
-          rbs1 > nodes[index].mot.score * train_data->start_weight)
+          rbs1 > nodes[beg_node].mot.score * train_data->start_weight)
       {
         sprintf(gene_data[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s",
-                gene_data[i].gene_data, sd_string[nodes[index].rbs[0]],
-                sd_spacer[nodes[index].rbs[0]]);
+                gene_data[i].gene_data, sd_string[nodes[beg_node].rbs[0]],
+                sd_spacer[nodes[beg_node].rbs[0]]);
       }
       else if (train_data->no_mot > -0.5 && rbs2 >= rbs1 &&
-               rbs2 > nodes[index].mot.score * train_data->start_weight)
+               rbs2 > nodes[beg_node].mot.score * train_data->start_weight)
       {
         sprintf(gene_data[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s",
-                gene_data[i].gene_data, sd_string[nodes[index].rbs[1]],
-                sd_spacer[nodes[index].rbs[1]]);
+                gene_data[i].gene_data, sd_string[nodes[beg_node].rbs[1]],
+                sd_spacer[nodes[beg_node].rbs[1]]);
       }
-      else if (nodes[index].mot.len == 0)
+      else if (nodes[beg_node].mot.len == 0)
       {
         sprintf(gene_data[i].gene_data, "%srbs_motif=None;rbs_spacer=None",
                 gene_data[i].gene_data);
@@ -460,22 +510,23 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
       else
       {
         sprintf(gene_data[i].gene_data, "%srbs_motif=%s;rbs_spacer=%dbp",
-                gene_data[i].gene_data, motif, nodes[index].mot.spacer);
+                gene_data[i].gene_data, motif, nodes[beg_node].mot.spacer);
       }
     }
     sprintf(gene_data[i].gene_data, "%s;gc_cont=%.3f", gene_data[i].gene_data,
-            nodes[index].gc_cont);
+            nodes[beg_node].gc_cont);
 
     /* Record score data */
-    confidence = calculate_confidence(nodes[index].cscore +
-                                      nodes[index].sscore,
+    confidence = calculate_confidence(nodes[beg_node].cscore +
+                                      nodes[beg_node].sscore,
                                       train_data->start_weight);
     sprintf(gene_data[i].score_data,
       "conf=%.2f;score=%.2f;cscore=%.2f;sscore=%.2f;rscore=%.2f;uscore=%.2f;",
-      confidence, nodes[index].cscore+nodes[index].sscore,nodes[index].cscore,
-      nodes[index].sscore, nodes[index].rscore, nodes[index].uscore);
+      confidence, nodes[beg_node].cscore+nodes[beg_node].sscore,
+      nodes[beg_node].cscore, nodes[beg_node].sscore, nodes[beg_node].rscore,
+      nodes[beg_node].uscore);
     sprintf(gene_data[i].score_data, "%stscore=%.2f;", gene_data[i].score_data,
-            nodes[index].tscore);
+            nodes[beg_node].tscore);
   }
 }
 
@@ -486,9 +537,13 @@ void print_genes(FILE *fp, struct _gene *genes, struct _gene_data *gene_data,
                  struct _training *train_data, char *header, char *short_hdr,
                  char *version)
 {
-  int i, beg_node, end_node;
-  char left[50], right[50];
-  char seq_data[MAX_LINE*2], run_data[MAX_LINE];
+  int i = 0;
+  int beg_node = 0;
+  int end_node = 0;
+  char left[50] = "";
+  char right[50] = "";
+  char seq_data[MAX_LINE*2] = "";
+  char run_data[MAX_LINE] = "";
 
   /* Initialize sequence data */
   sprintf(seq_data, "seqnum=%d;seqlen=%d;seqhdr=\"%s\"", seq_counter,
@@ -518,12 +573,12 @@ void print_genes(FILE *fp, struct _gene *genes, struct _gene_data *gene_data,
   }
 
   /* Print sequence/model information */
-  if (format == 0)
+  if (format == 1)
   {
     fprintf(fp, "DEFINITION  %s;%s\n", seq_data, run_data);
     fprintf(fp, "FEATURES             Location/Qualifiers\n");
   }
-  else if (format > 0 && format < 4)
+  else if (format > 1 && format < 4)
   {
     fprintf(fp, "# Sequence Data: %s\n", seq_data);
     fprintf(fp, "# Model Data: %s\n", run_data);
@@ -560,20 +615,14 @@ void print_genes(FILE *fp, struct _gene *genes, struct _gene_data *gene_data,
         sprintf(right, "%d", genes[i].end);
       }
 
-      if (format == 0)
+      if (format == 1)
       {
         fprintf(fp, "     CDS             %s..%s\n", left, right);
         fprintf(fp, "                     ");
         fprintf(fp, "/note=\"%s;%s\"\n", gene_data[i].gene_data,
                 gene_data[i].score_data);
       }
-      if (format == 1)
-      {
-        fprintf(fp, "gene_prodigal=%d|1|f|y|y|3|0|%d|%d|%d|%d|-1|-1|1.0\n",
-                i+1, genes[i].begin, genes[i].end, genes[i].begin,
-                genes[i].end);
-      }
-      if (format == 2) fprintf(fp, ">%d_%d_%d_+\n", i + 1, genes[i].begin,
+      if (format == 2) fprintf(fp, ">%d_%d_%d_+\n", i+1, genes[i].begin,
           genes[i].end);
       {
       }
@@ -615,24 +664,16 @@ void print_genes(FILE *fp, struct _gene *genes, struct _gene_data *gene_data,
         sprintf(right, "%d", genes[i].end);
       }
 
-      if (format == 0)
+      if (format == 1)
       {
         fprintf(fp, "     CDS             complement(%s..%s)\n", left, right);
         fprintf(fp, "                     ");
         fprintf(fp, "/note=\"%s;%s\"\n", gene_data[i].gene_data,
                 gene_data[i].score_data);
       }
-      if (format == 1)
-      {
-        fprintf(fp, "gene_prodigal=%d|1|r|y|y|3|0|%d|%d|%d|%d|-1|-1|1.0\n",
-                i+1, seq_length +1 - genes[i].end,
-                seq_length + 1 - genes[i].begin,
-                seq_length + 1 - genes[i].end,
-                seq_length + 1 - genes[i].begin);
-      }
       if (format == 2)
       {
-        fprintf(fp, ">%d_%d_%d_-\n", i + 1, genes[i].begin, genes[i].end);
+        fprintf(fp, ">%d_%d_%d_-\n", i+1, genes[i].begin, genes[i].end);
       }
       if (format == 3)
       {
@@ -656,7 +697,7 @@ void print_genes(FILE *fp, struct _gene *genes, struct _gene_data *gene_data,
   }
 
   /* Genbank footer */
-  if (format == 0)
+  if (format == 1)
   {
     fprintf(fp, "//\n");
   }
@@ -670,13 +711,19 @@ void write_translations(FILE *fh, struct _gene *genes,
                         int seq_length, int trans_table, int seq_counter,
                         char *short_hdr)
 {
-  int i, j;
+  int i = 0;
+  int j = 0;
+
+  if (fh == NULL)
+  {
+    return;
+  }
 
   for (i = 0; i < num_genes; i++)
   {
     if (nodes[genes[i].start_index].strand == 1)
     {
-      fprintf(fh, ">%s_%d # %d # %d # 1 # %s\n", short_hdr, i + 1,
+      fprintf(fh, ">%s_%d # %d # %d # 1 # %s\n", short_hdr, i+1,
               genes[i].begin, genes[i].end, gene_data[i].gene_data);
       for (j = genes[i].begin; j < genes[i].end; j+=3)
       {
@@ -702,7 +749,7 @@ void write_translations(FILE *fh, struct _gene *genes,
     }
     else
     {
-      fprintf(fh, ">%s_%d # %d # %d # -1 # %s\n", short_hdr, i + 1,
+      fprintf(fh, ">%s_%d # %d # %d # -1 # %s\n", short_hdr, i+1,
               genes[i].begin, genes[i].end, gene_data[i].gene_data);
       for (j = seq_length + 1 - genes[i].end; j < seq_length + 1 -
            genes[i].begin; j+=3)
@@ -738,13 +785,19 @@ void write_nucleotide_seqs(FILE *fh, struct _gene *genes,
                            unsigned char *rseq, unsigned char *useq,
                            int seq_length, int seq_counter, char *short_hdr)
 {
-  int i, j;
+  int i = 0;
+  int j = 0;
+
+  if (fh == NULL)
+  {
+    return;
+  }
 
   for (i = 0; i < num_genes; i++)
   {
     if (nodes[genes[i].start_index].strand == 1)
     {
-      fprintf(fh, ">%s_%d # %d # %d # 1 # %s\n", short_hdr, i + 1,
+      fprintf(fh, ">%s_%d # %d # %d # 1 # %s\n", short_hdr, i+1,
               genes[i].begin, genes[i].end, gene_data[i].gene_data);
       for (j = genes[i].begin-1; j < genes[i].end; j++)
       {
@@ -780,7 +833,7 @@ void write_nucleotide_seqs(FILE *fh, struct _gene *genes,
     }
     else
     {
-      fprintf(fh, ">%s_%d # %d # %d # -1 # %s\n", short_hdr, i + 1,
+      fprintf(fh, ">%s_%d # %d # %d # -1 # %s\n", short_hdr, i+1,
               genes[i].begin, genes[i].end, gene_data[i].gene_data);
       for (j = seq_length-genes[i].end; j < seq_length+1-genes[i].begin; j++)
       {
@@ -826,11 +879,23 @@ void write_start_file(FILE *fh, struct _node *nodes, int num_nodes,
                       int seq_length, int mode, char *preset_data,
                       char *version, char *header)
 {
-  int i, prev_stop = -1, prev_strand = 0, start_type;
-  double rbs1, rbs2;
-  char sd_string[28][100], sd_spacer[28][20], motif[10];
+  int i = 0;
+  int prev_stop = -1;
+  int prev_strand = 0;
+  int start_type = 0;
+  double rbs1 = 0.0;
+  double rbs2 = 0.0;
+  char sd_string[28][100] = {{0}};
+  char sd_spacer[28][20] = {{0}};
+  char motif[10] = "";
   char type_string[5][20] = { "ATG", "GTG", "TTG" , "Nonstandard", "Edge" };
-  char seq_data[MAX_LINE*2], run_data[MAX_LINE];
+  char seq_data[MAX_LINE*2] = "";
+  char run_data[MAX_LINE] = "";
+
+  if (fh == NULL)
+  {
+    return;
+  }
 
   /* Initialize sequence data */
   sprintf(seq_data, "seqnum=%d;seqlen=%d;seqhdr=\"%s\"", seq_counter,
@@ -999,7 +1064,7 @@ void write_start_file(FILE *fh, struct _node *nodes, int num_nodes,
 /* Convert score to a percent confidence */
 double calculate_confidence(double score, double start_weight)
 {
-  double conf;
+  double conf = 0.0;
 
   if (score/start_weight < 41)
   {

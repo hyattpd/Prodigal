@@ -315,8 +315,8 @@ void calc_short_header(char *header, char *short_header, int sctr)
 
 /* Takes rseq and fills it up with the rev complement of seq */
 
-void rcom_seq(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
-              int len)
+void reverse_seq(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
+                 int len)
 {
   int i, slen=len*2;
   for (i = 0; i < slen; i++)

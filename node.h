@@ -22,6 +22,8 @@
 #define _NODE_H
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <math.h>
 #include "datatypes.h"
 #include "sequence.h"
@@ -52,6 +54,7 @@
 int add_nodes(unsigned char *, unsigned char *, unsigned char *, int,
               struct _node *, int, int, int);
 void zero_nodes(struct _node *, int);
+void check_node_allocation(struct _node **, int);
 void reset_node_scores(struct _node *, int);
 int compare_nodes(const void *, const void *);
 int stopcmp_nodes(const void *, const void *);

@@ -23,22 +23,33 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <math.h>
 #include "datatypes.h"
-#include "node.h"
 #include "dprog.h"
+#include "node.h"
+#include "sequence.h"
 #include "summary.h"
 
-int write_training_file(char *, struct _training *);
+#define MIN_AVG_TRAIN_GENE_LEN 600
+#define MIN_AVG_TRAIN_CTG_LEN 3000
+
+extern void log_text(int, char *);
+int write_training_file(FILE *, struct _training *);
 int read_training_file(char *, struct _training *);
 
+void build_training_set_full(struct _node *, struct _training *,
+                             struct _summary *, unsigned char *,
+                             unsigned char *, unsigned char *, int,
+                             int *, int, int, int, int, int);
 void build_training_set(struct _node *, struct _training *, struct _summary *,
                         unsigned char *, unsigned char *, unsigned char *, int,
-                        int *, int, int);
+                        int *, int, int, int);
 void record_gc_frame_bias(struct _training *, unsigned char *, int, struct
                           _node *, int);
 void calc_dicodon_gene(struct _training *, unsigned char *, unsigned char *,
                        int, struct _node *, int);
+int training_set_quality(struct _summary *);
+void low_gene_len_warning(int, struct _summary *);
 
 void train_starts_sd(unsigned char *, unsigned char *, int, struct _node *,
                         int, struct _training *);
