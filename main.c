@@ -131,8 +131,7 @@ int main(int argc, char *argv[])
   /* Anonymous/Metagenomic Run Variables */
   int max_preset = 0;        /* Index of best preset training file */
   double max_score = -100.0; /* Highest score from anonymous run */
-  double low = 0.0;          /* Low-GC boundary for anonymous run */
-  double high = 0.0;         /* High-GC boundary for anonymous run */
+  double gc_bound[2];        /* Low/high GC content bounds */
 
   /* Allocate memory for data structures */
   if (allocate_memory(&seq, &rseq, &useq, &nodes, &genes, &gene_data, presets,
@@ -349,17 +348,7 @@ int main(int argc, char *argv[])
 
     else /* Anonymous (Metagenomic) Version */
     {
-      low = 0.88495 * seq_gc - 0.0102337;
-      if (low > 0.65)
-      {
-        low = 0.65;
-      }
-      high = 0.86596 * seq_gc + .1131991;
-      if (high < 0.35)
-      {
-        high = 0.35;
-      }
-
+      get_gc_bounds(gc_bound, seq_gc);
       max_score = -100.0;
       for (i = 0; i < NUM_PRESET_GENOME; i++)
       {
@@ -372,7 +361,8 @@ int main(int argc, char *argv[])
                                 presets[i].data->trans_table);
           qsort(nodes, num_nodes, sizeof(struct _node), &compare_nodes);
         }
-        if (presets[i].data->gc < low || presets[i].data->gc > high)
+        if (presets[i].data->gc < gc_bound[0] ||
+            presets[i].data->gc > gc_bound[1])
         {
           continue;
         }
@@ -405,9 +395,8 @@ int main(int argc, char *argv[])
       qsort(nodes, num_nodes, sizeof(struct _node), &compare_nodes);
       score_nodes(seq, rseq, seq_length, nodes, num_nodes,
                   presets[max_preset].data, no_partial_genes, mode);
-      write_start_file(start_ptr, nodes, num_nodes, presets[max_preset].data,
-                       num_seq, seq_length, mode, presets[max_preset].desc,
-                       VERSION, cur_header);
+      match_nodes_to_genes(anon_genes[max_preset], num_genes, nodes,
+                           num_nodes);
       log_text(quiet, "done.\n");
 
       /* Output the genes */
@@ -423,6 +412,9 @@ int main(int argc, char *argv[])
       write_nucleotide_seqs(nuc_ptr, anon_genes[max_preset], gene_data,
                             num_genes, nodes, seq, rseq, useq, seq_length,
                             num_seq, short_header);
+      write_start_file(start_ptr, nodes, num_nodes, presets[max_preset].data,
+                       num_seq, seq_length, mode, presets[max_preset].desc,
+                       VERSION, cur_header);
     }
 
     /* Reset all the sequence/dynamic programming variables */
