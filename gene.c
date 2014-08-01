@@ -149,25 +149,14 @@ void adjust_starts(struct _gene *genes, int num_genes, struct _node *nodes,
         max_score[j] += nodes[index].tscore-nodes[tmp_index].tscore;
       }
 
-      /* Close starts.  Ignore coding and see if start has better rbs */
-      /* and type. */
+      /* Close starts.  Ignore coding and see if start has better score. */
       else if (abs(nodes[tmp_index].index - nodes[index].index) <= 15 &&
                nodes[tmp_index].rscore + nodes[tmp_index].tscore >
                nodes[index].rscore + nodes[index].tscore &&
-               nodes[index].edge == 0 && nodes[tmp_index].edge == 0)
+               nodes[index].edge == 0 && nodes[tmp_index].edge == 0 &&
+               nodes[tmp_index].sscore > 0)
       {
-        if (nodes[index].cscore > nodes[tmp_index].cscore)
-        {
-          max_score[j] += nodes[index].cscore - nodes[tmp_index].cscore;
-        }
-        if (nodes[index].uscore > nodes[tmp_index].uscore)
-        {
-          max_score[j] += nodes[index].uscore - nodes[tmp_index].uscore;
-        }
-        if (ig_mod > max_ig_mod[j])
-        {
-          max_score[j] += ig_mod - max_ig_mod[j];
-        }
+        max_score[j] += nodes[index].cscore - nodes[tmp_index].cscore;
       }
       else
       {
