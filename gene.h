@@ -52,5 +52,6 @@ void write_nucleotide_seqs(FILE *, struct _gene *, struct _gene_data *, int,
 void write_start_file(FILE *, struct _node *, int, struct _training *, int,
                       int, int, char *, char *, char *);
 double calculate_confidence(double, double);
+void match_nodes_to_genes(struct _gene *, int, struct _node *, int);
 
 #endif

@@ -90,8 +90,8 @@ int add_genes(struct _gene *genes, struct _node *nodes, int initial_node)
 
   This routine was tested on numerous genomes and found to increase overall
   performance.  Having said that, this function is kind of clunky and we
-  should really be able to fix the dynamic programming so as not to be
-  necessary.
+  should really be able to fix the dynamic programming someday so that we
+  don't have to do this postprocessing step.
 ******************************************************************************/
 void adjust_starts(struct _gene *genes, int num_genes, struct _node *nodes,
                    int num_nodes, double start_weight)
@@ -149,14 +149,25 @@ void adjust_starts(struct _gene *genes, int num_genes, struct _node *nodes,
         max_score[j] += nodes[index].tscore-nodes[tmp_index].tscore;
       }
 
-      /* Close starts.  Ignore coding and see if start has better score. */
+      /* Close starts.  Ignore coding and see if start has better rbs */
+      /* and type. */
       else if (abs(nodes[tmp_index].index - nodes[index].index) <= 15 &&
                nodes[tmp_index].rscore + nodes[tmp_index].tscore >
                nodes[index].rscore + nodes[index].tscore &&
-               nodes[index].edge == 0 && nodes[tmp_index].edge == 0 &&
-               nodes[tmp_index].sscore > 0)
+               nodes[index].edge == 0 && nodes[tmp_index].edge == 0)
       {
-        max_score[j] += nodes[index].cscore - nodes[tmp_index].cscore;
+        if (nodes[index].cscore > nodes[tmp_index].cscore)
+        {
+          max_score[j] += nodes[index].cscore - nodes[tmp_index].cscore;
+        }
+        if (nodes[index].uscore > nodes[tmp_index].uscore)
+        {
+          max_score[j] += nodes[index].uscore - nodes[tmp_index].uscore;
+        }
+        if (ig_mod > max_ig_mod[j])
+        {
+          max_score[j] += ig_mod - max_ig_mod[j];
+        }
       }
       else
       {
@@ -184,13 +195,17 @@ void adjust_starts(struct _gene *genes, int num_genes, struct _node *nodes,
     }
     if (tmp_index != -1 && nodes[max_index[tmp_index]].strand == 1)
     {
+      nodes[genes[i].start_index].status = 0;
       genes[i].start_index = max_index[tmp_index];
       genes[i].begin = nodes[max_index[tmp_index]].index + 1;
+      nodes[max_index[tmp_index]].status = 1;
     }
     else if (tmp_index != -1 && nodes[max_index[tmp_index]].strand == -1)
     {
+      nodes[genes[i].start_index].status = 0;
       genes[i].start_index = max_index[tmp_index];
       genes[i].end = nodes[max_index[tmp_index]].index + 1;
+      nodes[max_index[tmp_index]].status = 1;
     }
   }
 }
@@ -1069,4 +1084,28 @@ double calculate_confidence(double score, double start_weight)
     conf = 50.00;
   }
   return conf;
+}
+
+/******************************************************************************
+  Make node status flag match what we have in the gene list.  Necessary
+  mainly for anonymous runs where we don't have access to the dynamic
+  programming pointers.
+******************************************************************************/
+void match_nodes_to_genes(struct _gene *genes, int num_genes,
+                          struct _node *nodes, int num_nodes)
+{
+  int i = 0;
+
+  /* First eliminate all nodes */
+  for (i = 0; i < num_nodes; i++)
+  {
+    nodes[i].status = 0;
+  }
+
+  /* Second, mark all the nodes in the gene list as status 1 */
+  for (i = 0; i < num_genes; i++)
+  {
+    nodes[genes[i].start_index].status = 1;
+    nodes[genes[i].stop_index].status = 1;
+  }
 }

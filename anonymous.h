@@ -28,5 +28,6 @@
 #define NUM_PRESET_GENOME 50
 
 void initialize_preset_genome_bins(struct _preset_genome_bin *);
+void get_gc_bounds(double *, double);
 
 #endif

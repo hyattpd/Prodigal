@@ -21,6 +21,26 @@
 #include "anonymous.h"
 
 /******************************************************************************
+  Given GC content, return minimum and maximum GC boundaries within
+  which to try anonymous training files.  The formula for these
+  bounds was determined through linear regression examining a million
+  gene fragments of various sizes.
+******************************************************************************/
+void get_gc_bounds(double *bound, double gc)
+{
+  bound[0] = 0.88495 * gc - 0.0102337;
+  if (bound[0] > 0.65)
+  {
+    bound[0] = 0.65;
+  }
+  bound[1] = 0.86596 * gc + .1131991;
+  if (bound[1] < 0.35)
+  {
+    bound[1] = 0.35;
+  }
+}
+
+/******************************************************************************
   Initialize the preset genome bins with the precalculated training files
   from the model organisms that best represent all of microbial Genbank.
 ******************************************************************************/
