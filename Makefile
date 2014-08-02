@@ -1,6 +1,6 @@
 ##############################################################################
 #   PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-#   Copyright (C) 2007-2011 University of Tennessee / UT-Battelle
+#   Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
 #
 #   Code Author:  Doug Hyatt
 #
@@ -18,31 +18,39 @@
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ##############################################################################
 
-SHELL=	/bin/sh
-CC=	gcc
+SHELL   = /bin/sh
+CC      = gcc
 
-SRC=	main.c \
-	gene.c \
-	dprog.c \
-	node.c \
-	metagenomic.c \
-	sequence.c \
-	training.c \
-	bitmap.c
+CFLAGS  = -pedantic -Wall -O3
+LFLAGS = -lm
 
-EXEC=	prodigal
+TARGET  = prodigal
+SOURCES = $(shell echo *.c)
+HEADERS = $(shell echo *.h)
+OBJECTS = $(SOURCES:.c=.o)
 
-CFLAGS=	-O3 -Wall
+PREFIX  = $(DESTDIR)/usr/local
+BINDIR  = $(PREFIX)/bin
 
-LIBS=	-lm
-LDFLAGS=	$(LIBS)
+all: $(TARGET)
 
-OBJS=	${SRC:.c=.o}
+$(TARGET): $(OBJECTS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS)
 
-all:	$(SRC) $(EXEC)
+%.o: %.c $(HEADERS)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
-clean:	$(OBJS)
-	/bin/rm -rf $(OBJS) $(EXEC)
+install: $(TARGET)
+	install -d -m 0755 $(BINDIR)
+	install -m 0755 $(TARGET) $(BINDIR)
+ 
+uninstall:
+	-rm $(BINDIR)/$(TARGET)
 
-$(EXEC):	$(OBJS)
-	$(CC) -o $@ $(OBJS) $(LDFLAGS) $(CFLAGS)
+clean:
+	-rm -f $(OBJECTS)
+ 
+distclean: clean
+	-rm -f $(TARGET)
+
+.PHONY: all install uninstall clean distclean
