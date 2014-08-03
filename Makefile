@@ -29,8 +29,7 @@ SOURCES = $(shell echo *.c)
 HEADERS = $(shell echo *.h)
 OBJECTS = $(SOURCES:.c=.o)
 
-PREFIX  = $(DESTDIR)/usr/local
-BINDIR  = $(PREFIX)/bin
+INSTALLDIR  = /usr/local/bin
 
 all: $(TARGET)
 
@@ -41,8 +40,8 @@ $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 install: $(TARGET)
-	install -d -m 0755 $(BINDIR)
-	install -m 0755 $(TARGET) $(BINDIR)
+	install -d -m 0755 $(INSTALLDIR)
+	install -m 0755 $(TARGET) $(INSTALLDIR)
  
 uninstall:
 	-rm $(BINDIR)/$(TARGET)
