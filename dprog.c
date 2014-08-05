@@ -67,11 +67,11 @@ int dynamic_programming(struct _node *nodes, int num_nodes, double *frame_bias,
   /* Locate the highest scoring node in the traceback and record its index */
   for (i = num_nodes-1; i >= 0; i--)
   {
-    if (nodes[i].strand == 1 && is_start_node(&nodes[i]) == 1)
+    if (nodes[i].strand == 1 && nodes[i].type == START)
     {
       continue;
     }
-    if (nodes[i].strand == -1 && is_stop_node(&nodes[i]) == 1)
+    if (nodes[i].strand == -1 && nodes[i].type == STOP)
     {
       continue;
     }
@@ -114,7 +114,7 @@ int find_farthest_allowable_node(struct _node *nodes, int index)
   {
     low_bound = index-MAX_NODE_DIST;
   }
-  if (nodes[index].strand == -1 && is_start_node(&nodes[index]) == 1 &&
+  if (nodes[index].strand == -1 && nodes[index].type == START &&
       nodes[low_bound].index >= nodes[index].stop_val)
   {
     while (low_bound >= 0 &&
@@ -123,7 +123,7 @@ int find_farthest_allowable_node(struct _node *nodes, int index)
       low_bound--;
     }
   }
-  if (nodes[index].strand == 1 && is_stop_node(&nodes[index]) == 1 &&
+  if (nodes[index].strand == 1 && nodes[index].type == STOP &&
       nodes[low_bound].index >= nodes[index].stop_val)
   {
     while (low_bound >= 0 &&
@@ -171,27 +171,27 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
   /***********************/
 
   /* 5'fwd->5'fwd, 5'rev->5'rev */
-  if (is_start_node(n1) == 1 && is_start_node(n2) == 1 &&
+  if (n1->type == START && n2->type == START &&
       n1->strand == n2->strand)
   {
     return;
   }
 
   /* 5'fwd->5'rev, 5'fwd->3'rev */
-  else if (n1->strand == 1 && is_start_node(n1) == 1 && n2->strand == -1)
+  else if (n1->strand == 1 && n1->type == START && n2->strand == -1)
   {
     return;
   }
 
   /* 3'rev->5'fwd, 3'rev->3'fwd) */
-  else if (n1->strand == -1 && is_stop_node(n1) == 1 && n2->strand == 1)
+  else if (n1->strand == -1 && n1->type == STOP && n2->strand == 1)
   {
     return;
   }
 
   /* 5'rev->3'fwd */
-  else if (n1->strand == -1 && is_start_node(n1) == 1 && n2->strand == 1 &&
-           is_stop_node(n2) == 1)
+  else if (n1->strand == -1 && n1->type == START && n2->strand == 1 &&
+           n2->type == STOP)
   {
     return;
   }
@@ -199,11 +199,11 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
   /******************/
   /* Edge Artifacts */
   /******************/
-  if (n1->trace_back == -1 && n1->strand == 1 && is_stop_node(n1) == 1)
+  if (n1->trace_back == -1 && n1->strand == 1 && n1->type == STOP)
   {
     return;
   }
-  if (n1->trace_back == -1 && n1->strand == -1 && is_start_node(n1) == 1)
+  if (n1->trace_back == -1 && n1->strand == -1 && n1->type == START)
   {
     return;
   }
@@ -214,7 +214,7 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
 
   /* 5'fwd->3'fwd */
   else if (n1->strand == n2->strand && n1->strand == 1 &&
-           is_start_node(n1) == 1 && is_stop_node(n2) == 1)
+           n1->type == START && n2->type == STOP)
   {
     if (n2->stop_val >= n1->index)
     {
@@ -238,7 +238,7 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
 
   /* 3'rev->5'rev */
   else if (n1->strand == n2->strand && n1->strand == -1 &&
-           is_stop_node(n1) == 1 && is_start_node(n2) == 1)
+           n1->type == STOP && n2->type == START)
   {
     if (n1->stop_val <= n2->index)
     {
@@ -265,8 +265,8 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
   /********************************/
 
   /* 3'fwd->5'fwd */
-  else if (n1->strand == 1 && is_stop_node(n1) == 1 && n2->strand == 1 &&
-           is_start_node(n2) == 1)
+  else if (n1->strand == 1 && n1->type == STOP && n2->strand == 1 &&
+           n2->type == START)
   {
     left += 2;
     if (left >= right)
@@ -280,8 +280,8 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
   }
 
   /* 3'fwd->3'rev */
-  else if (n1->strand == 1 && is_stop_node(n1) == 1 && n2->strand == -1 &&
-           is_stop_node(n2) == 1)
+  else if (n1->strand == 1 && n1->type == STOP && n2->strand == -1 &&
+           n2->type == STOP)
   {
     left += 2;
     right -= 2;
@@ -346,8 +346,8 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
   }
 
   /* 5'rev->3'rev */
-  else if (n1->strand == -1 && is_start_node(n1) == 1 && n2->strand == -1 &&
-           is_stop_node(n2) == 1)
+  else if (n1->strand == -1 && n1->type == START && n2->strand == -1 &&
+           n2->type == STOP)
   {
     right -= 2;
     if (left >= right)
@@ -361,8 +361,8 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
   }
 
   /* 5'rev->5'fwd */
-  else if (n1->strand == -1 && is_start_node(n1) == 1 && n2->strand == 1 &&
-           is_start_node(n2) == 1)
+  else if (n1->strand == -1 && n1->type == START && n2->strand == 1 &&
+           n2->type == START)
   {
     if (left >= right)
     {
@@ -379,8 +379,8 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
   /********************/
 
   /* 3'fwd->3'fwd, check for a start just to left of first 3' */
-  else if (n1->strand == 1 && n2->strand == 1 && is_stop_node(n1) == 1 &&
-           is_stop_node(n2) == 1)
+  else if (n1->strand == 1 && n2->strand == 1 && n1->type == STOP &&
+           n2->type == STOP)
   {
     if (n2->stop_val >= n1->index)
     {
@@ -405,8 +405,8 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
   }
 
   /* 3'rev->3'rev, check for a start just to right of second 3' */
-  else if (n1->strand == -1 && is_stop_node(n1) == 1 && n2->strand == -1 &&
-           is_stop_node(n2) == 1)
+  else if (n1->strand == -1 && n1->type == STOP && n2->strand == -1 &&
+           n2->type == STOP)
   {
     if (n1->stop_val <= n2->index)
     {
@@ -435,8 +435,8 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
   /***************************************/
 
   /* 3'for->5'rev */
-  else if (n1->strand == 1 && is_stop_node(n1) == 1 && n2->strand == -1 &&
-           is_start_node(n2) == 1)
+  else if (n1->strand == 1 && n1->type == STOP && n2->strand == -1 &&
+           n2->type == START)
   {
     if (n2->stop_val-2 >= n1->index+2)
     {
@@ -515,8 +515,8 @@ void untangle_overlaps(struct _node *nodes, int last_node)
   while (nodes[path].trace_back != -1)
   {
     next_node = nodes[path].trace_back;
-    if (nodes[path].strand == -1 && is_stop_node(&nodes[path]) == 1 &&
-        nodes[next_node].strand == 1 && is_stop_node(&nodes[next_node]) == 1 &&
+    if (nodes[path].strand == -1 && nodes[path].type == STOP &&
+        nodes[next_node].strand == 1 && nodes[next_node].type == STOP &&
         nodes[path].overlap_frame != -1 &&
         nodes[path].index > nodes[next_node].index)
     {
@@ -537,8 +537,8 @@ void untangle_overlaps(struct _node *nodes, int last_node)
   while (nodes[path].trace_back != -1)
   {
     next_node = nodes[path].trace_back;
-    if (nodes[path].strand == -1 && is_start_node(&nodes[path]) == 1 &&
-        nodes[next_node].strand == 1 && is_stop_node(&nodes[next_node]) == 1)
+    if (nodes[path].strand == -1 && nodes[path].type == START &&
+        nodes[next_node].strand == 1 && nodes[next_node].type == STOP)
     {
       for (i = path; nodes[i].index != nodes[path].stop_val; i--)
       {
@@ -546,15 +546,15 @@ void untangle_overlaps(struct _node *nodes, int last_node)
       nodes[path].trace_back = i;
       nodes[i].trace_back = next_node;
     }
-    if (nodes[path].strand == 1 && is_stop_node(&nodes[path]) == 1 &&
-        nodes[next_node].strand == 1 && is_stop_node(&nodes[next_node]) == 1)
+    if (nodes[path].strand == 1 && nodes[path].type == STOP &&
+        nodes[next_node].strand == 1 && nodes[next_node].type == STOP)
     {
       nodes[path].trace_back =
         nodes[next_node].star_ptr[(nodes[path].index)%3];
       nodes[nodes[path].trace_back].trace_back = next_node;
     }
-    if (nodes[path].strand == -1 && is_stop_node(&nodes[path]) == 1 &&
-        nodes[next_node].strand == -1 && is_stop_node(&nodes[next_node]) == 1)
+    if (nodes[path].strand == -1 && nodes[path].type == STOP &&
+        nodes[next_node].strand == -1 && nodes[next_node].type == STOP)
     {
       nodes[path].trace_back =
         nodes[path].star_ptr[(nodes[next_node].index)%3];

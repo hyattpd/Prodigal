@@ -42,14 +42,16 @@
 #define MODE_ANON 2
 
 /* Node Types: We use 0 to 9 as starts and 10 to 19 for stops */
+#define START 0
+#define STOP 1
 #define ATG 0
 #define GTG 1
 #define TTG 2
-#define O_START 3 /* Nonstandard start */
-#define TAA 10
-#define TAG 11
-#define TGA 12
-#define O_STOP 13 /* Nonstandard stop */
+#define TAA 0
+#define TAG 1
+#define TGA 2
+#define NONST 3   /* Nonstandard start or stop*/
+#define EDGE 4    /* Edge start or stop */
 
 int add_nodes(unsigned char *, unsigned char *, unsigned char *, int,
               struct _node *, int, int, int);
@@ -79,8 +81,6 @@ double intergenic_mod(struct _node *, struct _node *, double);
 
 int assign_start_value(unsigned char *seq, int);
 int assign_stop_value(unsigned char *seq, int);
-int is_start_node(struct _node *);
-int is_stop_node(struct _node *);
 
 double dmax(double, double);
 double dmin(double, double);

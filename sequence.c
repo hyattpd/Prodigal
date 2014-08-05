@@ -35,7 +35,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
   char line[MAX_LINE+1];
   int hdr = 0, fhdr = 0, bctr = 0, len = 0, wrn = 0;
   int gc_cont = 0;
-  unsigned int i, gapsize = 0;
+  int i, gapsize = 0;
   double acl = 0.0;
 
   line[MAX_LINE] = '\0';
@@ -174,7 +174,7 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
   char line[MAX_LINE+1];
   int reading_seq = 0, genbank_end = 0, bctr = 0, len = 0, wrn = 0;
   int gc_cont = 0;
-  unsigned int i, gapsize = 0;
+  int i, gapsize = 0;
 
   sprintf(new_hdr, "Prodigal_Seq_%d", *sctr+2);
 

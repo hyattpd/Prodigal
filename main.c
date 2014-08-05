@@ -105,10 +105,11 @@ int main(int argc, char *argv[])
                              /* 0 = Unspecified, 1 = Genbank, 2 = SCO, */
                              /* 3 = GFF, 4 = Sequin */
   int genetic_code = 0;      /* 0 = Auto, 1-23 = NCBI Genetic Code */
-  int cross_gaps = 0;        /* 0 = genes cannot span runs of N's */
-                             /* 1 = genes can span runs of N's */
-  int no_partial_genes = 0;  /* 0 = Allow partial genes (default) */
-                             /* 1 = Do not allow partial genes */
+  int gap_mode = 0;          /* 0 = genes can run into gaps of N's */
+                             /* 1 = genes cannot run into gaps of N's */
+                             /* 2 = don't treat N's as gaps at all */
+  int closed_ends = 0;       /* 0 = Allow genes at seq edges (default) */
+                             /* 1 = Do not allow genes at seq edges */
   int force_nonsd = 0;       /* If set to 1, force the non-Shine-Dalgarno */
                              /* RBS finder to be run */
   int quiet = 0;             /* If set to 1, turn off stderr logging */
@@ -132,6 +133,7 @@ int main(int argc, char *argv[])
   int max_preset = 0;        /* Index of best preset training file */
   double max_score = -100.0; /* Highest score from anonymous run */
   double gc_bound[2];        /* Low/high GC content bounds */
+  int last_tt = -1;          /* Last translation table seen */
 
   /* Allocate memory for data structures */
   if (allocate_memory(&seq, &rseq, &useq, &nodes, &genes, &gene_data, presets,
@@ -144,8 +146,8 @@ int main(int argc, char *argv[])
   /* Parse and validate the command line arguments */
   parse_arguments(argc, argv, input_file, output_file, train_file,
                   amino_file, nuc_file, start_file, summ_file, &mode,
-                  &output_format, &genetic_code, &no_partial_genes,
-                  &cross_gaps, &force_nonsd, &quiet);
+                  &output_format, &genetic_code, &closed_ends,
+                  &gap_mode, &force_nonsd, &quiet);
 
   /* Defaults for genetic code and start weight */
   train_data.start_weight = 4.35;
@@ -169,7 +171,7 @@ int main(int argc, char *argv[])
   }
 
   /* Read in the training file (if specified) */
-  if (train_file[0] != '\0')
+  if (mode == 0 && train_file[0] != '\0')
   {
     sprintf(text, "Reading in training data from file %s...", train_file);
     log_text(quiet, text);
@@ -194,7 +196,7 @@ int main(int argc, char *argv[])
   {
     log_text(quiet, "Reading in the sequence(s) to train...");
     seq_length = read_seq_training(input_ptr, seq, useq, &(train_data.gc),
-                                   no_partial_genes, &num_seq);
+                                   closed_ends, &num_seq);
     reverse_seq(seq, rseq, useq, seq_length);
     sprintf(text, "%d bp seq created, %.2f pct GC\n", seq_length,
             train_data.gc*100.0);
@@ -203,8 +205,8 @@ int main(int argc, char *argv[])
 
     /* Build the training set and score the coding of every start-stop pair */
     build_training_set_full(nodes, &train_data, &statistics, seq, rseq, useq,
-                            seq_length, &num_nodes, no_partial_genes,
-                            cross_gaps, num_seq, genetic_code, quiet);
+                            seq_length, &num_nodes, closed_ends,
+                            gap_mode, num_seq, genetic_code, quiet);
 
     /***********************************************************************
       Determine if this organism uses Shine-Dalgarno or not and score the
@@ -228,7 +230,7 @@ int main(int argc, char *argv[])
     if (mode == 1)
     {
       log_text(quiet, "Writing data to training file...");
-      if (write_training_file(output_ptr, &train_data) != 0)
+      if (write_training_file(train_file, &train_data) != 0)
       {
         perror("\nError: could not write training file!");
         exit(12);
@@ -310,8 +312,7 @@ int main(int argc, char *argv[])
         comprehensive list of nodes for dynamic programming.
       ***********************************************************************/
       num_nodes = add_nodes(seq, rseq, useq, seq_length, nodes,
-                            no_partial_genes, cross_gaps,
-                            train_data.trans_table);
+                            closed_ends, gap_mode, train_data.trans_table);
       qsort(nodes, num_nodes, sizeof(struct _node), &compare_nodes);
 
       /***********************************************************************
@@ -319,7 +320,7 @@ int main(int argc, char *argv[])
         scoring function.
       ***********************************************************************/
       score_nodes(seq, rseq, seq_length, nodes, num_nodes, &train_data,
-                  no_partial_genes, mode);
+                  closed_ends, mode);
       record_overlapping_starts(nodes, num_nodes, train_data.start_weight, 1);
       last_node = dynamic_programming(nodes, num_nodes, train_data.bias,
                                       train_data.start_weight, 1);
@@ -349,26 +350,25 @@ int main(int argc, char *argv[])
     else /* Anonymous (Metagenomic) Version */
     {
       get_gc_bounds(gc_bound, seq_gc);
-      max_score = -100.0;
       for (i = 0; i < NUM_PRESET_GENOME; i++)
       {
-        if (i == 0 || presets[i].data->trans_table !=
-            presets[i-1].data->trans_table)
-        {
-          memset(nodes, 0, num_nodes * sizeof(struct _node));
-          num_nodes = add_nodes(seq, rseq, useq, seq_length, nodes,
-                                no_partial_genes, cross_gaps,
-                                presets[i].data->trans_table);
-          qsort(nodes, num_nodes, sizeof(struct _node), &compare_nodes);
-        }
         if (presets[i].data->gc < gc_bound[0] ||
             presets[i].data->gc > gc_bound[1])
         {
           continue;
         }
+        if (presets[i].data->trans_table != last_tt)
+        {
+          memset(nodes, 0, num_nodes * sizeof(struct _node));
+          num_nodes = add_nodes(seq, rseq, useq, seq_length, nodes,
+                                closed_ends, gap_mode,
+                                presets[i].data->trans_table);
+          qsort(nodes, num_nodes, sizeof(struct _node), &compare_nodes);
+        }
+        last_tt = presets[i].data->trans_table;
         reset_node_scores(nodes, num_nodes);
         score_nodes(seq, rseq, seq_length, nodes, num_nodes, presets[i].data,
-                    no_partial_genes, mode);
+                    closed_ends, mode);
         record_overlapping_starts(nodes, num_nodes,
                                   presets[i].data->start_weight, 1);
         last_node = dynamic_programming(nodes, num_nodes,
@@ -389,12 +389,11 @@ int main(int argc, char *argv[])
 
       /* Recover the nodes for the best of the runs */
       memset(nodes, 0, num_nodes * sizeof(struct _node));
-      num_nodes = add_nodes(seq, rseq, useq, seq_length, nodes,
-                            no_partial_genes, cross_gaps,
-                            presets[max_preset].data->trans_table);
+      num_nodes = add_nodes(seq, rseq, useq, seq_length, nodes, closed_ends,
+                            gap_mode, presets[max_preset].data->trans_table);
       qsort(nodes, num_nodes, sizeof(struct _node), &compare_nodes);
       score_nodes(seq, rseq, seq_length, nodes, num_nodes,
-                  presets[max_preset].data, no_partial_genes, mode);
+                  presets[max_preset].data, closed_ends, mode);
       match_nodes_to_genes(anon_genes[max_preset], num_genes, nodes,
                            num_nodes);
       log_text(quiet, "done.\n");
@@ -459,13 +458,15 @@ void version()
 void usage(char *msg)
 {
   fprintf(stderr, "\nError: %s\n", msg);
-  fprintf(stderr, "\nUsage:  prodigal [-a protein_file] [-c] [-d mrna_file]");
-  fprintf(stderr, " [-f out_format]\n");
-  fprintf(stderr, "                 [-g trans_table] [-h] [-i input_file]");
-  fprintf(stderr, " [-m mode] [-n]\n");
-  fprintf(stderr, "                 [-o output_file] [-q] [-s start_file]");
-  fprintf(stderr, " [-t train_file]\n");
-  fprintf(stderr, "                 [-v] [-w summ_file] [-z]\n");
+  fprintf(stderr, "\nUsage:  prodigal [-a protein_file] [-c] ");
+  fprintf(stderr, "[-d mrna_file]\n");
+  fprintf(stderr, "                 [-e gap_mode] [-f out_format] ");
+  fprintf(stderr, "[-g trans_table]\n");
+  fprintf(stderr, "                 [-h] [-i input_file] [-n] ");
+  fprintf(stderr, "[-o output_file]\n");
+  fprintf(stderr, "                 [-p mode] [-q] [-s start_file] ");
+  fprintf(stderr, "[-t train_file]\n");
+  fprintf(stderr, "                 [-v] [-w summ_file]\n\n");
   fprintf(stderr, "\nDo 'prodigal -h' for more information.\n\n");
   exit(2);
 }
@@ -473,63 +474,57 @@ void usage(char *msg)
 /* Print help message and exit */
 void help()
 {
-  char spaces[50] = "                          ";
-  printf("\nUsage:  prodigal [-a protein_file] [-c] [-d mrna_file]");
-  printf(" [-f out_format]\n");
-  printf("                 [-g trans_table] [-h] [-i input_file]");
-  printf(" [-m mode] [-n]\n");
-  printf("                 [-o output_file] [-q] [-s start_file]");
-  printf(" [-t train_file]\n");
-  printf("                 [-v] [-w summ_file] [-z]\n");
-  printf("\nGene Modeling Parameters\n\n");
-  printf("  -m, --mode:           Specify mode (normal, train, or anon).\n");
-  printf("%snormal:   Single genome, any number of\n", spaces);
-  printf("%s          sequences. (Default)\n", spaces);
-  printf("%strain:    Do only training.  Input should\n", spaces);
-  printf("%s          be multiple FASTA of one or more\n", spaces);
-  printf("%s          closely related genomes.  Output\n", spaces);
-  printf("%s          is a training file.\n", spaces);
-  printf("%sanon:     Anonymous sequences, analyze using\n", spaces);
-  printf("%s          preset training files, ideal for\n", spaces);
-  printf("%s          metagenomic data or single short\n", spaces);
-  printf("%s          sequences.\n", spaces);
+  printf("\nUsage:  prodigal [-a protein_file] [-c] [-d mrna_file]\n");
+  printf("                 [-e gap_mode] [-f out_format] [-g trans_table]\n");
+  printf("                 [-h] [-i input_file] [-n] [-o output_file]\n");
+  printf("                 [-p mode] [-q] [-s start_file] [-t train_file]\n");
+  printf("                 [-v] [-w summ_file]\n\n");
+  printf("Gene Modeling Parameters\n\n");
+  printf("  -p, --mode:           Specify mode (normal, train, or anon).\n");
+  printf("                          normal:   Single genome, any number of\n");
+  printf("                                    sequences.  (Default)\n");
+  printf("                          train:    Do only training.  Input\n");
+  printf("                                    should be multiple FASTA of\n");
+  printf("                                    one or more closely\n");
+  printf("                                    related genomes.\n");
+  printf("                          anon:     Anonymous sequences, analyze\n");
+  printf("                                    using preset training files,\n");
+  printf("                                    ideal for metagenomic data\n");
+  printf("                                    or single short sequences.\n");
+  printf("                          meta:     (Deprecated) Same as anon.\n");
+  printf("                          single:   (Deprecated) Same as normal.\n");
   printf("  -g, --trans_table:    Specify a translation table to use.\n");
-  printf("%sauto: Tries 11 then 4 (Default)\n", spaces);
-  printf("%s11:   Standard Bacteria/Archaea\n", spaces);
-  printf("%s4:    Mycoplasma/Spiroplasma\n", spaces);
-  printf("%s#:    Other genetic codes 1-25\n", spaces);
-  printf("  -c, --nopartial:      Closed ends.  Do not allow partial genes\n");
-  printf("                        (genes that run off edges or into gaps.)\n");
-  printf("  -z, --nogaps:         Do not treat runs of N's as gaps.  This ");
-  printf("option\n");
-  printf("                        will build gene models that span ");
-  printf("runs of N's.\n");
+  printf("                          auto: Tries 11 then 4 (Default)\n");
+  printf("                          11:   Standard Bacteria/Archaea\n");
+  printf("                          4:    Mycoplasma/Spiroplasma\n");
+  printf("                          #:    Other genetic codes 1-25\n");
+  printf("  -e, --gap_mode:       Specify gap-handling behavior.\n");
+  printf("                          0:    Partial genes run into gaps.\n");
+  printf("                                (Default)\n");
+  printf("                          1:    Genes cannot run into gaps.\n");
+  printf("                          2:    Do not treat N's as gaps.\n");
+  printf("  -c, --closed:         Closed ends.  Do not allow partial genes\n");
+  printf("                        at edges of sequence.\n");
   printf("  -n, --force_nonsd:    Do not use the Shine-Dalgarno RBS finder\n");
-  printf("                        and force Prodigal to scan for motifs.\n");
-  printf("  -t, --training_file:  Read and use the specified training file\n");
-  printf("                        instead of training on the input ");
-  printf("sequence(s).\n");
-  printf("                        (Only usable in normal mode.)\n");
+  printf("                        and instead force Prodigal to scan for\n");
+  printf("                        motifs.\n");
+  printf("  -t, --training_file:  Specify the training file location.  In\n");
+  printf("                        train mode, writes the training file.\n");
+  printf("                        In normal mode, reads the training file.\n");
+  printf("  -m:                   (Deprecated) Same as '-e 1'\n");
   printf("\nInput/Output Parameters\n\n");
   printf("  -i, --input_file:     Specify input file (default stdin).\n");
   printf("  -o, --output_file:    Specify output file (default stdout).\n");
-  printf("  -a, --protein_file:   Write protein translations to the named");
-  printf(" file.\n");
-  printf("  -d, --mrna_file:      Write nucleotide sequences of genes to the");
-  printf("\n");
-  printf("                        named file.\n");
-  printf("  -w, --summ_file:      Write summary statistics to the named ");
-  printf("file.\n");
-  printf("  -s, --start_file:     Write all potential genes (with scores) to");
-  printf(" the\n                        named file.\n");
-  printf("  -f, --output_format:  Specify output format (gbk, gff, sqn, or ");
-  printf("sco).\n");
-  printf("                          gff:  GFF format (Default)\n");
-  printf("                          gbk:  Genbank-like format\n");
+  printf("  -a, --protein_file:   Specify protein translations file.\n");
+  printf("  -d, --mrna_file:      Specify nucleotide sequences file.\n");
+  printf("  -s, --start_file:     Specify complete starts file.\n");
+  printf("  -w, --summ_file:      Specify summary statistics file.\n");
+  printf("  -f, --output_format:  Specify output format.\n");
+  printf("                          gbk:  Genbank-like format (Default)\n");
+  printf("                          gff:  GFF format\n");
   printf("                          sqn:  Sequin feature table format\n");
   printf("                          sco:  Simple coordinate output\n");
-  printf("  -q, --quiet:          Run quietly (suppress normal stderr ");
-  printf("output).\n");
+  printf("  -q, --quiet:          Run quietly (suppress logging output).\n");
   printf("\nOther Parameters\n\n");
   printf("  -h, --help:     Print help menu and exit.\n");
   printf("  -v, --version:  Print version number and exit.\n\n");
@@ -574,11 +569,12 @@ int allocate_memory(unsigned char **seq, unsigned char **rseq,
 
 /* Initialize argument variables, parse command line arguments, */
 /* and validate the arguments for consistency. */
-void parse_arguments(int argc, char **argv, char *input_file, char
-                     *output_file, char *train_file, char *amino_file, char
-                     *nuc_file, char *start_file, char *summ_file, int *mode,
-                     int *output_format, int *genetic_code, int *closed, int
-                     *cross_gaps, int *force_nonsd, int *quiet)
+void parse_arguments(int argc, char **argv, char *input_file,
+                     char *output_file, char *train_file, char *amino_file,
+                     char *nuc_file, char *start_file, char *summ_file,
+                     int *mode, int *output_format, int *genetic_code,
+                     int *closed_ends, int *gap_mode, int *force_nonsd,
+                     int *quiet)
 {
   int i = 0;
   int j = 0;
@@ -598,29 +594,32 @@ void parse_arguments(int argc, char **argv, char *input_file, char
   for (i = 1; i < argc; i++)
   {
     if ((i == argc-1 || argv[i+1][0] == '-') &&
-       (strcmp(argv[i], "-t") == 0 ||
-       strcmp(argv[i], "--training_file") == 0 ||
-       strcmp(argv[i], "-a") == 0 ||
-       strcmp(argv[i], "--protein_file") == 0 ||
-       strcmp(argv[i], "-d") == 0 ||
-       strcmp(argv[i], "--mrna_file") == 0 ||
-       strcmp(argv[i], "-g") == 0 ||
-       strcmp(argv[i], "--trans_table") == 0 ||
-       strcmp(argv[i], "-f") == 0 ||
-       strcmp(argv[i], "--output_format") == 0 ||
-       strcmp(argv[i], "-s") == 0 ||
-       strcmp(argv[i], "--start_file") == 0 ||
-       strcmp(argv[i], "-w") == 0 ||
-       strcmp(argv[i], "--summ_file") == 0 ||
-       strcmp(argv[i], "-i") == 0 ||
-       strcmp(argv[i], "--input_file") == 0 ||
-       strcmp(argv[i], "-o") == 0 ||
-       strcmp(argv[i], "--output_file") == 0 ||
-       strcmp(argv[i], "-m") == 0 ||
-       strcmp(argv[i], "-p") == 0 ||
-       strcmp(argv[i], "--mode") == 0))
+        (strcmp(argv[i], "-a") == 0 ||
+        strcmp(argv[i], "--protein_file") == 0 ||
+        strcmp(argv[i], "-d") == 0 ||
+        strcmp(argv[i], "--mrna_file") == 0 ||
+        strcmp(argv[i], "-e") == 0 ||
+        strcmp(argv[i], "--gap_mode") == 0 ||
+        strcmp(argv[i], "-g") == 0 ||
+        strcmp(argv[i], "--trans_table") == 0 ||
+        strcmp(argv[i], "-f") == 0 ||
+        strcmp(argv[i], "--output_format") == 0 ||
+        strcmp(argv[i], "-i") == 0 ||
+        strcmp(argv[i], "--input_file") == 0 ||
+        strcmp(argv[i], "-o") == 0 ||
+        strcmp(argv[i], "--output_file") == 0 ||
+        strcmp(argv[i], "-p") == 0 ||
+        strcmp(argv[i], "--mode") == 0 ||
+        strcmp(argv[i], "-s") == 0 ||
+        strcmp(argv[i], "--start_file") == 0 ||
+        strcmp(argv[i], "-t") == 0 ||
+        strcmp(argv[i], "--training_file") == 0 ||
+        strcmp(argv[i], "-w") == 0 ||
+        strcmp(argv[i], "--summ_file") == 0))
     {
-      usage("-a/-d/-f/-g/-i/-m/-o/-s/-t/-w options require valid parameters.");
+      sprintf(err_string, "-a/-d/-e/-f/-g/-i/-o/-p/-s/-t/-w options ");
+      strcat(err_string, "require valid parameters.");
+      usage(err_string);
     }
     else if (strcmp(argv[i], "-a") == 0 ||
             strcmp(argv[i], "--protein_file") == 0)
@@ -630,11 +629,21 @@ void parse_arguments(int argc, char **argv, char *input_file, char
     }
     else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--nopartial") == 0)
     {
-      *closed = 1;
+      *closed_ends = 1;
     }
     else if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--mrna_file") == 0)
     {
       strcpy(nuc_file, argv[i+1]);
+      i++;
+    }
+    else if (strcmp(argv[i], "-e") == 0 || strcmp(argv[i], "--gap_mode") == 0)
+    {
+      *gap_mode = atoi(argv[i+1]);
+      if (strspn(argv[i+1], digits) != strlen(argv[i+1]) ||
+          *gap_mode < 0 || *gap_mode > 2)
+      {
+        usage("-e option should be 0, 1, or 2.");
+      }
       i++;
     }
     else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--output_format")
@@ -691,25 +700,11 @@ void parse_arguments(int argc, char **argv, char *input_file, char
       strcpy(input_file, argv[i+1]);
       i++;
     }
-    else if (strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--mode") == 0)
+    else if (strcmp(argv[i], "-m") == 0)
     {
-      if (argv[i+1][0] == 'n')
-      {
-        *mode = 0;
-      }
-      else if (argv[i+1][0] == 't')
-      {
-        *mode = 1;
-      }
-      else if (argv[i+1][0] == 'a')
-      {
-        *mode = 2;
-      }
-      else
-      {
-        usage("Invalid mode specified (should be normal, train, or anon).");
-      }
-      i++;
+      fprintf(stderr, "\n\nWarning: -m has been deprecated.  Should use the");
+      fprintf(stderr, "-e option instead (Using '-e 1' for this run.)\n");
+      *gap_mode = 1;
     }
     else if (strcmp(argv[i], "-n") == 0 ||
              strcmp(argv[i], "--force_nonsd") == 0)
@@ -722,22 +717,24 @@ void parse_arguments(int argc, char **argv, char *input_file, char
       strcpy(output_file, argv[i+1]);
       i++;
     }
-    else if (strcmp(argv[i], "-p") == 0) /* deprecated but preserved atm */
+    else if (strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--mode") == 0)
     {
-      if (argv[i+1][0] == 's')
+      if (argv[i+1][0] == 'n' || argv[i+1][0] == 's')
       {
         *mode = 0;
       }
-      else if (argv[i+1][0] == 'm')
+      else if (argv[i+1][0] == 't')
+      {
+        *mode = 1;
+      }
+      else if (argv[i+1][0] == 'a' || argv[i+1][0] == 'm')
       {
         *mode = 2;
       }
       else
       {
-        usage("Invalid procedure specified (should be single or meta).");
+        usage("Invalid mode specified (should be normal, train, or anon).");
       }
-      fprintf(stderr, "Warning: '-p meta' is deprecated.  Should use ");
-      fprintf(stderr, "'-m anon' instead for metagenomic sequences.\n");
       i++;
     }
     else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0)
@@ -766,10 +763,6 @@ void parse_arguments(int argc, char **argv, char *input_file, char
       strcpy(summ_file, argv[i+1]);
       i++;
     }
-    else if (strcmp(argv[i], "-z") == 0 || strcmp(argv[i], "--nogaps") == 0)
-    {
-      *cross_gaps = 1;
-    }
     else
     {
       sprintf(err_string, "Unknown option '%s'.", argv[i]);
@@ -780,18 +773,24 @@ void parse_arguments(int argc, char **argv, char *input_file, char
   /* Validation of arguments checking for conflicting options */
 
   /* Training mode can't have output format or extra files specified. */
+  /* Nor can gap behavior or closed ends be specified */
   if (*mode == 1 && (strlen(start_file) > 0 || strlen(nuc_file) > 0 ||
-     strlen(amino_file) > 0 || strlen(summ_file) > 0 || *output_format != 0))
+     strlen(amino_file) > 0 || strlen(summ_file) > 0 || *output_format != 0 ||
+     *gap_mode > 0 || *closed_ends > 0))
   {
-    usage("-a/-d/-f/-s/-w options cannot be used in training mode.");
+    usage("-a/-c/-d/-e/-f/-s/-w options cannot be used in training mode.");
+  }
+  /* Training mode must have training file specified. */
+  if (*mode == 1 && strlen(train_file) == 0)
+  {
+    usage("Must specify destination training file in training mode.");
   }
 
-  /* Normal/anonymous can't have training files specified. */
-  if (*mode != 0 && strlen(train_file) > 0)
+  /* Anonymous mode can't have training files specified. */
+  if (*mode == 0 && strlen(train_file) > 0)
   {
-    usage("Can only specify training file in normal mode.");
+    usage("Can't specify training file in anonymous mode.");
   }
-
   /* Anonymous mode can't have a specified value for genetic code. */
   /* Nor can normal mode if using a training file. */
   if ((*mode == 2 || (*mode == 0 && strlen(train_file) > 0)) &&
@@ -803,7 +802,7 @@ void parse_arguments(int argc, char **argv, char *input_file, char
   /* Once arguments have been validated, set some defaults */
   if (*output_format == 0)
   {
-    *output_format = 3; /* GFF default output format */
+    *output_format = 1; /* Genbank default output format */
   }
 }
 
@@ -849,7 +848,7 @@ void log_text(int quiet, char *text)
 /* the help message and exit. Returns a 1 if piped input is      */
 /* detected, 0 otherwise.                                        */
 int detect_input_and_handle_windows_stdin(int argc, int quiet,
-                                           char *input_file)
+                                          char *input_file)
 {
   int file_num = 0;
   int is_piped_input = 0;

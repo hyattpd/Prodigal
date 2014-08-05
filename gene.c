@@ -44,23 +44,23 @@ int add_genes(struct _gene *genes, struct _node *nodes, int initial_node)
       continue;
     }
     /* Valid start/stop: add it to the list */
-    if (nodes[path].strand == 1 && is_start_node(&nodes[path]) == 1)
+    if (nodes[path].strand == 1 && nodes[path].type == START)
     {
       genes[counter].begin = nodes[path].index+1;
       genes[counter].start_index = path;
     }
-    else if (nodes[path].strand == -1 && is_stop_node(&nodes[path]) == 1)
+    else if (nodes[path].strand == -1 && nodes[path].type == STOP)
     {
       genes[counter].begin = nodes[path].index-1;
       genes[counter].stop_index = path;
     }
-    else if (nodes[path].strand == 1 && is_stop_node(&nodes[path]) == 1)
+    else if (nodes[path].strand == 1 && nodes[path].type == STOP)
     {
       genes[counter].end = nodes[path].index+3;
       genes[counter].stop_index = path;
       counter++;
     }
-    else if (nodes[path].strand == -1 && is_start_node(&nodes[path]) == 1)
+    else if (nodes[path].strand == -1 && nodes[path].type == START)
     {
       genes[counter].end = nodes[path].index+1;
       genes[counter].start_index = path;
@@ -316,7 +316,7 @@ void get_best_two_alternative_starts(struct _gene *genes, int num_genes,
     {
       continue;
     }
-    if (is_stop_node(&nodes[i]) == 1 ||
+    if (nodes[i].type == STOP ||
         nodes[i].stop_val != nodes[node_ndx].stop_val)
     {
       continue;
@@ -373,7 +373,7 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
   char sd_string[28][100] = {{0}};
   char sd_spacer[28][20] = {{0}};
   char motif[10] = "";
-  char type_string[5][20] = { "ATG", "GTG", "TTG" , "Nonstandard", "Edge" };
+  char start_string[5][20] = { "ATG", "GTG", "TTG" , "Nonstandard", "Edge" };
 
   /* Initialize RBS string information for default SD */
   strcpy(sd_string[0], "None");
@@ -458,18 +458,11 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
     {
       partial_right = 0;
     }
-    if (nodes[beg_node].edge == 1)
-    {
-      start_type = 4;
-    }
-    else
-    {
-      start_type = nodes[beg_node].type;
-    }
+    start_type = nodes[beg_node].subtype;
 
     sprintf(gene_data[i].gene_data, "ID=%d_%d;partial=%d%d;start_type=%s;",
             seq_counter, i + 1, partial_left, partial_right,
-            type_string[start_type]);
+            start_string[start_type]);
 
     /* Record rbs data */
     rbs1 = train_data->rbs_wt[nodes[beg_node].rbs[0]]*train_data->start_weight;
@@ -892,7 +885,7 @@ void write_start_file(FILE *fh, struct _node *nodes, int num_nodes,
   char sd_string[28][100] = {{0}};
   char sd_spacer[28][20] = {{0}};
   char motif[10] = "";
-  char type_string[5][20] = { "ATG", "GTG", "TTG" , "Nonstandard", "Edge" };
+  char start_string[5][20] = { "ATG", "GTG", "TTG" , "Nonstandard", "Edge" };
   char seq_data[MAX_LINE*2] = "";
   char run_data[MAX_LINE] = "";
 
@@ -985,18 +978,11 @@ void write_start_file(FILE *fh, struct _node *nodes, int num_nodes,
   fprintf(fh, "Spacer\tRBSScr\tUpsScr\tTypeScr\tGCCont\n");
   for (i = 0; i < num_nodes; i++)
   {
-    if (is_stop_node(&nodes[i]) == 1)
+    if (nodes[i].type == STOP)
     {
       continue;
     }
-    if (nodes[i].edge == 1)
-    {
-      start_type = 4;
-    }
-    else
-    {
-      start_type = nodes[i].type;
-    }
+    start_type = nodes[i].subtype;
     if (nodes[i].stop_val != prev_stop || nodes[i].strand != prev_strand)
     {
       prev_stop = nodes[i].stop_val;
@@ -1007,13 +993,13 @@ void write_start_file(FILE *fh, struct _node *nodes, int num_nodes,
     {
       fprintf(fh, "%d\t%d\t+\t%.2f\t%.2f\t%.2f\t%s\t", nodes[i].index+1,
               nodes[i].stop_val+3, nodes[i].cscore+nodes[i].sscore,
-              nodes[i].cscore, nodes[i].sscore, type_string[start_type]);
+              nodes[i].cscore, nodes[i].sscore, start_string[start_type]);
     }
     if (nodes[i].strand == -1)
     {
       fprintf(fh, "%d\t%d\t-\t%.2f\t%.2f\t%.2f\t%s\t", nodes[i].stop_val-1,
               nodes[i].index+1, nodes[i].cscore+nodes[i].sscore,
-              nodes[i].cscore, nodes[i].sscore, type_string[start_type]);
+              nodes[i].cscore, nodes[i].sscore, start_string[start_type]);
     }
     rbs1 = train_data->rbs_wt[nodes[i].rbs[0]]*train_data->start_weight;
     rbs2 = train_data->rbs_wt[nodes[i].rbs[1]]*train_data->start_weight;

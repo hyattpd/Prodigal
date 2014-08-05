@@ -53,7 +53,7 @@ void calc_training_set_stats(struct _node *nodes, int initial_node,
       path = nodes[path].trace_forward;
       continue;
     }
-    if (nodes[path].strand == 1 && is_start_node(&nodes[path]) == 1)
+    if (nodes[path].strand == 1 && nodes[path].type == START)
     {
       if (nodes[path].cscore > 0.0)
       {
@@ -72,7 +72,7 @@ void calc_training_set_stats(struct _node *nodes, int initial_node,
         partial = 1;
       }
     }
-    if (nodes[path].strand == -1 && is_stop_node(&nodes[path]) == 1)
+    if (nodes[path].strand == -1 && nodes[path].type == STOP)
     {
       left = nodes[path].index-1;
       if (nodes[path].edge == 0)
@@ -84,7 +84,7 @@ void calc_training_set_stats(struct _node *nodes, int initial_node,
         partial = 1;
       }
     }
-    if (nodes[path].strand == 1 && is_stop_node(&nodes[path]) == 1)
+    if (nodes[path].strand == 1 && nodes[path].type == STOP)
     {
       right = nodes[path].index+3;
       if (left != -1 && partial == 0 && nodes[path].edge == 0)
@@ -104,7 +104,7 @@ void calc_training_set_stats(struct _node *nodes, int initial_node,
         genome_data->num_partial_genes++;
       }
     }
-    if (nodes[path].strand == -1 && is_start_node(&nodes[path]) == 1)
+    if (nodes[path].strand == -1 && nodes[path].type == START)
     {
       right = nodes[path].index+1;
       if (nodes[path].cscore > 0.0 && partial == 0 && nodes[path].edge == 0)

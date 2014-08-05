@@ -40,9 +40,12 @@ int read_training_file(char *fn, struct _training *tinf)
 }
 
 /* Writes a training file to use for a later run of gene prediction */
-int write_training_file(FILE *fh, struct _training *tinf)
+int write_training_file(char *fn, struct _training *tinf)
 {
   size_t rv;
+  FILE *fh;
+  fh = fopen(fn, "wb");
+  if(fh == NULL) return -1;
   rv = fwrite(tinf, sizeof(struct _training), 1, fh);
   if (rv != 1)
   {
@@ -163,7 +166,7 @@ void build_training_set(struct _node *nodes, struct _training *train_data,
   record_overlapping_starts(nodes, *num_nodes, train_data->start_weight, 0);
   last_node = dynamic_programming(nodes, *num_nodes, train_data->bias,
                                   train_data->start_weight, 0);
-  initial_node = find_first_node_from_last_node(nodes, last_node); 
+  initial_node = find_first_node_from_last_node(nodes, last_node);
 
   /***********************************************************************
     Gather dicodon statistics for the training set.  Score the entire set
@@ -199,7 +202,7 @@ void record_gc_frame_bias(struct _training *tinf, unsigned char *seq, int slen,
   }
   for (i = 0; i < nn; i++)
   {
-    if (is_start_node(&nod[i]) == 1)
+    if (nod[i].type == START)
     {
       len = abs(nod[i].stop_val-nod[i].index)+1;
       tinf->bias[nod[i].gc_bias] +=
@@ -239,18 +242,17 @@ void calc_dicodon_gene(struct _training *tinf, unsigned char *seq, unsigned
   in_gene = 0;
   while (path != -1)
   {
-    if (nod[path].strand == -1 && is_start_node(&nod[path]) == 1)
+    if (nod[path].strand == -1 && nod[path].type == START)
     {
       in_gene = -1;
       left = slen-nod[path].index-1;
     }
-    if (nod[path].strand == 1 && is_stop_node(&nod[path]) == 1)
+    if (nod[path].strand == 1 && nod[path].type == STOP)
     {
       in_gene = 1;
       right = nod[path].index+2;
     }
-    if (in_gene == -1 && nod[path].strand == -1 &&
-        is_stop_node(&nod[path]) == 1)
+    if (in_gene == -1 && nod[path].strand == -1 && nod[path].type == STOP)
     {
       right = slen-nod[path].index+1;
       for (i = left; i < right-5; i+=3)
@@ -260,8 +262,7 @@ void calc_dicodon_gene(struct _training *tinf, unsigned char *seq, unsigned
       }
       in_gene = 0;
     }
-    if (in_gene == 1 && nod[path].strand == 1 &&
-        is_start_node(&nod[path]) == 1)
+    if (in_gene == 1 && nod[path].strand == 1 && nod[path].type == START)
     {
       left = nod[path].index;
       for (i = left; i < right-5; i+=3)
@@ -377,11 +378,11 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
   }
   for (i = 0; i < nn; i++)
   {
-    if (is_stop_node(&nod[i]) == 1)
+    if (nod[i].type == STOP)
     {
       continue;
     }
-    tbg[nod[i].type] += 1.0;
+    tbg[nod[i].subtype] += 1.0;
   }
   sum = 0.0;
   for (i = 0; i < 3; i++)
@@ -407,7 +408,7 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
     }
     for (j = 0; j < nn; j++)
     {
-      if (is_stop_node(&nod[j]) == 1 || nod[j].edge == 1)
+      if (nod[j].type == STOP || nod[j].edge == 1)
       {
         continue;
       }
@@ -456,12 +457,12 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
     }
     for (j = 0; j < nn; j++)
     {
-      if (is_start_node(&nod[j]) == 1 && nod[j].edge == 1)
+      if (nod[j].type == START && nod[j].edge == 1)
       {
         continue;
       }
       fr = (nod[j].index)%3;
-      if (is_stop_node(&nod[j]) == 1 && nod[j].strand == 1)
+      if (nod[j].type == STOP && nod[j].strand == 1)
       {
         if (best[fr] >= sthresh && nod[bindex[fr]].index%3 == fr)
         {
@@ -495,12 +496,12 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
           max_rb = (int)dmax(nod[j].rbs[0], nod[j].rbs[1]);
         }
         if (nod[j].cscore + wt*tinf->rbs_wt[max_rb] +
-            wt*tinf->type_wt[nod[j].type] >= best[fr])
+            wt*tinf->type_wt[nod[j].subtype] >= best[fr])
         {
           best[fr] = nod[j].cscore + wt*tinf->rbs_wt[max_rb];
-          best[fr] += wt*tinf->type_wt[nod[j].type];
+          best[fr] += wt*tinf->type_wt[nod[j].subtype];
           bindex[fr] = j;
-          type[fr] = nod[j].type;
+          type[fr] = nod[j].subtype;
           rbs[fr] = max_rb;
         }
       }
@@ -516,12 +517,12 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
     }
     for (j = nn-1; j >= 0; j--)
     {
-      if (is_start_node(&nod[j]) == 1 && nod[j].edge == 1)
+      if (nod[j].type == START && nod[j].edge == 1)
       {
         continue;
       }
       fr = (nod[j].index)%3;
-      if (is_stop_node(&nod[j]) == 1 && nod[j].strand == -1)
+      if (nod[j].type == STOP && nod[j].strand == -1)
       {
         if (best[fr] >= sthresh && nod[bindex[fr]].index%3 == fr)
         {
@@ -555,12 +556,12 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
           max_rb = (int)dmax(nod[j].rbs[0], nod[j].rbs[1]);
         }
         if (nod[j].cscore + wt*tinf->rbs_wt[max_rb] +
-            wt*tinf->type_wt[nod[j].type] >= best[fr])
+            wt*tinf->type_wt[nod[j].subtype] >= best[fr])
         {
           best[fr] = nod[j].cscore + wt*tinf->rbs_wt[max_rb];
-          best[fr] += wt*tinf->type_wt[nod[j].type];
+          best[fr] += wt*tinf->type_wt[nod[j].subtype];
           bindex[fr] = j;
-          type[fr] = nod[j].type;
+          type[fr] = nod[j].subtype;
           rbs[fr] = max_rb;
         }
       }
@@ -742,11 +743,11 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
   }
   for (i = 0; i < nn; i++)
   {
-    if (is_stop_node(&nod[i]) == 1)
+    if (nod[i].type == STOP)
     {
       continue;
     }
-    tbg[nod[i].type] += 1.0;
+    tbg[nod[i].subtype] += 1.0;
   }
   sum = 0.0;
   for (i = 0; i < 3; i++)
@@ -793,7 +794,7 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
     zbg = 0.0;
     for (j = 0; j < nn; j++)
     {
-      if (is_stop_node(&nod[j]) == 1 || nod[j].edge == 1)
+      if (nod[j].type == STOP || nod[j].edge == 1)
       {
         continue;
       }
@@ -850,17 +851,17 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
     }
     for (j = 0; j < nn; j++)
     {
-      if (is_start_node(&nod[j]) == 1 && nod[j].edge == 1)
+      if (nod[j].type == START && nod[j].edge == 1)
       {
         continue;
       }
       fr = (nod[j].index)%3;
-      if (is_stop_node(&nod[j]) == 1 && nod[j].strand == 1)
+      if (nod[j].type == STOP && nod[j].strand == 1)
       {
         if (best[fr] >= sthresh)
         {
           ngenes += 1.0;
-          treal[nod[bindex[fr]].type] += 1.0;
+          treal[nod[bindex[fr]].subtype] += 1.0;
           update_motif_counts(mreal, &zreal, seq, rseq, slen,
                               &(nod[bindex[fr]]), stage);
           if (i == 19)
@@ -874,11 +875,12 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
       }
       else if (nod[j].strand == 1)
       {
-        if (nod[j].cscore + wt*nod[j].mot.score + wt*tinf->type_wt[nod[j].type]
+        if (nod[j].cscore + wt*nod[j].mot.score +
+            wt*tinf->type_wt[nod[j].subtype]
             >= best[fr])
         {
           best[fr] = nod[j].cscore + wt*nod[j].mot.score;
-          best[fr] += wt*tinf->type_wt[nod[j].type];
+          best[fr] += wt*tinf->type_wt[nod[j].subtype];
           bindex[fr] = j;
         }
       }
@@ -892,17 +894,17 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
     }
     for (j = nn-1; j >= 0; j--)
     {
-      if (is_start_node(&nod[j]) == 1 && nod[j].edge == 1)
+      if (nod[j].type == START && nod[j].edge == 1)
       {
         continue;
       }
       fr = (nod[j].index)%3;
-      if (is_stop_node(&nod[j]) == 1 && nod[j].strand == -1)
+      if (nod[j].type == STOP && nod[j].strand == -1)
       {
         if (best[fr] >= sthresh)
         {
           ngenes += 1.0;
-          treal[nod[bindex[fr]].type] += 1.0;
+          treal[nod[bindex[fr]].subtype] += 1.0;
           update_motif_counts(mreal, &zreal, seq, rseq, slen,
                               &(nod[bindex[fr]]), stage);
           if (i == 19)
@@ -916,11 +918,12 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
       }
       else if (nod[j].strand == -1)
       {
-        if (nod[j].cscore + wt*nod[j].mot.score + wt*tinf->type_wt[nod[j].type]
+        if (nod[j].cscore + wt*nod[j].mot.score +
+            wt*tinf->type_wt[nod[j].subtype]
             >= best[fr])
         {
           best[fr] = nod[j].cscore + wt*nod[j].mot.score;
-          best[fr] += wt*tinf->type_wt[nod[j].type];
+          best[fr] += wt*tinf->type_wt[nod[j].subtype];
           bindex[fr] = j;
         }
       }
@@ -1161,7 +1164,7 @@ void update_motif_counts(double mcnt[4][4][4096], double *zero, unsigned char
   unsigned char *wseq;
   struct _motif *mot = &(nod->mot);
 
-  if (is_stop_node(nod) == 1 || nod->edge == 1)
+  if (nod->type == STOP || nod->edge == 1)
   {
     return;
   }

@@ -34,7 +34,7 @@
 #define MIN_AVG_TRAIN_CTG_LEN 3000
 
 extern void log_text(int, char *);
-int write_training_file(FILE *, struct _training *);
+int write_training_file(char *, struct _training *);
 int read_training_file(char *, struct _training *);
 
 void build_training_set_full(struct _node *, struct _training *,

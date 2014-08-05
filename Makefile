@@ -18,33 +18,38 @@
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ##############################################################################
 
-SHELL=	/bin/sh
-CC=	gcc
+SHELL   = /bin/sh
+CC      = gcc
 
-SRC=	main.c \
-	gene.c \
-	summary.c \
-	dprog.c \
-	node.c \
-	anonymous.c \
-	sequence.c \
-	training.c \
-	preset.c \
-	bitmap.c
+CFLAGS  = -pedantic -Wall -O2
+LFLAGS = -lm
 
-EXEC=	prodigal
+TARGET  = prodigal
+SOURCES = $(shell echo *.c)
+HEADERS = $(shell echo *.h)
+OBJECTS = $(SOURCES:.c=.o)
 
-CFLAGS=	-O3 -Wall
+INSTALLDIR  = /usr/local/bin
 
-LIBS=	-lm
-LDFLAGS=	$(LIBS)
+all: $(TARGET)
 
-OBJS=	${SRC:.c=.o}
+$(TARGET): $(OBJECTS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS)
 
-all:	$(SRC) $(EXEC)
+%.o: %.c $(HEADERS)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
-clean:	$(OBJS)
-	/bin/rm -rf $(OBJS) $(EXEC)
+install: $(TARGET)
+	install -d -m 0755 $(INSTALLDIR)
+	install -m 0755 $(TARGET) $(INSTALLDIR)
+ 
+uninstall:
+	-rm $(BINDIR)/$(TARGET)
 
-$(EXEC):	$(OBJS)
-	$(CC) -o $@ $(OBJS) $(LDFLAGS) $(CFLAGS)
+clean:
+	-rm -f $(OBJECTS)
+ 
+distclean: clean
+	-rm -f $(TARGET)
+
+.PHONY: all install uninstall clean distclean

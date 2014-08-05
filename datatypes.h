@@ -34,12 +34,13 @@ struct _motif
 /* Dynamic programming node, where each node is either a start or a stop */
 struct _node
 {
-  int type;            /* See node.h for list of start/stop types */
-                       /* 0-3 = Start Types, 10-13 = Stop Types */
+  int type;            /* 0 = Start node, 1 = Stop node */
+  int subtype;         /* For start node, 0=ATG,1=GTG,2=TTG,3=Nonst.,4=Edge */
+                       /* For stop node, 0=TAA,1=TAG,2=TGA,3=Edge */
   int edge;            /* Runs off the edge: 0 = normal, 1 = edge node */
   int index;           /* position in the sequence of the node */
   int strand;          /* 1 = forward, -1 = reverse */
-  int stop_val;        /* For a stop, record previous stop; for start, record
+  int stop_val;        /* For a stop, record previous stop; for a start, record
                           its stop */
   int star_ptr[3];     /* Array of starts w/in MAX_SAM_OVLP bases of stop in 3
                           frames */
