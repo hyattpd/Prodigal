@@ -18,44 +18,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <ctype.h>
-#include "anonymous.h"
-#include "datatypes.h"
-#include "dprog.h"
-#include "gene.h"
-#include "node.h"
-#include "training.h"
-
-#define VERSION "3.0.0-devel.1.0"
-#define DATE "August, 2014"
-#define TEXTSIZE 10000
-
-void version();
-void usage(char *);
-void help();
-int allocate_memory(unsigned char **, unsigned char **, unsigned char **,
-                    struct _node **, struct _gene **, struct _gene_data **,
-                    struct _preset_genome_bin *, struct _gene ***);
-void parse_arguments(int, char **, char *, char *, char *, char *, char *,
-                     char *, char *, int *, int *, int *, int *, int *,
-                     int *, int *);
-void header(int, int);
-void log_text(int, char *);
-int detect_input_and_handle_windows_stdin(int, int, char *);
-int copy_standard_input_to_file(char *, int);
-void open_files(char *, char *, char *, char *, char *, char *, FILE **,
-                FILE **, FILE **, FILE **, FILE **, FILE **);
-
-void free_variables(unsigned char *, unsigned char *, unsigned char *,
-                    struct _node *, struct _gene *,
-                    struct _preset_genome_bin *, struct _gene **);
-void close_filehandles(FILE *, FILE *, FILE *, FILE *, FILE *, FILE *);
+#include "main.h"
 
 /* Main Function for Prodigal */
 int main(int argc, char *argv[])
@@ -177,7 +140,7 @@ int main(int argc, char *argv[])
     log_text(quiet, text);
     if (read_training_file(train_file, &train_data) == -1)
     {
-      perror("\n\nError: training file did not read correctly!");
+      fprintf(stderr, "\n\nError: training file did not read correctly!\n\n");
       exit(6);
     }
     log_text(quiet, "done.\n-------------------------------------\n");
@@ -349,6 +312,8 @@ int main(int argc, char *argv[])
 
     else /* Anonymous (Metagenomic) Version */
     {
+      max_score = -100.0;
+      last_tt = -1;
       get_gc_bounds(gc_bound, seq_gc);
       for (i = 0; i < NUM_PRESET_GENOME; i++)
       {
@@ -576,197 +541,126 @@ void parse_arguments(int argc, char **argv, char *input_file,
                      int *closed_ends, int *gap_mode, int *force_nonsd,
                      int *quiet)
 {
-  int i = 0;
-  int j = 0;
   char digits[10] = "0123456789";
-  char err_string[TEXTSIZE] = "";
+  struct _option option = {0};
 
-  for (i = 1; i < argc; i++)
+  option.index = 1;
+
+  /* Parse command line options */
+  while(1)
   {
-    if (argv[i][0] == '-')
+    get_option(argc, argv, &option);
+    switch (option.letter)
     {
-      for (j = 0; j < strlen(argv[i]); j++)
-      {
-        argv[i][j] = tolower(argv[i][j]);
-      }
-    }
-  }
-  for (i = 1; i < argc; i++)
-  {
-    if ((i == argc-1 || argv[i+1][0] == '-') &&
-        (strcmp(argv[i], "-a") == 0 ||
-        strcmp(argv[i], "--protein_file") == 0 ||
-        strcmp(argv[i], "-d") == 0 ||
-        strcmp(argv[i], "--mrna_file") == 0 ||
-        strcmp(argv[i], "-e") == 0 ||
-        strcmp(argv[i], "--gap_mode") == 0 ||
-        strcmp(argv[i], "-g") == 0 ||
-        strcmp(argv[i], "--trans_table") == 0 ||
-        strcmp(argv[i], "-f") == 0 ||
-        strcmp(argv[i], "--output_format") == 0 ||
-        strcmp(argv[i], "-i") == 0 ||
-        strcmp(argv[i], "--input_file") == 0 ||
-        strcmp(argv[i], "-o") == 0 ||
-        strcmp(argv[i], "--output_file") == 0 ||
-        strcmp(argv[i], "-p") == 0 ||
-        strcmp(argv[i], "--mode") == 0 ||
-        strcmp(argv[i], "-s") == 0 ||
-        strcmp(argv[i], "--start_file") == 0 ||
-        strcmp(argv[i], "-t") == 0 ||
-        strcmp(argv[i], "--training_file") == 0 ||
-        strcmp(argv[i], "-w") == 0 ||
-        strcmp(argv[i], "--summ_file") == 0))
-    {
-      sprintf(err_string, "-a/-d/-e/-f/-g/-i/-o/-p/-s/-t/-w options ");
-      strcat(err_string, "require valid parameters.");
-      usage(err_string);
-    }
-    else if (strcmp(argv[i], "-a") == 0 ||
-            strcmp(argv[i], "--protein_file") == 0)
-    {
-      strcpy(amino_file, argv[i+1]);
-      i++;
-    }
-    else if (strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "--nopartial") == 0)
-    {
-      *closed_ends = 1;
-    }
-    else if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--mrna_file") == 0)
-    {
-      strcpy(nuc_file, argv[i+1]);
-      i++;
-    }
-    else if (strcmp(argv[i], "-e") == 0 || strcmp(argv[i], "--gap_mode") == 0)
-    {
-      *gap_mode = atoi(argv[i+1]);
-      if (strspn(argv[i+1], digits) != strlen(argv[i+1]) ||
-          *gap_mode < 0 || *gap_mode > 2)
-      {
-        usage("-e option should be 0, 1, or 2.");
-      }
-      i++;
-    }
-    else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--output_format")
-            == 0)
-    {
-      if (strncmp(argv[i+1], "0", 1) == 0 || strcmp(argv[i+1], "gbk") == 0)
-      {
-        *output_format = 1;
-      }
-      else if (strncmp(argv[i+1], "2", 1) == 0 ||
-               strcmp(argv[i+1], "sco") == 0)
-      {
-        *output_format = 2;
-      }
-      else if (strncmp(argv[i+1], "3", 1) == 0 ||
-               strcmp(argv[i+1], "gff") == 0)
-      {
-        *output_format = 3;
-      }
-      else if (strncmp(argv[i+1], "4", 1) == 0 ||
-               strcmp(argv[i+1], "sqn") == 0)
-      {
-        *output_format = 4;
-      }
-      else
-      {
-        usage("Invalid output format specified.");
-      }
-      i++;
-    }
-    else if (strcmp(argv[i], "-g") == 0 ||
-            strcmp(argv[i], "--trans_table") == 0)
-    {
-      if (strcmp(argv[i+1], "auto") != 0)
-      {
-        *genetic_code = atoi(argv[i+1]);
-        if (strspn(argv[i+1], digits) != strlen(argv[i+1]) ||
-           *genetic_code < 1 || *genetic_code > 25 ||
-           *genetic_code == 7 || *genetic_code == 8 ||
-           (*genetic_code >= 17 && *genetic_code <= 20))
+      case 'a':
+        strcpy(amino_file, option.optarg);
+        break;
+      case 'c':
+        *closed_ends = 1;
+        break;
+      case 'd':
+        strcpy(nuc_file, option.optarg);
+        break;
+      case 'e':
+        *gap_mode = atoi(option.optarg);
+        if (strspn(option.optarg, digits) != strlen(option.optarg) ||
+            *gap_mode < 0 || *gap_mode > 2)
         {
-          usage("Invalid or unsupported genetic code specified.");
+          usage("-e option should be 0, 1, or 2.");
         }
-      }
-      i++;
+        break;
+      case 'f':
+        if (strncmp(option.optarg, "0", 1) == 0 || strcmp(option.optarg, "gbk") == 0)
+        {
+          *output_format = 1;
+        }
+        else if (strncmp(option.optarg, "2", 1) == 0 ||
+                 strcmp(option.optarg, "sco") == 0)
+        {
+          *output_format = 2;
+        }
+        else if (strncmp(option.optarg, "3", 1) == 0 ||
+                 strcmp(option.optarg, "gff") == 0)
+        {
+          *output_format = 3;
+        }
+        else if (strncmp(option.optarg, "4", 1) == 0 ||
+                 strcmp(option.optarg, "sqn") == 0)
+        {
+          *output_format = 4;
+        }
+        else
+        {
+          usage("Invalid output format specified.");
+        }
+        break;
+      case 'g':
+        if (strcmp(option.optarg, "auto") != 0)
+        {
+          *genetic_code = atoi(option.optarg);
+          if (strspn(option.optarg, digits) != strlen(option.optarg) ||
+             *genetic_code < 1 || *genetic_code > 25 ||
+             *genetic_code == 7 || *genetic_code == 8 ||
+             (*genetic_code >= 17 && *genetic_code <= 20))
+          {
+            usage("Invalid or unsupported genetic code specified.");
+          }
+        }
+        break;
+      case 'h':
+        help();
+      case 'i':
+        strcpy(input_file, option.optarg);
+        break;
+      case 'm':
+        fprintf(stderr, "\n\nWarning: -m has been deprecated.  Should use the");
+        fprintf(stderr, " -e option instead (Using '-e 1' for this run.)\n");
+        *gap_mode = 1;
+        break;
+      case 'n':
+        *force_nonsd = 1;
+        break;
+      case 'o': 
+        strcpy(output_file, option.optarg);
+        break;
+      case 'p':
+        if (option.optarg[0] == 'n' || option.optarg[0] == 's')
+        {
+          *mode = 0;
+        }
+        else if (option.optarg[0] == 't')
+        {
+          *mode = 1;
+        }
+        else if (option.optarg[0] == 'a' || option.optarg[0] == 'm')
+        {
+          *mode = 2;
+        }
+        else
+        {
+          usage("Invalid mode specified (should be normal, train, or anon).");
+        }
+        break;
+      case 'q':
+        *quiet = 1;
+        break;
+      case 's':
+        strcpy(start_file, option.optarg);
+        break;
+      case 't':
+        strcpy(train_file, option.optarg);
+        break;
+      case 'v':
+        version();
+      case 'w':
+        strcpy(summ_file, option.optarg);
+        break;
+      default:
+        break;
     }
-    else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
+    if (option.index == -1)
     {
-      help();
-    }
-    else if (strcmp(argv[i], "-i") == 0 ||
-            strcmp(argv[i], "--input_file") == 0)
-    {
-      strcpy(input_file, argv[i+1]);
-      i++;
-    }
-    else if (strcmp(argv[i], "-m") == 0)
-    {
-      fprintf(stderr, "\n\nWarning: -m has been deprecated.  Should use the");
-      fprintf(stderr, "-e option instead (Using '-e 1' for this run.)\n");
-      *gap_mode = 1;
-    }
-    else if (strcmp(argv[i], "-n") == 0 ||
-             strcmp(argv[i], "--force_nonsd") == 0)
-    {
-      *force_nonsd = 1;
-    }
-    else if (strcmp(argv[i], "-o") == 0 ||
-            strcmp(argv[i], "--output_file") == 0)
-    {
-      strcpy(output_file, argv[i+1]);
-      i++;
-    }
-    else if (strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--mode") == 0)
-    {
-      if (argv[i+1][0] == 'n' || argv[i+1][0] == 's')
-      {
-        *mode = 0;
-      }
-      else if (argv[i+1][0] == 't')
-      {
-        *mode = 1;
-      }
-      else if (argv[i+1][0] == 'a' || argv[i+1][0] == 'm')
-      {
-        *mode = 2;
-      }
-      else
-      {
-        usage("Invalid mode specified (should be normal, train, or anon).");
-      }
-      i++;
-    }
-    else if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0)
-    {
-      *quiet = 1;
-    }
-    else if (strcmp(argv[i], "-s") == 0 ||
-            strcmp(argv[i], "--start_file") == 0)
-    {
-      strcpy(start_file, argv[i+1]);
-      i++;
-    }
-    else if (strcmp(argv[i], "-t") == 0 ||
-            strcmp(argv[i], "--training_file") == 0)
-    {
-      strcpy(train_file, argv[i+1]);
-      i++;
-    }
-    else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0)
-    {
-      version();
-    }
-    else if (strcmp(argv[i], "-w") == 0 ||
-            strcmp(argv[i], "--summ_file") == 0)
-    {
-      strcpy(summ_file, argv[i+1]);
-      i++;
-    }
-    else
-    {
-      sprintf(err_string, "Unknown option '%s'.", argv[i]);
-      usage(err_string);
+      break;
     }
   }
 
@@ -774,11 +668,11 @@ void parse_arguments(int argc, char **argv, char *input_file,
 
   /* Training mode can't have output format or extra files specified. */
   /* Nor can gap behavior or closed ends be specified */
-  if (*mode == 1 && (strlen(start_file) > 0 || strlen(nuc_file) > 0 ||
-     strlen(amino_file) > 0 || strlen(summ_file) > 0 || *output_format != 0 ||
-     *gap_mode > 0 || *closed_ends > 0))
+  if (*mode == 1 && (strlen(output_file) > 0 || strlen(start_file) > 0 ||
+      strlen(nuc_file) > 0 || strlen(amino_file) > 0 ||
+      strlen(summ_file) > 0 || *output_format != 0))
   {
-    usage("-a/-c/-d/-e/-f/-s/-w options cannot be used in training mode.");
+    usage("-a/-d/-f/-o/-s/-w options cannot be used in training mode.");
   }
   /* Training mode must have training file specified. */
   if (*mode == 1 && strlen(train_file) == 0)
@@ -787,7 +681,7 @@ void parse_arguments(int argc, char **argv, char *input_file,
   }
 
   /* Anonymous mode can't have training files specified. */
-  if (*mode == 0 && strlen(train_file) > 0)
+  if (*mode == 2 && strlen(train_file) > 0)
   {
     usage("Can't specify training file in anonymous mode.");
   }
@@ -803,6 +697,208 @@ void parse_arguments(int argc, char **argv, char *input_file,
   if (*output_format == 0)
   {
     *output_format = 1; /* Genbank default output format */
+  }
+}
+
+/* Get next option and parse out argument, update index */
+void get_option(int argc, char **argv, struct _option *opt)
+{
+  int opt_len = 0;
+  int requires_arg = 0;           /* Set to 1 if option requires an arg */
+  int arg_included = 0;           /* Set to 1 if user included arg in option */
+  char *parse = NULL;
+  char *tmp_ptr = NULL;
+  char tmp_string[TEXTSIZE] = "";
+
+  opt->optarg[0] = '\0';
+  parse = argv[opt->index];
+  /* Not an option */
+  if (parse == NULL || parse[0] != '-' || strlen(parse) <= 1)
+  {
+    sprintf(tmp_string, "Unrecognized option '%s'.", parse);
+    usage(tmp_string);
+  }
+  /* Long Options */
+  if (strlen(parse) > 2 && strncmp(parse, "--", 2) == 0)
+  {
+    tmp_ptr = strchr(parse, '=');
+    opt_len = strlen(parse);
+    if (tmp_ptr != NULL)
+    {
+      opt_len -= strlen(tmp_ptr);
+    }
+    strncpy(tmp_string, parse, opt_len);
+    tmp_string[opt_len] = '\0';
+    if (strcmp(tmp_string, "--protein_file") == 0)
+    {
+      opt->letter = 'a';
+      requires_arg = 1;
+    }
+    else if (strcmp(tmp_string, "--closed") == 0)
+    {
+      opt->letter = 'c';
+      requires_arg = 0;
+    }
+    else if (strcmp(tmp_string, "--mrna_file") == 0)
+    {
+      opt->letter = 'd';
+      requires_arg = 1;
+    }
+    else if (strcmp(tmp_string, "--gap_mode") == 0)
+    {
+      opt->letter = 'e';
+      requires_arg = 1;
+    }
+    else if (strcmp(tmp_string, "--output_format") == 0)
+    {
+      opt->letter = 'f';
+      requires_arg = 1;
+    }
+    else if (strcmp(tmp_string, "--trans_table") == 0)
+    {
+      opt->letter = 'g';
+      requires_arg = 1;
+    }
+    else if (strcmp(tmp_string, "--help") == 0)
+    {
+      opt->letter = 'h';
+      requires_arg = 0;
+    }
+    else if (strcmp(tmp_string, "--input_file") == 0)
+    {
+      opt->letter = 'i';
+      requires_arg = 1;
+    }
+    else if (strcmp(tmp_string, "--mask") == 0)
+    {
+      opt->letter = 'm';
+      requires_arg = 0;
+    }
+    else if (strcmp(tmp_string, "--force_nonsd") == 0)
+    {
+      opt->letter = 'n';
+      requires_arg = 0;
+    }
+    else if (strcmp(tmp_string, "--output_file") == 0)
+    {
+      opt->letter = 'o';
+      requires_arg = 1;
+    }
+    else if (strcmp(tmp_string, "--mode") == 0)
+    {
+      opt->letter = 'p';
+      requires_arg = 1;
+    }
+    else if (strcmp(tmp_string, "--quiet") == 0)
+    {
+      opt->letter = 'q';
+      requires_arg = 0;
+    }
+    else if (strcmp(tmp_string, "--start_file") == 0)
+    {
+      opt->letter = 's';
+      requires_arg = 1;
+    }
+    else if (strcmp(tmp_string, "--train_file") == 0)
+    {
+      opt->letter = 't';
+      requires_arg = 1;
+    }
+    else if (strcmp(tmp_string, "--version") == 0)
+    {
+      opt->letter = 'v';
+      requires_arg = 0;
+    }
+    else if (strcmp(tmp_string, "--summ_file") == 0)
+    {
+      opt->letter = 'w';
+      requires_arg = 1;
+    }
+    else
+    {
+      sprintf(tmp_string, "Unrecognized option '%s'.", parse);
+      usage(tmp_string);
+    }
+    if (tmp_ptr != NULL)
+    {
+      arg_included = 1;
+      strcpy(opt->optarg, tmp_ptr+1);
+    }
+  }
+  /* Short option */
+  if (parse[0] == '-' && parse[1] != '-')
+  {
+    switch (parse[1])
+    {
+      case 'a':
+      case 'd':
+      case 'e':
+      case 'f':
+      case 'g':
+      case 'i':
+      case 'o':
+      case 'p':
+      case 's':
+      case 't':
+      case 'w':
+        requires_arg = 1;
+        opt->letter = parse[1];
+        if (strlen(parse) > 2)
+        {
+          arg_included = 1;
+          strcpy(opt->optarg, parse+2);
+        }
+        break;
+      case 'c':
+      case 'h':
+      case 'm':
+      case 'n':
+      case 'v':
+      case 'q':
+        requires_arg = 0;
+        opt->letter = parse[1];
+        if (strlen(parse) > 2)
+        {
+          arg_included = 1;
+          strcpy(opt->optarg, parse+2);
+        }
+        break;
+      default:
+        sprintf(tmp_string, "Unrecognized option '%s'.", parse);
+        usage(tmp_string);
+        break;
+    }
+  }
+  /* Option takes no argument but one was given */
+  if (requires_arg == 0 && (arg_included == 1 ||
+      (opt->index < argc-1 && argv[opt->index+1][0] != '-')))
+  {
+    sprintf(tmp_string, "Option -%c should not have an argument.",
+            opt->letter);
+    usage(tmp_string);
+  }
+  /* Option requires an argument but none was given */
+  if (requires_arg == 1 && (arg_included == 0 && (opt->index >= argc-1 ||
+      argv[opt->index+1][0] == '-')))
+  {
+    sprintf(tmp_string, "Option -%c requires an argument.",
+            opt->letter);
+    usage(tmp_string);
+  }
+  /* Option requires an argument and needs opt->optarg to be copied */
+  if (requires_arg == 1 && arg_included == 0)
+  {
+    strcpy(opt->optarg, argv[opt->index+1]);
+  }
+  else if (requires_arg == 1 && arg_included == 1)
+  {
+    strcpy(opt->optarg, opt->optarg);
+  }
+  /* Update index, -1 if no more arguments to parse */
+  opt->index += (1 + requires_arg - arg_included);
+  if (opt->index >= argc)
+  {
+    opt->index = -1;
   }
 }
 
@@ -929,12 +1025,14 @@ void open_files(char *input_file, char *output_file, char *start_file,
                 FILE **input_ptr, FILE **output_ptr, FILE **start_ptr,
                 FILE **amino_ptr, FILE **nuc_ptr, FILE **summ_ptr)
 {
+  char err_msg[TEXTSIZE] = "";
   if (input_file[0] != '\0')
   {
     *input_ptr = fopen(input_file, "r");
     if (*input_ptr == NULL)
     {
-      perror("\nError: can't open input file.");
+      sprintf(err_msg, "\nError: can't open input file %s.", input_file);
+      perror(err_msg);
       exit(7);
     }
   }
@@ -943,7 +1041,8 @@ void open_files(char *input_file, char *output_file, char *start_file,
     *output_ptr = fopen(output_file, "w");
     if (*output_ptr == NULL)
     {
-      perror("\nError: can't open output file.");
+      sprintf(err_msg, "\nError: can't open output file %s.", output_file);
+      perror(err_msg);
       exit(8);
     }
   }
@@ -952,7 +1051,8 @@ void open_files(char *input_file, char *output_file, char *start_file,
     *start_ptr = fopen(start_file, "w");
     if (*start_ptr == NULL)
     {
-      perror("\nError: can't open start file.");
+      sprintf(err_msg, "\nError: can't open start file %s.", start_file);
+      perror(err_msg);
       exit(8);
     }
   }
@@ -961,7 +1061,8 @@ void open_files(char *input_file, char *output_file, char *start_file,
     *amino_ptr = fopen(amino_file, "w");
     if (*amino_ptr == NULL)
     {
-      perror("\nError: can't open translation file.");
+      sprintf(err_msg, "\nError: can't open protein file %s.", amino_file);
+      perror(err_msg);
       exit(8);
     }
   }
@@ -970,7 +1071,8 @@ void open_files(char *input_file, char *output_file, char *start_file,
     *nuc_ptr = fopen(nuc_file, "w");
     if (*nuc_ptr == NULL)
     {
-      perror("\nError: can't open gene nucleotide file.");
+      sprintf(err_msg, "\nError: can't open mRNA file %s.", nuc_file);
+      perror(err_msg);
       exit(8);
     }
   }
@@ -979,7 +1081,8 @@ void open_files(char *input_file, char *output_file, char *start_file,
     *summ_ptr = fopen(summ_file, "w");
     if (*summ_ptr == NULL)
     {
-      perror("\nError: can't open summary file.");
+      sprintf(err_msg, "\nError: can't open summary file %s.", summ_file);
+      perror(err_msg);
       exit(8);
     }
   }
