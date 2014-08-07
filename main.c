@@ -570,7 +570,8 @@ void parse_arguments(int argc, char **argv, char *input_file,
         }
         break;
       case 'f':
-        if (strncmp(option.optarg, "0", 1) == 0 || strcmp(option.optarg, "gbk") == 0)
+        if (strncmp(option.optarg, "0", 1) == 0 ||
+            strcmp(option.optarg, "gbk") == 0)
         {
           *output_format = 1;
         }
@@ -613,14 +614,15 @@ void parse_arguments(int argc, char **argv, char *input_file,
         strcpy(input_file, option.optarg);
         break;
       case 'm':
-        fprintf(stderr, "\n\nWarning: -m has been deprecated.  Should use the");
+        fprintf(stderr, "\n\nWarning: -m has been deprecated.  ");
+        fprintf(stderr, "Should use the");
         fprintf(stderr, " -e option instead (Using '-e 1' for this run.)\n");
         *gap_mode = 1;
         break;
       case 'n':
         *force_nonsd = 1;
         break;
-      case 'o': 
+      case 'o':
         strcpy(output_file, option.optarg);
         break;
       case 'p':

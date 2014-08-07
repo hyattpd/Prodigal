@@ -45,7 +45,10 @@ int write_training_file(char *fn, struct _training *tinf)
   size_t rv;
   FILE *fh;
   fh = fopen(fn, "wb");
-  if(fh == NULL) return -1;
+  if(fh == NULL)
+  {
+    return -1;
+  }
   rv = fwrite(tinf, sizeof(struct _training), 1, fh);
   if (rv != 1)
   {
@@ -60,7 +63,7 @@ void build_training_set_full(struct _node *nodes, struct _training *train_data,
                              struct _summary *statistics, unsigned char *seq,
                              unsigned char *rseq, unsigned char *useq,
                              int seq_length, int *num_nodes,
-                             int no_partial_genes, int cross_gaps, int num_seq,
+                             int closed_ends, int cross_gaps, int num_seq,
                              int genetic_code, int quiet)
 {
   int train_qual = 0;
@@ -70,7 +73,7 @@ void build_training_set_full(struct _node *nodes, struct _training *train_data,
           train_data->trans_table);
   log_text(quiet, text);
   build_training_set(nodes, train_data, statistics, seq, rseq, useq,
-                     seq_length, num_nodes, no_partial_genes, cross_gaps,
+                     seq_length, num_nodes, closed_ends, cross_gaps,
                      num_seq);
   log_text(quiet, "done!\n");
 
@@ -103,7 +106,7 @@ void build_training_set_full(struct _node *nodes, struct _training *train_data,
       log_text(quiet, "Trying genetic code 4...");
       train_data->trans_table = 4;
       build_training_set(nodes, train_data, statistics, seq, rseq, useq,
-                         seq_length, num_nodes, no_partial_genes,
+                         seq_length, num_nodes, closed_ends,
                          cross_gaps, num_seq);
       train_qual = training_set_quality(statistics);
       if (train_qual < 2)
@@ -116,7 +119,7 @@ void build_training_set_full(struct _node *nodes, struct _training *train_data,
         log_text(quiet, "Redoing genome with genetic code 11...");
         train_data->trans_table = 11;
         build_training_set(nodes, train_data, statistics, seq, rseq, useq,
-                           seq_length, num_nodes, no_partial_genes,
+                           seq_length, num_nodes, closed_ends,
                            cross_gaps, num_seq);
         log_text(quiet, "done.\n");
         low_gene_len_warning(train_qual, statistics);
