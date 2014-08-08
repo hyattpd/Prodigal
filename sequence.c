@@ -143,7 +143,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
   }
   if (len < MIN_SINGLE_GENOME)
   {
-    fprintf(stderr, "\n\nError:  Sequence must be %d", MIN_SINGLE_GENOME);
+    fprintf(stderr, "\n\nError: Sequence must be %d", MIN_SINGLE_GENOME);
     fprintf(stderr, " characters (only %d read).\n(Consider", len);
     fprintf(stderr, " running with the '-p anon' option or finding");
     fprintf(stderr, " more contigs from the same genome.)\n\n");
@@ -151,14 +151,14 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
   }
   if (len < IDEAL_SINGLE_GENOME)
   {
-    fprintf(stderr, "\n\nWarning:  ideally Prodigal should be given at");
+    fprintf(stderr, "\n\nWarning: Ideally Prodigal should be given at");
     fprintf(stderr, " least %d bases for ", IDEAL_SINGLE_GENOME);
     fprintf(stderr, "training.\nYou may get better results with the ");
     fprintf(stderr, "'-p anon' option.\n\n");
   }
   if (acl < IDEAL_AVG_CONTIG_LEN)
   {
-    fprintf(stderr, "\n\nWarning:  Average training set contig length is");
+    fprintf(stderr, "\n\nWarning: Average training set contig length is");
     fprintf(stderr, " short at %.2f bases.\nYou may", acl);
     fprintf(stderr, " get better results with the '-p anon' option.\n\n");
   }

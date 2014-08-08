@@ -394,7 +394,7 @@ int main(int argc, char *argv[])
   /* Flag an error if we saw no sequences */
   if (num_seq == 0)
   {
-    fprintf(stderr, "\nError:  no input sequences to analyze.\n\n");
+    fprintf(stderr, "\nError: No input sequences to analyze.\n\n");
     exit(17);
   }
 
@@ -549,6 +549,10 @@ void parse_arguments(int argc, char **argv, char *input_file,
   /* Parse command line options */
   while(1)
   {
+    if (argc == 1)
+    {
+      break;
+    }
     get_option(argc, argv, &option);
     switch (option.letter)
     {
@@ -966,6 +970,7 @@ int detect_input_and_handle_windows_stdin(int argc, int quiet,
   {
     if (argc == 1)
     {
+      fprintf(stderr, "No input detected.  Printing help message...\n");
       help();
     }
     else

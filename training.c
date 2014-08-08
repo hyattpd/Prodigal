@@ -331,7 +331,7 @@ void low_gene_len_warning(int flag, struct _summary *genome_data)
 {
   if (flag < 2)
   {
-    fprintf(stderr, "\nWarning: training sequence is highly fragmented.\n");
+    fprintf(stderr, "\nWarning: Training sequence is highly fragmented.\n");
     fprintf(stderr, "You may get better results with the ");
     fprintf(stderr, "'-p anon' option.\n\n");
   }
