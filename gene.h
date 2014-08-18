@@ -45,10 +45,10 @@ void print_genes(FILE *, struct _gene *, struct _gene_data *, int,
                  struct _training *, char *, char *, char *);
 void write_translations(FILE *, struct _gene *, struct _gene_data *, int,
                         struct _node *, unsigned char *, unsigned char *,
-                        unsigned char *, int, int, int, char *);
+                        unsigned char *, int, int, char *);
 void write_nucleotide_seqs(FILE *, struct _gene *, struct _gene_data *, int,
                            struct _node *, unsigned char *, unsigned char *,
-                           unsigned char *, int, int, char *);
+                           unsigned char *, int, char *);
 void write_start_file(FILE *, struct _node *, int, struct _training *, int,
                       int, int, char *, char *, char *);
 double calculate_confidence(double, double);

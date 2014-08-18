@@ -21,7 +21,7 @@
 SHELL   = /bin/sh
 CC      = gcc
 
-CFLAGS  = -pedantic -Wall -O2
+CFLAGS  = -pedantic -Wall -Wextra -O2
 LFLAGS = -lm
 
 TARGET  = prodigal

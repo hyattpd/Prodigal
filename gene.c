@@ -367,6 +367,7 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
   int partial_left = 0;
   int partial_right = 0;
   int start_type = 0;
+  int stop_type = 0;
   double rbs1 = 0.0;
   double rbs2 = 0.0;
   double confidence = 0.0;
@@ -374,6 +375,7 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
   char sd_spacer[28][20] = {{0}};
   char motif[10] = "";
   char start_string[5][20] = { "ATG", "GTG", "TTG" , "Nonstandard", "Edge" };
+  char stop_string[5][20] = { "TAA", "TAG", "TGA" , "Nonstandard", "Edge" };
 
   /* Initialize RBS string information for default SD */
   strcpy(sd_string[0], "None");
@@ -459,10 +461,12 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
       partial_right = 0;
     }
     start_type = nodes[beg_node].subtype;
+    stop_type = nodes[end_node].subtype;
 
-    sprintf(gene_data[i].gene_data, "ID=%d_%d;partial=%d%d;start_type=%s;",
+    sprintf(gene_data[i].gene_data,
+            "ID=%d_%d;partial=%d%d;start_type=%s;stop_type=%s;",
             seq_counter, i + 1, partial_left, partial_right,
-            start_string[start_type]);
+            start_string[start_type], stop_string[stop_type]);
 
     /* Record rbs data */
     rbs1 = train_data->rbs_wt[nodes[beg_node].rbs[0]]*train_data->start_weight;
@@ -705,8 +709,7 @@ void write_translations(FILE *fh, struct _gene *genes,
                         struct _gene_data *gene_data, int num_genes,
                         struct _node *nodes, unsigned char *seq,
                         unsigned char *rseq, unsigned char *useq,
-                        int seq_length, int trans_table, int seq_counter,
-                        char *short_hdr)
+                        int seq_length, int trans_table, char *short_hdr)
 {
   int i = 0;
   int j = 0;
@@ -780,7 +783,7 @@ void write_nucleotide_seqs(FILE *fh, struct _gene *genes,
                            struct _gene_data *gene_data, int num_genes,
                            struct _node *nodes, unsigned char *seq,
                            unsigned char *rseq, unsigned char *useq,
-                           int seq_length, int seq_counter, char *short_hdr)
+                           int seq_length, char *short_hdr)
 {
   int i = 0;
   int j = 0;

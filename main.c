@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
   FILE *start_ptr = NULL;    /* Complete start list file pointer */
 
   /* Command line arguments */
-  int mode = 0;              /* Mode to run program in */
+  int mode = MODE_NORM;      /* Mode to run program in */
                              /* 0 = normal, 1 = training only, */
                              /* 2 = anonymous/metagenomic */
   int output_format = 0;     /* Output format flag */
@@ -127,14 +127,14 @@ int main(int argc, char *argv[])
   header(quiet, mode);
 
   /* Look for input on stdin and handle Windows' inability to rewind stdin */
-  if (mode == 0 && train_file[0] == '\0' && input_file[0] == '\0')
+  if (mode == MODE_NORM && train_file[0] == '\0' && input_file[0] == '\0')
   {
     is_piped_input = detect_input_and_handle_windows_stdin(argc, quiet,
                                                            input_file);
   }
 
   /* Read in the training file (if specified) */
-  if (mode == 0 && train_file[0] != '\0')
+  if (mode == MODE_NORM && train_file[0] != '\0')
   {
     sprintf(text, "Reading in training data from file %s...", train_file);
     log_text(quiet, text);
@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
     Single Genome Training:  Read in the sequence(s) and perform the
     training on them.
   ***************************************************************************/
-  if (mode == 1 || (mode == 0 && train_file[0] == '\0'))
+  if (mode == MODE_TRN || (mode == MODE_NORM && train_file[0] == '\0'))
   {
     log_text(quiet, "Reading in the sequence(s) to train...");
     seq_length = read_seq_training(input_ptr, seq, useq, &(train_data.gc),
@@ -190,7 +190,7 @@ int main(int argc, char *argv[])
     log_text(quiet, "done.\n");
 
     /* If training specified, write the training file and exit. */
-    if (mode == 1)
+    if (mode == MODE_TRN)
     {
       log_text(quiet, "Writing data to training file...");
       if (write_training_file(train_file, &train_data) != 0)
@@ -213,11 +213,9 @@ int main(int argc, char *argv[])
       exit(13);
     }
     /* Reset all the sequence/dynamic programming variables */
-    memset(seq, 0, (seq_length /4 + 1) * sizeof(unsigned char));
-    memset(rseq, 0, (seq_length / 4 + 1) * sizeof(unsigned char));
-    memset(useq, 0, (seq_length / 8 + 1) * sizeof(unsigned char));
-    memset(nodes, 0, num_nodes * sizeof(struct _node));
-    memset(&statistics, 0, sizeof(struct _summary));
+    zero_sequence(seq, rseq, useq, seq_length);
+    zero_nodes(nodes, num_nodes);
+    zero_statistics(&statistics);
     num_nodes = 0;
     seq_length = 0;
     initial_node = -1;
@@ -226,7 +224,7 @@ int main(int argc, char *argv[])
   }
 
   /* Initialize the training files for an anonymous request */
-  else if (mode == 2)
+  else if (mode == MODE_ANON)
   {
     log_text(quiet, "Initializing preset training files...");
     initialize_preset_genome_bins(presets);
@@ -236,7 +234,7 @@ int main(int argc, char *argv[])
   /************************************************************/
   /*                     Gene Prediction Phase                */
   /************************************************************/
-  if (mode == 2)
+  if (mode == MODE_ANON)
   {
     log_text(quiet, "Mode: Anonymous, Phase: Gene Finding\n");
   }
@@ -267,7 +265,7 @@ int main(int argc, char *argv[])
     /* Calculate short header for this sequence */
     calc_short_header(cur_header, short_header, num_seq);
 
-    if (mode != 2) /* Single Genome Version */
+    if (mode != MODE_ANON) /* Single Genome Version */
     {
 
       /***********************************************************************
@@ -302,10 +300,9 @@ int main(int argc, char *argv[])
       fflush(output_ptr);
       write_translations(amino_ptr, genes, gene_data, num_genes, nodes, seq,
                          rseq, useq, seq_length, train_data.trans_table,
-                         num_seq, short_header);
+                         short_header);
       write_nucleotide_seqs(nuc_ptr, genes, gene_data, num_genes, nodes,
-                            seq, rseq, useq, seq_length, num_seq,
-                            short_header);
+                            seq, rseq, useq, seq_length, short_header);
       write_start_file(start_ptr, nodes, num_nodes, &train_data, num_seq,
                        seq_length, mode, NULL, VERSION, cur_header);
     }
@@ -324,7 +321,7 @@ int main(int argc, char *argv[])
         }
         if (presets[i].data->trans_table != last_tt)
         {
-          memset(nodes, 0, num_nodes * sizeof(struct _node));
+          zero_nodes(nodes, num_nodes);
           num_nodes = add_nodes(seq, rseq, useq, seq_length, nodes,
                                 closed_ends, gap_mode,
                                 presets[i].data->trans_table);
@@ -353,7 +350,7 @@ int main(int argc, char *argv[])
       }
 
       /* Recover the nodes for the best of the runs */
-      memset(nodes, 0, num_nodes * sizeof(struct _node));
+      zero_nodes(nodes, num_nodes);
       num_nodes = add_nodes(seq, rseq, useq, seq_length, nodes, closed_ends,
                             gap_mode, presets[max_preset].data->trans_table);
       qsort(nodes, num_nodes, sizeof(struct _node), &compare_nodes);
@@ -371,11 +368,10 @@ int main(int argc, char *argv[])
       fflush(output_ptr);
       write_translations(amino_ptr, anon_genes[max_preset], gene_data,
                          num_genes, nodes, seq, rseq, useq, seq_length,
-                         presets[max_preset].data->trans_table, num_seq,
-                         short_header);
+                         presets[max_preset].data->trans_table, short_header);
       write_nucleotide_seqs(nuc_ptr, anon_genes[max_preset], gene_data,
                             num_genes, nodes, seq, rseq, useq, seq_length,
-                            num_seq, short_header);
+                            short_header);
       write_start_file(start_ptr, nodes, num_nodes, presets[max_preset].data,
                        num_seq, seq_length, mode, presets[max_preset].desc,
                        VERSION, cur_header);
@@ -496,7 +492,7 @@ void help()
   exit(0);
 }
 
-/* Allocates memory for data structures and memsets them all to 0 */
+/* Allocates memory for data structures and sets all contents to 0 */
 int allocate_memory(unsigned char **seq, unsigned char **rseq,
                     unsigned char **useq, struct _node **nodes,
                     struct _gene **genes, struct _gene_data **gene_data,
@@ -632,15 +628,15 @@ void parse_arguments(int argc, char **argv, char *input_file,
       case 'p':
         if (option.optarg[0] == 'n' || option.optarg[0] == 's')
         {
-          *mode = 0;
+          *mode = MODE_NORM;
         }
         else if (option.optarg[0] == 't')
         {
-          *mode = 1;
+          *mode = MODE_TRN;
         }
         else if (option.optarg[0] == 'a' || option.optarg[0] == 'm')
         {
-          *mode = 2;
+          *mode = MODE_ANON;
         }
         else
         {
@@ -674,26 +670,26 @@ void parse_arguments(int argc, char **argv, char *input_file,
 
   /* Training mode can't have output format or extra files specified. */
   /* Nor can gap behavior or closed ends be specified */
-  if (*mode == 1 && (strlen(output_file) > 0 || strlen(start_file) > 0 ||
-      strlen(nuc_file) > 0 || strlen(amino_file) > 0 ||
-      strlen(summ_file) > 0 || *output_format != 0))
+  if (*mode == MODE_TRN && (strlen(output_file) > 0 ||
+      strlen(start_file) > 0 || strlen(nuc_file) > 0 ||
+      strlen(amino_file) > 0 || strlen(summ_file) > 0 || *output_format != 0))
   {
     usage("-a/-d/-f/-o/-s/-w options cannot be used in training mode.");
   }
   /* Training mode must have training file specified. */
-  if (*mode == 1 && strlen(train_file) == 0)
+  if (*mode == MODE_TRN && strlen(train_file) == 0)
   {
     usage("Must specify destination training file in training mode.");
   }
 
   /* Anonymous mode can't have training files specified. */
-  if (*mode == 2 && strlen(train_file) > 0)
+  if (*mode == MODE_ANON && strlen(train_file) > 0)
   {
     usage("Can't specify training file in anonymous mode.");
   }
   /* Anonymous mode can't have a specified value for genetic code. */
   /* Nor can normal mode if using a training file. */
-  if ((*mode == 2 || (*mode == 0 && strlen(train_file) > 0)) &&
+  if ((*mode == MODE_ANON || (*mode == MODE_NORM && strlen(train_file) > 0)) &&
      *genetic_code != 0)
   {
     usage("Can't specify translation table with anon mode or training file.");
@@ -911,6 +907,8 @@ void get_option(int argc, char **argv, struct _option *opt)
 /* Print the header */
 void header(int quiet, int mode)
 {
+  char mode_str[3][10] = { "Normal", "Training", "Anonymous" };
+
   if (quiet == 0)
   {
     fprintf(stderr, "-------------------------------------\n");
@@ -918,18 +916,7 @@ void header(int quiet, int mode)
     fprintf(stderr, "Univ of Tenn / Oak Ridge National Lab\n");
     fprintf(stderr, "Doug Hyatt, Loren Hauser, et al.     \n");
     fprintf(stderr, "-------------------------------------\n");
-    if (mode == 0)
-    {
-      fprintf(stderr, "Mode: Normal, Phase: Training\n");
-    }
-    else if (mode == 1)
-    {
-      fprintf(stderr, "Mode: Training, Phase: Training\n");
-    }
-    else if (mode == 2)
-    {
-      fprintf(stderr, "Mode: Anonymous, Phase: Training\n");
-    }
+    fprintf(stderr, "Mode: %s, Phase: Training\n", mode_str[mode]);
   }
 }
 

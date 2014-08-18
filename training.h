@@ -58,7 +58,7 @@ void train_starts_nonsd(unsigned char *, unsigned char *, int, struct _node *,
 
 void count_upstream_composition(unsigned char *, int, int, int,
                                 struct _training *);
-void build_coverage_map(double [4][4][4096], int [4][4][4096], double, int);
+void build_coverage_map(double [4][4][4096], int [4][4][4096], double);
 void update_motif_counts(double [4][4][4096], double *, unsigned char *,
                          unsigned char *, int, struct _node *, int);
 

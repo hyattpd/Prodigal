@@ -935,7 +935,7 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
     /* Update the log likelihood weights for type and RBS motifs */
     if (stage < 2)
     {
-      build_coverage_map(mreal, mgood, ngenes, stage);
+      build_coverage_map(mreal, mgood, ngenes);
     }
     sum = 0.0;
     for (j = 0; j < 4; j++)
@@ -1277,7 +1277,7 @@ void update_motif_counts(double mcnt[4][4][4096], double *zero, unsigned char
   w/mismatch.
 ******************************************************************************/
 void build_coverage_map(double real[4][4][4096], int good[4][4][4096], double
-                        ng, int stage)
+                        ng)
 {
   int i, j, k, l, tmp, decomp[3];
   double thresh = 0.2;

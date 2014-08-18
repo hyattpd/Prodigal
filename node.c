@@ -285,9 +285,9 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
 }
 
 /* Memset nodes to 0 and return 0 */
-void zero_nodes(struct _node *nod, int num_nodes)
+void zero_nodes(struct _node *nodes, int num_nodes)
 {
-  memset(nod, 0, num_nodes * sizeof(struct _node));
+  memset(nodes, 0, num_nodes * sizeof(struct _node));
 }
 
 /* Check node allocation and realloc memory if we */
@@ -529,7 +529,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
   double negf, posf, rbs1, rbs2, sd_score, edge_gene, min_anon_len;
 
   /* Step 1: Calculate raw coding potential for every start-stop pair. */
-  calc_orf_gc(seq, rseq, slen, nod, nn);
+  calc_orf_gc(seq, nod, nn);
   raw_coding_score(seq, rseq, slen, nod, nn, tinf->trans_table, tinf->gc,
                    tinf->gene_dc);
 
@@ -757,8 +757,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
 }
 
 /* Calculate the GC Content for each start-stop pair */
-void calc_orf_gc(unsigned char *seq, unsigned char *rseq, int slen, struct
-                 _node *nod, int nn)
+void calc_orf_gc(unsigned char *seq, struct _node *nod, int nn)
 {
   int i, j, last[3], fr;
   double gc[3], gsize = 0.0;

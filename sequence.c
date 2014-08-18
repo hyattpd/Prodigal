@@ -84,7 +84,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
         }
         line[i] = '\0';
       }
-      for (i = 0; i < strlen(line); i++)
+      for (i = 0; i < (int)strlen(line); i++)
       {
         if (line[i] < 'A' || line[i] > 'z')
         {
@@ -95,7 +95,8 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
           set(seq, bctr);
           gc_cont++;
         }
-        else if (line[i] == 't' || line[i] == 'T')
+        else if (line[i] == 't' || line[i] == 'T' ||
+                 line[i] == 'u' || line[i] == 'U')
         {
           set(seq, bctr);
           set(seq, bctr+1);
@@ -246,7 +247,7 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
         }
         line[i] = '\0';
       }
-      for (i = 0; i < strlen(line); i++)
+      for (i = 0; i < (int)strlen(line); i++)
       {
         if (line[i] < 'A' || line[i] > 'z')
         {
@@ -257,7 +258,8 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
           set(seq, bctr);
           gc_cont++;
         }
-        else if (line[i] == 't' || line[i] == 'T')
+        else if (line[i] == 't' || line[i] == 'T' ||
+                 line[i] == 'u' || line[i] == 'U')
         {
           set(seq, bctr);
           set(seq, bctr+1);
@@ -297,7 +299,7 @@ void calc_short_header(char *header, char *short_header, int sctr)
   int i;
 
   strcpy(short_header, header);
-  for (i = 0; i < strlen(header); i++)
+  for (i = 0; i < (int)strlen(header); i++)
   {
     if (header[i] == ' ' || header[i] == '\t' || header[i] == '\r' ||
         header[i] == '\n')

@@ -68,7 +68,7 @@ void score_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
                  struct _training *, int, int);
 void raw_coding_score(unsigned char *, unsigned char *, int, struct _node *,
                       int, int, double, double *);
-void calc_orf_gc(unsigned char *, unsigned char *, int, struct _node *, int);
+void calc_orf_gc(unsigned char *, struct _node *, int);
 void rbs_score(unsigned char *, unsigned char *, int, struct _node *, int,
                double *);
 
