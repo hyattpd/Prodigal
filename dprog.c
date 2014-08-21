@@ -178,20 +178,20 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
   }
 
   /* 5'fwd->5'rev, 5'fwd->3'rev */
-  else if (n1->strand == 1 && n1->type == START && n2->strand == -1)
+  if (n1->strand == 1 && n1->type == START && n2->strand == -1)
   {
     return;
   }
 
   /* 3'rev->5'fwd, 3'rev->3'fwd) */
-  else if (n1->strand == -1 && n1->type == STOP && n2->strand == 1)
+  if (n1->strand == -1 && n1->type == STOP && n2->strand == 1)
   {
     return;
   }
 
   /* 5'rev->3'fwd */
-  else if (n1->strand == -1 && n1->type == START && n2->strand == 1 &&
-           n2->type == STOP)
+  if (n1->strand == -1 && n1->type == START && n2->strand == 1 &&
+      n2->type == STOP)
   {
     return;
   }
@@ -213,7 +213,7 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
   /*********/
 
   /* 5'fwd->3'fwd */
-  else if (n1->strand == n2->strand && n1->strand == 1 &&
+  if (n1->strand == n2->strand && n1->strand == 1 &&
            n1->type == START && n2->type == STOP)
   {
     if (n2->stop_val >= n1->index)
@@ -294,11 +294,11 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
     max_val = 0.0;
     for (i = 0; i < 3; i++)
     {
-      if (n2->star_ptr[i] == -1)
+      if (n2->start_ptr[i] == -1)
       {
         continue;
       }
-      n3 = &(nodes[n2->star_ptr[i]]);
+      n3 = &(nodes[n2->start_ptr[i]]);
       overlap = left - n3->stop_val + 3;
       if (overlap <= 0 || overlap >= MAX_OPP_OVLP)
       {
@@ -328,7 +328,7 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
     }
     if (max_frame != -1)
     {
-      n3 = &(nodes[n2->star_ptr[max_frame]]);
+      n3 = &(nodes[n2->start_ptr[max_frame]]);
       if (stage == 0)
       {
         score = frame_bias[0]*n3->gc_score[0] + frame_bias[1]*n3->gc_score[1] +
@@ -386,11 +386,11 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
     {
       return;
     }
-    if (n1->star_ptr[n2->index%3] == -1)
+    if (n1->start_ptr[n2->index%3] == -1)
     {
       return;
     }
-    n3 = &(nodes[n1->star_ptr[n2->index%3]]);
+    n3 = &(nodes[n1->start_ptr[n2->index%3]]);
     left = n3->index;
     right += 2;
     if (stage == 0)
@@ -412,11 +412,11 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
     {
       return;
     }
-    if (n2->star_ptr[n1->index%3] == -1)
+    if (n2->start_ptr[n1->index%3] == -1)
     {
       return;
     }
-    n3 = &(nodes[n2->star_ptr[n1->index%3]]);
+    n3 = &(nodes[n2->start_ptr[n1->index%3]]);
     left -= 2;
     right = n3->index;
     if (stage == 0)
@@ -520,7 +520,7 @@ void untangle_overlaps(struct _node *nodes, int last_node)
         nodes[path].overlap_frame != -1 &&
         nodes[path].index > nodes[next_node].index)
     {
-      tmp = nodes[path].star_ptr[nodes[path].overlap_frame];
+      tmp = nodes[path].start_ptr[nodes[path].overlap_frame];
       for (i = tmp; nodes[i].index != nodes[tmp].stop_val; i--)
       {
       }
@@ -550,14 +550,14 @@ void untangle_overlaps(struct _node *nodes, int last_node)
         nodes[next_node].strand == 1 && nodes[next_node].type == STOP)
     {
       nodes[path].trace_back =
-        nodes[next_node].star_ptr[(nodes[path].index)%3];
+        nodes[next_node].start_ptr[(nodes[path].index)%3];
       nodes[nodes[path].trace_back].trace_back = next_node;
     }
     if (nodes[path].strand == -1 && nodes[path].type == STOP &&
         nodes[next_node].strand == -1 && nodes[next_node].type == STOP)
     {
       nodes[path].trace_back =
-        nodes[path].star_ptr[(nodes[next_node].index)%3];
+        nodes[path].start_ptr[(nodes[next_node].index)%3];
       nodes[nodes[path].trace_back].trace_back = next_node;
     }
     path = nodes[path].trace_back;

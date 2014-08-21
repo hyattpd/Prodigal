@@ -1181,7 +1181,7 @@ int rframe(int fr, int slen)
 
 /* Simple 3-way max function */
 
-int max_fr(int n1, int n2, int n3)
+int max_frame(int n1, int n2, int n3)
 {
   if (n1 > n2)
   {
@@ -1273,7 +1273,7 @@ int *calc_most_gc_frame(unsigned char *seq, int slen)
   free(bwd);
   for (i = 0; i < slen-2; i+=3)
   {
-    win = max_fr(tot[i], tot[i+1], tot[i+2]);
+    win = max_frame(tot[i], tot[i+1], tot[i+2]);
     for (j = 0; j < 3; j++)
     {
       gp[i+j] = win;

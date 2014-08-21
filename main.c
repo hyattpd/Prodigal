@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
       nodes appropriately.
     ***********************************************************************/
     log_text(quiet, "Examining upstream regions and training starts...");
-    rbs_score(seq, rseq, seq_length, nodes, num_nodes, train_data.rbs_wt);
+    sd_rbs_score(seq, rseq, seq_length, nodes, num_nodes, train_data.rbs_wt);
     train_starts_sd(seq, rseq, seq_length, nodes, num_nodes, &train_data);
     determine_sd_usage(&train_data);
     if (force_nonsd == 1)
@@ -472,7 +472,7 @@ void help()
   printf("  -t, --training_file:  Specify the training file location.  In\n");
   printf("                        train mode, writes the training file.\n");
   printf("                        In normal mode, reads the training file.\n");
-  printf("  -m:                   (Deprecated) Same as '-e 1'\n");
+  printf("  -m:                   (Deprecated) Similar to '-e 1'.\n");
   printf("\nInput/Output Parameters\n\n");
   printf("  -i, --input_file:     Specify input file (default stdin).\n");
   printf("  -o, --output_file:    Specify output file (default stdout).\n");

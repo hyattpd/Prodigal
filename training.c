@@ -176,9 +176,9 @@ void build_training_set(struct _node *nodes, struct _training *train_data,
     of nodes.
   ***********************************************************************/
   calc_dicodon_gene(train_data, seq, rseq, seq_length, nodes, last_node);
-  raw_coding_score(seq, rseq, seq_length, nodes, *num_nodes,
-                   train_data->trans_table, train_data->gc,
-                   train_data->gene_dc);
+  calc_coding_score(seq, rseq, seq_length, nodes, *num_nodes,
+                    train_data->trans_table, train_data->gc,
+                    train_data->gene_dc);
 
   /***********************************************************************
     Gather statistics about average gene length to see if the training
@@ -801,7 +801,7 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
       {
         continue;
       }
-      find_best_upstream_motif(tinf, seq, rseq, slen, &nod[j], stage);
+      find_best_nonsd_motif(tinf, seq, rseq, slen, &nod[j], stage);
       update_motif_counts(mbg, &zbg, seq, rseq, slen, &(nod[j]), stage);
     }
     sum = 0.0;
@@ -1163,7 +1163,7 @@ void update_motif_counts(double mcnt[4][4][4096], double *zero, unsigned char
                          *seq, unsigned char *rseq, int slen,
                          struct _node *nod, int stage)
 {
-  int i, j, k, start, spaceindex;
+  int i, j, k, start, spacer_index;
   unsigned char *wseq;
   struct _motif *mot = &(nod->mot);
 
@@ -1204,19 +1204,19 @@ void update_motif_counts(double mcnt[4][4][4096], double *zero, unsigned char
         }
         if (j <= start-16-i)
         {
-          spaceindex = 3;
+          spacer_index = 3;
         }
         else if (j <= start-14-i)
         {
-          spaceindex = 2;
+          spacer_index = 2;
         }
         else if (j >= start-7-i)
         {
-          spaceindex = 1;
+          spacer_index = 1;
         }
         else
         {
-          spaceindex = 0;
+          spacer_index = 0;
         }
         for (k = 0; k < 4; k++)
         {
@@ -1229,7 +1229,7 @@ void update_motif_counts(double mcnt[4][4][4096], double *zero, unsigned char
   /* all its sub-motifs.                                  */
   else if (stage == 1)
   {
-    mcnt[mot->len-3][mot->spaceindex][mot->index] += 1.0;
+    mcnt[mot->len-3][mot->spacer_index][mot->index] += 1.0;
     for (i = 0; i < mot->len-3; i++)
     {
       for (j = start-(mot->spacer)-(mot->len); j <= start-(mot->spacer)-(i+3);
@@ -1241,28 +1241,28 @@ void update_motif_counts(double mcnt[4][4][4096], double *zero, unsigned char
         }
         if (j <= start-16-i)
         {
-          spaceindex = 3;
+          spacer_index = 3;
         }
         else if (j <= start-14-i)
         {
-          spaceindex = 2;
+          spacer_index = 2;
         }
         else if (j >= start-7-i)
         {
-          spaceindex = 1;
+          spacer_index = 1;
         }
         else
         {
-          spaceindex = 0;
+          spacer_index = 0;
         }
-        mcnt[i][spaceindex][mer_index(i+3, wseq, j)] += 1.0;
+        mcnt[i][spacer_index][mer_index(i+3, wseq, j)] += 1.0;
       }
     }
   }
   /* Stage 2:  Only count the highest scoring motif. */
   else if (stage == 2)
   {
-    mcnt[mot->len-3][mot->spaceindex][mot->index] += 1.0;
+    mcnt[mot->len-3][mot->spacer_index][mot->index] += 1.0;
   }
 }
 

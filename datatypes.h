@@ -27,7 +27,7 @@ struct _motif
   int index;            /* Index of the best motif for this node */
   int len;              /* Length of the motif */
   int spacer;           /* Spacer between coding start and the motif */
-  int spaceindex;       /* Index for this spacer length */
+  int spacer_index;     /* Index for this spacer length */
   double score;         /* Score for the motif */
 };
 
@@ -42,7 +42,7 @@ struct _node
   int strand;          /* 1 = forward, -1 = reverse */
   int stop_val;        /* For a stop, record previous stop; for a start, record
                           its stop */
-  int star_ptr[3];     /* Array of starts w/in MAX_SAM_OVLP bases of stop in 3
+  int start_ptr[3];    /* Array of starts w/in MAX_SAM_OVLP bases of stop in 3
                           frames */
   int gc_bias;         /* Frame of highest GC content within this node */
   double gc_score[3];  /* % GC content in different codon positions */

@@ -66,14 +66,14 @@ void frame_score(int *, struct _node *, int);
 
 void score_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
                  struct _training *, int, int);
-void raw_coding_score(unsigned char *, unsigned char *, int, struct _node *,
-                      int, int, double, double *);
+void calc_coding_score(unsigned char *, unsigned char *, int, struct _node *,
+                       int, int, double, double *);
 void calc_orf_gc(unsigned char *, struct _node *, int);
-void rbs_score(unsigned char *, unsigned char *, int, struct _node *, int,
-               double *);
+void sd_rbs_score(unsigned char *, unsigned char *, int, struct _node *, int,
+                  double *);
 
-void find_best_upstream_motif(struct _training *, unsigned char *, unsigned
-                              char *, int, struct _node *, int);
+void find_best_nonsd_motif(struct _training *, unsigned char *, unsigned
+                           char *, int, struct _node *, int);
 void score_upstream_composition(unsigned char *, int, struct _node *,
                                 struct _training *);
 

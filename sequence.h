@@ -71,7 +71,7 @@ int amino_num(char);
 char amino_letter(int);
 
 int rframe(int, int);
-int max_fr(int, int, int);
+int max_frame(int, int, int);
 
 int *calc_most_gc_frame(unsigned char *, int);
 
