@@ -17,6 +17,12 @@ $ make install
 
   For more detail, see [Installing Prodigal](https://www.github.com/hyattpd/Prodigal/wiki/installation).
 
+  To see a complete list of options:
+
+```bash
+$ prodigal -h
+```
+
 ### Features
 
   * **Predicts protein-coding genes**: Prodigal provides fast, accurate protein-coding gene predictions in GFF3, Genbank, or Sequin table format.
@@ -26,8 +32,6 @@ $ make install
   * **Handles gaps, scaffolds, and partial genes**: The user can specify how Prodigal should deal with gaps and has numerous options for allowing or forbidding genes to run into or span gaps.
   * **Identifies translation initiation sites**: Prodigal predicts the correct translation initiation site for most genes, and can output information about every potential start site in the genome, including confidence score, RBS motif, and much more.
   * **Outputs detailed summary statistics for each genome**: Prodigal makes available many statistics for each genome, including contig length, gene length, GC content, GC skew, RBS motifs used, and start and stop codon usage.
-
-### Philosophy
 
 ### More Information
 
