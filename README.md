@@ -5,6 +5,7 @@
 ```bash
 prodigal -i my.genome.fna -o my.genes -a my.proteins.faa
 prodigal -i my.metagenome.fna -o my.genes -a my.proteins.faa -p meta
+prodigal -h
 ```
 
 ### New in 2.6.1
