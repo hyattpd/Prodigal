@@ -11,7 +11,7 @@ prodigal -i my.metagenome.fna -o my.genes -a my.proteins.faa -p meta
   * Fixed a bug that mainly affected Mac compiles 7/2013 and
 posted to Google Code and Github as 2.60 (bad, as we already
 had a 2.60).  Re-released this version 8/2014 as 2.6.1,
-but the source is identical to "2.60bugfix1" except for updated dates.
+but the source is identical to the last release except for updated dates, 
 a more streamlined Makefile, and a new markdown README.md.
   * Moved to semantic versioning (major.minor.patch) with the 8/2014
 re-release.  Committed to being more rigorous about this moving
@@ -38,10 +38,9 @@ $ prodigal -h
   * **Predicts protein-coding genes**: Prodigal provides fast, accurate protein-coding gene predictions in GFF3, Genbank, or Sequin table format.
   * **Handles draft genomes and metagenomes**: Prodigal runs smoothly on finished genomes, draft genomes, and metagenomes.
   * **Runs quickly**: Prodigal analyzes the *E. coli K-12* genome in 10 seconds on a modern MacBook Pro.
-  * **Runs unsupervised**: Prodigal is an unsupervised machine learning algorithm.  It does not need to be provided with any training data, and instead automatically learns the properties of the genome from the sequence itself, including genetic code, RBS motif usage, start codon usage, and coding statistics.
-  * **Handles gaps, scaffolds, and partial genes**: The user can specify how Prodigal should deal with gaps and has numerous options for allowing or forbidding genes to run into or span gaps.
+  * **Runs unsupervised**: Prodigal is an unsupervised machine learning algorithm.  It does not need to be provided with any training data, and instead automatically learns the properties of the genome from the sequence itself, including RBS motif usage, start codon usage, and coding statistics.
+  * **Handles gaps and partial genes**: The user can specify how Prodigal should deal with runs of N's or genes at the edges of contigs.
   * **Identifies translation initiation sites**: Prodigal predicts the correct translation initiation site for most genes, and can output information about every potential start site in the genome, including confidence score, RBS motif, and much more.
-  * **Outputs detailed summary statistics for each genome**: Prodigal makes available many statistics for each genome, including contig length, gene length, GC content, GC skew, RBS motifs used, and start and stop codon usage.
 
 ### More Information
 
