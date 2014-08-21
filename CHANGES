@@ -1,9 +1,10 @@
 VERSION 2.6.1
 
 * Fixed a bug that mainly affected Mac compiles 7/2013 and
-posted to Google Code and Github.  Re-released this version 8/2014,
-but the source is identical to "2.60bugfix1" except for updating
-dates and modifying the Makefile/README.
+posted to Google Code and Github as 2.60 (bad, as we already
+had a 2.60).  Re-releasing this version 8/2014 as 2.6.1,
+but the source is identical to "2.60bugfix1" except for updated dates.
+a more streamlined Makefile, and a new markdown README.md.
 * Moved to semantic versioning (major.minor.patch) with the 8/2014
 re-release.  Committed to being more rigorous about this moving
 forward.

@@ -7,6 +7,16 @@ prodigal -i my.genome.fna -o my.genes -a my.proteins.faa
 prodigal -i my.metagenome.fna -o my.genes -a my.proteins.faa -p meta
 ```
 
+### New in 2.6.1
+  * Fixed a bug that mainly affected Mac compiles 7/2013 and
+posted to Google Code and Github as 2.60 (bad, as we already
+had a 2.60).  Re-released this version 8/2014 as 2.6.1,
+but the source is identical to "2.60bugfix1" except for updated dates.
+a more streamlined Makefile, and a new markdown README.md.
+  * Moved to semantic versioning (major.minor.patch) with the 8/2014
+re-release.  Committed to being more rigorous about this moving
+forward.
+
 ### Getting Started
 
 Prodigal consists of a single binary, which is provided for Linux, Mac OS X, and Windows with each official release.  You can also install from source (you will need Cygwin or MinGW on Windows) as follows:
