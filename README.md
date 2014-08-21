@@ -9,15 +9,15 @@ prodigal -i my.metagenome.fna -o my.genes -a my.proteins.faa -p meta
 
 ### New in 3.0.0-devel.1.0
 
-  * Automatic detection of genetic code 11 vs. 4 (new default for *-g* option)
-  * Comprehensive gap/scaffold handling options (new *-e* option, deprecated the *-m option*)
-  * Addition of summary statistics for each run (new *-w* option)
-  * Stop codon type added to gene data
-  * Sequin table output format added (via *-f sqn*)
-  * Support for long and short options added
-  * Training file creation made explicit (via *-p train*)
+  * Automatic detection of genetic code 11 vs. 4 (new default for *-g* option).
+  * Comprehensive gap/scaffold handling options (new *-e* option, deprecated the *-m* option).
+  * Addition of summary statistics for each run (new *-w* option).
+  * Stop codon type added to gene data.
+  * Sequin table output format added (via *-f sqn*).
+  * Support for long and short options added.
+  * Training file creation made explicit (via *-p train*).
   * Deprecated *-p meta* and *-p single* but will continue to support them for backwards compatibility.
-  * New warnings if Prodigal suspects gene decay (average gene length is low)
+  * New warnings if Prodigal suspects gene decay (average gene length is low).
 
 ### Getting Started
 
