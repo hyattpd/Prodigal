@@ -19,7 +19,13 @@ $ make install
 
 ### Features
 
-  *
+  * **Predicts protein-coding genes**: Prodigal provides fast, accurate protein-coding gene predictions in GFF3, Genbank, or Sequin table format.
+  * **Handles draft genomes and metagenomes**: Prodigal runs smoothly on finished genomes, draft genomes, and metagenomes.
+  * **Runs quickly**: Prodigal analyzes the *E. coli K-12* genome in 10 seconds on a modern MacBook Pro.
+  * **Runs unsupervised**: Prodigal is an unsupervised machine learning algorithm.  It does not need to be provided with any training data, and instead automatically learns the properties of the genome from the sequence itself, including genetic code, RBS motif usage, start codon usage, and coding statistics.
+  * **Handles gaps, scaffolds, and partial genes**: The user can specify how Prodigal should deal with gaps and has numerous options for allowing or forbidding genes to run into or span gaps.
+  * **Identifies translation initiation sites**: Prodigal predicts the correct translation initiation site for most genes, and can output information about every potential start site in the genome, including confidence score, RBS motif, and much more.
+  * **Outputs detailed summary statistics for each genome**: Prodigal makes available many statistics for each genome, including contig length, gene length, GC content, GC skew, RBS motifs used, and start and stop codon usage.
 
 ### Philosophy
 
@@ -27,7 +33,8 @@ $ make install
 
   * [Website](http://prodigal.ornl.gov/)
   * [Wiki Documentation](https://github.com/hyattpd/prodigal/wiki)
-  * [Google Group](https://groups.google.com/group/prodigal-discuss) for discussion
+  * [Options Cheat Sheet](https://github.com/hyattpd/prodigal/wiki#cheat-sheet)
+  * [Google Discussion Group](https://groups.google.com/group/prodigal-discuss)
 
 #### Contributors
 
