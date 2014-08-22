@@ -987,7 +987,7 @@ int detect_input_and_handle_windows_stdin(int argc, int quiet,
 int copy_standard_input_to_file(char *path, int quiet)
 {
   char line[TEXTSIZE+1] = "";
-  FILE *wp;
+  FILE *wp = NULL;
 
   if (quiet == 0)
   {

@@ -1349,8 +1349,8 @@ void mer_text(char *text, int len, int index)
 }
 
 /* Builds a 'len'-mer background for whole sequence */
-void calc_mer_bg(int len, unsigned char *seq, unsigned char *rseq,
-                 int seq_length, double *background)
+void calc_mer_background(int len, unsigned char *seq, unsigned char *rseq,
+                         int seq_length, double *background)
 {
   int i = 0;
   int sum = 0;          /* Sum of all counts */

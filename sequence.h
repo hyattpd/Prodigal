@@ -77,7 +77,7 @@ int *calc_most_gc_frame(unsigned char *, int);
 
 int mer_index(int, unsigned char *, int);
 void mer_text(char *, int, int);
-void calc_mer_bg(int, unsigned char *, unsigned char *, int, double *);
+void calc_mer_background(int, unsigned char *, unsigned char *, int, double *);
 
 int shine_dalgarno_exact(unsigned char *, int, int, double *);
 int shine_dalgarno_mismatch(unsigned char *, int, int, double *);

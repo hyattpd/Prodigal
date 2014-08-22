@@ -1,6 +1,6 @@
 /******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2014 University of Tenum_nodesessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -21,18 +21,19 @@
 #include "training.h"
 
 /* Reads a training file to use for gene prediction */
-int read_training_file(char *fn, struct _training *tinf)
+int read_training_file(char *file_name, struct _training *train_data)
 {
-  size_t rv;
-  FILE *fh;
-  fh = fopen(fn, "rb");
+  size_t ret_val = 0;
+  FILE *fh = NULL;
+
+  fh = fopen(file_name, "rb");
   if (fh == NULL)
   {
     return -1;
   }
-  rv = fread(tinf, sizeof(struct _training), 1, fh);
+  ret_val = fread(train_data, sizeof(struct _training), 1, fh);
   fclose(fh);
-  if (rv != 1)
+  if (ret_val != 1)
   {
     return -1;
   }
@@ -40,17 +41,18 @@ int read_training_file(char *fn, struct _training *tinf)
 }
 
 /* Writes a training file to use for a later run of gene prediction */
-int write_training_file(char *fn, struct _training *tinf)
+int write_training_file(char *file_name, struct _training *train_data)
 {
-  size_t rv;
-  FILE *fh;
-  fh = fopen(fn, "wb");
-  if(fh == NULL)
+  size_t ret_val = 0;
+  FILE *fh = NULL;
+
+  fh = fopen(file_name, "wb");
+  if (fh == NULL)
   {
     return -1;
   }
-  rv = fwrite(tinf, sizeof(struct _training), 1, fh);
-  if (rv != 1)
+  ret_val = fwrite(train_data, sizeof(struct _training), 1, fh);
+  if (ret_val != 1)
   {
     return -1;
   }
@@ -184,33 +186,41 @@ void build_training_set(struct _node *nodes, struct _training *train_data,
 }
 
 /* Records the GC frame bias from the node GC statistics */
-void record_gc_frame_bias(struct _training *tinf, unsigned char *seq, int slen,
-                          struct _node *nod, int nn)
+void record_gc_frame_bias(struct _training *train_data, unsigned char *seq,
+                          int seq_length, struct _node *nodes, int num_nodes)
 {
-  int i, len, *gc_frame;
-  double tot;
+  int i = 0;
+  int len = 0;           /* Length of a gene */
+  int *gc_frame = NULL;  /* Stores max frame for every position in sequence */
+  double total = 0.0;    /* Sum of all the GC frame counts */
 
-  gc_frame = calc_most_gc_frame(seq, slen);
-  frame_score(gc_frame, nod, nn);
+  /* Calculate highest GC frame for each position in sequence */
+  gc_frame = calc_most_gc_frame(seq, seq_length);
+  /* For each node, count all the occurrences of each of these frames */
+  frame_score(gc_frame, nodes, num_nodes);
   free(gc_frame);
 
+  /* Go through all the nodes and record all the bias info */
+  /* Since every node is counted, sequence near the 3' edge gets */
+  /* counted more often usually, and longer genes get weighted */
+  /* more (similar to n-squared). */
   for (i = 0; i < 3; i++)
   {
-    tinf->bias[i] = 0.0;
+    train_data->bias[i] = 0.0;
   }
-  for (i = 0; i < nn; i++)
+  for (i = 0; i < num_nodes; i++)
   {
-    if (nod[i].type == START)
+    if (nodes[i].type == START)
     {
-      len = abs(nod[i].stop_val-nod[i].index)+1;
-      tinf->bias[nod[i].gc_bias] +=
-        (nod[i].gc_score[nod[i].gc_bias]*len)/1000.0;
+      len = abs(nodes[i].stop_val-nodes[i].index)+1;
+      train_data->bias[nodes[i].gc_bias] +=
+        (nodes[i].gc_score[nodes[i].gc_bias]*len)/1000.0;
     }
   }
-  tot = tinf->bias[0] + tinf->bias[1] + tinf->bias[2];
+  total = train_data->bias[0] + train_data->bias[1] + train_data->bias[2];
   for (i = 0; i < 3; i++)
   {
-    tinf->bias[i] *= (3.0/tot);
+    train_data->bias[i] *= (3.0/total);
   }
 }
 
@@ -219,81 +229,77 @@ void record_gc_frame_bias(struct _training *tinf, unsigned char *seq, int slen,
   background, and then stores the log likelihood of each 6-mer relative to the
   background.
 ******************************************************************************/
-
-void calc_dicodon_gene(struct _training *tinf, unsigned char *seq, unsigned
-                       char *rseq, int slen, struct _node *nod, int dbeg)
+void calc_dicodon_gene(struct _training *train_data, unsigned char *seq,
+                       unsigned char *rseq, int seq_length,
+                       struct _node *nodes, int initial_node)
 {
-  int i, path, counts[4096], glob = 0;
-  int left, right, in_gene;
-  double prob[4096], bg[4096];
+  int i = 0;
+  int path = initial_node;         /* Dynamic programming traversal */
+  int counts[4096] = {0};          /* Counts of each hexamer in real genes */
+  int total = 0;                   /* Total of all hexamer counts */
+  int left = -1;                   /* Left boundary of gene */
+  int right = -1;                  /* Right boundary of gene */
+  int in_gene = 0;                 /* -1 if not in gene, 1 if in gene */
+  double prob[4096] = {0};         /* Counts divided by total */
+  double background[4096] = {0};   /* Counts over the whole sequence */
 
-  for (i = 0; i < 4096; i++)
-  {
-    counts[i] = 0;
-    prob[i] = 0.0;
-    bg[i] = 0.0;
-  }
-  left = -1;
-  right = -1;
-  calc_mer_bg(6, seq, rseq, slen, bg);
-  path = dbeg;
-  in_gene = 0;
+  calc_mer_background(6, seq, rseq, seq_length, background);
   while (path != -1)
   {
-    if (nod[path].strand == -1 && nod[path].type == START)
+    if (nodes[path].strand == -1 && nodes[path].type == START)
     {
       in_gene = -1;
-      left = slen-nod[path].index-1;
+      left = seq_length-nodes[path].index-1;
     }
-    if (nod[path].strand == 1 && nod[path].type == STOP)
+    if (nodes[path].strand == 1 && nodes[path].type == STOP)
     {
       in_gene = 1;
-      right = nod[path].index+2;
+      right = nodes[path].index+2;
     }
-    if (in_gene == -1 && nod[path].strand == -1 && nod[path].type == STOP)
+    if (in_gene == -1 && nodes[path].strand == -1 && nodes[path].type == STOP)
     {
-      right = slen-nod[path].index+1;
+      right = seq_length-nodes[path].index+1;
       for (i = left; i < right-5; i+=3)
       {
         counts[mer_index(6, rseq, i)]++;
-        glob++;
+        total++;
       }
       in_gene = 0;
     }
-    if (in_gene == 1 && nod[path].strand == 1 && nod[path].type == START)
+    if (in_gene == 1 && nodes[path].strand == 1 && nodes[path].type == START)
     {
-      left = nod[path].index;
+      left = nodes[path].index;
       for (i = left; i < right-5; i+=3)
       {
         counts[mer_index(6, seq, i)]++;
-        glob++;
+        total++;
       }
       in_gene = 0;
     }
-    path = nod[path].trace_back;
+    path = nodes[path].trace_back;
   }
   for (i = 0; i < 4096; i++)
   {
-    prob[i] = (counts[i]*1.0)/(glob*1.0);
-    if (prob[i] == 0 && bg[i] != 0)
+    prob[i] = (counts[i]*1.0)/(total*1.0);
+    if (prob[i] == 0 && background[i] != 0)
     {
-      tinf->gene_dc[i] = -5.0;
+      train_data->gene_dc[i] = -5.0;
     }
-    else if (bg[i] == 0)
+    else if (background[i] == 0)
     {
-      tinf->gene_dc[i] = 0.0;
+      train_data->gene_dc[i] = 0.0;
     }
     else
     {
-      tinf->gene_dc[i] = log(prob[i]/bg[i]);
+      train_data->gene_dc[i] = log(prob[i]/background[i]);
     }
-    if (tinf->gene_dc[i] > 5.0)
+    if (train_data->gene_dc[i] > 5.0)
     {
-      tinf->gene_dc[i] = 5.0;
+      train_data->gene_dc[i] = 5.0;
     }
-    if (tinf->gene_dc[i] < -5.0)
+    if (train_data->gene_dc[i] < -5.0)
     {
-      tinf->gene_dc[i] = -5.0;
+      train_data->gene_dc[i] = -5.0;
     }
   }
 }
@@ -345,27 +351,27 @@ void low_gene_len_warning(int flag, struct _summary *genome_data)
   starts around attempting to match these discoveries.  This start trainer is
   for Shine-Dalgarno motifs only.
 ******************************************************************************/
-void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
-                  struct _node *nod, int nn, struct _training *tinf)
+void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
+                  struct _node *nodes, int num_nodes, struct _training *train_data)
 {
   int i, j, fr, rbs[3], type[3], bindex[3], max_rb;
   double sum, wt, rbg[28], rreal[28], best[3], sthresh = 35.0;
   double tbg[3], treal[3];
 
-  wt = tinf->start_weight;
+  wt = train_data->start_weight;
   for (j = 0; j < 3; j++)
   {
-    tinf->type_wt[j] = 0.0;
+    train_data->type_wt[j] = 0.0;
   }
   for (j = 0; j < 28; j++)
   {
-    tinf->rbs_wt[j] = 0.0;
+    train_data->rbs_wt[j] = 0.0;
   }
   for (i = 0; i < 32; i++)
   {
     for (j = 0; j < 4; j++)
     {
-      tinf->ups_comp[i][j] = 0.0;
+      train_data->ups_comp[i][j] = 0.0;
     }
   }
 
@@ -374,13 +380,13 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
   {
     tbg[i] = 0.0;
   }
-  for (i = 0; i < nn; i++)
+  for (i = 0; i < num_nodes; i++)
   {
-    if (nod[i].type == STOP)
+    if (nodes[i].type == STOP)
     {
       continue;
     }
-    tbg[nod[i].subtype] += 1.0;
+    tbg[nodes[i].subtype] += 1.0;
   }
   sum = 0.0;
   for (i = 0; i < 3; i++)
@@ -404,25 +410,25 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
     {
       rbg[j] = 0.0;
     }
-    for (j = 0; j < nn; j++)
+    for (j = 0; j < num_nodes; j++)
     {
-      if (nod[j].type == STOP || nod[j].edge == 1)
+      if (nodes[j].type == STOP || nodes[j].edge == 1)
       {
         continue;
       }
-      if (tinf->rbs_wt[nod[j].rbs[0]] > tinf->rbs_wt[nod[j].rbs[1]]+1.0 ||
-          nod[j].rbs[1] == 0)
+      if (train_data->rbs_wt[nodes[j].rbs[0]] > train_data->rbs_wt[nodes[j].rbs[1]]+1.0 ||
+          nodes[j].rbs[1] == 0)
       {
-        max_rb = nod[j].rbs[0];
+        max_rb = nodes[j].rbs[0];
       }
-      else if (tinf->rbs_wt[nod[j].rbs[0]] < tinf->rbs_wt[nod[j].rbs[1]]-1.0 ||
-               nod[j].rbs[0] == 0)
+      else if (train_data->rbs_wt[nodes[j].rbs[0]] < train_data->rbs_wt[nodes[j].rbs[1]]-1.0 ||
+               nodes[j].rbs[0] == 0)
       {
-        max_rb = nod[j].rbs[1];
+        max_rb = nodes[j].rbs[1];
       }
       else
       {
-        max_rb = (int)dmax(nod[j].rbs[0], nod[j].rbs[1]);
+        max_rb = (int)dmax(nodes[j].rbs[0], nodes[j].rbs[1]);
       }
       rbg[max_rb] += 1.0;
     }
@@ -453,23 +459,23 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
       rbs[j] = 0;
       type[j] = 0;
     }
-    for (j = 0; j < nn; j++)
+    for (j = 0; j < num_nodes; j++)
     {
-      if (nod[j].type == START && nod[j].edge == 1)
+      if (nodes[j].type == START && nodes[j].edge == 1)
       {
         continue;
       }
-      fr = (nod[j].index)%3;
-      if (nod[j].type == STOP && nod[j].strand == 1)
+      fr = (nodes[j].index)%3;
+      if (nodes[j].type == STOP && nodes[j].strand == 1)
       {
-        if (best[fr] >= sthresh && nod[bindex[fr]].index%3 == fr)
+        if (best[fr] >= sthresh && nodes[bindex[fr]].index%3 == fr)
         {
           rreal[rbs[fr]] += 1.0;
           treal[type[fr]] += 1.0;
           if (i == 9)
           {
-            count_upstream_composition(seq, slen, 1, nod[bindex[fr]].index,
-                                       tinf);
+            count_upstream_composition(seq, seq_length, 1, nodes[bindex[fr]].index,
+                                       train_data);
           }
         }
         best[fr] = 0.0;
@@ -477,29 +483,29 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
         rbs[fr] = 0;
         type[fr] = 0;
       }
-      else if (nod[j].strand == 1)
+      else if (nodes[j].strand == 1)
       {
-        if (tinf->rbs_wt[nod[j].rbs[0]] > tinf->rbs_wt[nod[j].rbs[1]]+1.0 ||
-            nod[j].rbs[1] == 0)
+        if (train_data->rbs_wt[nodes[j].rbs[0]] > train_data->rbs_wt[nodes[j].rbs[1]]+1.0 ||
+            nodes[j].rbs[1] == 0)
         {
-          max_rb = nod[j].rbs[0];
+          max_rb = nodes[j].rbs[0];
         }
-        else if (tinf->rbs_wt[nod[j].rbs[0]] < tinf->rbs_wt[nod[j].rbs[1]]-1.0
-                 || nod[j].rbs[0] == 0)
+        else if (train_data->rbs_wt[nodes[j].rbs[0]] < train_data->rbs_wt[nodes[j].rbs[1]]-1.0
+                 || nodes[j].rbs[0] == 0)
         {
-          max_rb = nod[j].rbs[1];
+          max_rb = nodes[j].rbs[1];
         }
         else
         {
-          max_rb = (int)dmax(nod[j].rbs[0], nod[j].rbs[1]);
+          max_rb = (int)dmax(nodes[j].rbs[0], nodes[j].rbs[1]);
         }
-        if (nod[j].cscore + wt*tinf->rbs_wt[max_rb] +
-            wt*tinf->type_wt[nod[j].subtype] >= best[fr])
+        if (nodes[j].cscore + wt*train_data->rbs_wt[max_rb] +
+            wt*train_data->type_wt[nodes[j].subtype] >= best[fr])
         {
-          best[fr] = nod[j].cscore + wt*tinf->rbs_wt[max_rb];
-          best[fr] += wt*tinf->type_wt[nod[j].subtype];
+          best[fr] = nodes[j].cscore + wt*train_data->rbs_wt[max_rb];
+          best[fr] += wt*train_data->type_wt[nodes[j].subtype];
           bindex[fr] = j;
-          type[fr] = nod[j].subtype;
+          type[fr] = nodes[j].subtype;
           rbs[fr] = max_rb;
         }
       }
@@ -513,23 +519,23 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
       rbs[j] = 0;
       type[j] = 0;
     }
-    for (j = nn-1; j >= 0; j--)
+    for (j = num_nodes-1; j >= 0; j--)
     {
-      if (nod[j].type == START && nod[j].edge == 1)
+      if (nodes[j].type == START && nodes[j].edge == 1)
       {
         continue;
       }
-      fr = (nod[j].index)%3;
-      if (nod[j].type == STOP && nod[j].strand == -1)
+      fr = (nodes[j].index)%3;
+      if (nodes[j].type == STOP && nodes[j].strand == -1)
       {
-        if (best[fr] >= sthresh && nod[bindex[fr]].index%3 == fr)
+        if (best[fr] >= sthresh && nodes[bindex[fr]].index%3 == fr)
         {
           rreal[rbs[fr]] += 1.0;
           treal[type[fr]] += 1.0;
           if (i == 9)
           {
-            count_upstream_composition(rseq, slen, -1, nod[bindex[fr]].index,
-                                       tinf);
+            count_upstream_composition(rseq, seq_length, -1, nodes[bindex[fr]].index,
+                                       train_data);
           }
         }
         best[fr] = 0.0;
@@ -537,29 +543,29 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
         rbs[fr] = 0;
         type[fr] = 0;
       }
-      else if (nod[j].strand == -1)
+      else if (nodes[j].strand == -1)
       {
-        if (tinf->rbs_wt[nod[j].rbs[0]] > tinf->rbs_wt[nod[j].rbs[1]]+1.0 ||
-            nod[j].rbs[1] == 0)
+        if (train_data->rbs_wt[nodes[j].rbs[0]] > train_data->rbs_wt[nodes[j].rbs[1]]+1.0 ||
+            nodes[j].rbs[1] == 0)
         {
-          max_rb = nod[j].rbs[0];
+          max_rb = nodes[j].rbs[0];
         }
-        else if (tinf->rbs_wt[nod[j].rbs[0]] < tinf->rbs_wt[nod[j].rbs[1]]-1.0
-                 || nod[j].rbs[0] == 0)
+        else if (train_data->rbs_wt[nodes[j].rbs[0]] < train_data->rbs_wt[nodes[j].rbs[1]]-1.0
+                 || nodes[j].rbs[0] == 0)
         {
-          max_rb = nod[j].rbs[1];
+          max_rb = nodes[j].rbs[1];
         }
         else
         {
-          max_rb = (int)dmax(nod[j].rbs[0], nod[j].rbs[1]);
+          max_rb = (int)dmax(nodes[j].rbs[0], nodes[j].rbs[1]);
         }
-        if (nod[j].cscore + wt*tinf->rbs_wt[max_rb] +
-            wt*tinf->type_wt[nod[j].subtype] >= best[fr])
+        if (nodes[j].cscore + wt*train_data->rbs_wt[max_rb] +
+            wt*train_data->type_wt[nodes[j].subtype] >= best[fr])
         {
-          best[fr] = nod[j].cscore + wt*tinf->rbs_wt[max_rb];
-          best[fr] += wt*tinf->type_wt[nod[j].subtype];
+          best[fr] = nodes[j].cscore + wt*train_data->rbs_wt[max_rb];
+          best[fr] += wt*train_data->type_wt[nodes[j].subtype];
           bindex[fr] = j;
-          type[fr] = nod[j].subtype;
+          type[fr] = nodes[j].subtype;
           rbs[fr] = max_rb;
         }
       }
@@ -574,7 +580,7 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
     {
       for (j = 0; j < 28; j++)
       {
-        tinf->rbs_wt[j] = 0.0;
+        train_data->rbs_wt[j] = 0.0;
       }
     }
     else
@@ -584,19 +590,19 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
         rreal[j] /= sum;
         if (rbg[j] != 0)
         {
-          tinf->rbs_wt[j] = log(rreal[j]/rbg[j]);
+          train_data->rbs_wt[j] = log(rreal[j]/rbg[j]);
         }
         else
         {
-          tinf->rbs_wt[j] = -4.0;
+          train_data->rbs_wt[j] = -4.0;
         }
-        if (tinf->rbs_wt[j] > 4.0)
+        if (train_data->rbs_wt[j] > 4.0)
         {
-          tinf->rbs_wt[j] = 4.0;
+          train_data->rbs_wt[j] = 4.0;
         }
-        if (tinf->rbs_wt[j] < -4.0)
+        if (train_data->rbs_wt[j] < -4.0)
         {
-          tinf->rbs_wt[j] = -4.0;
+          train_data->rbs_wt[j] = -4.0;
         }
       }
     }
@@ -609,7 +615,7 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
     {
       for (j = 0; j < 3; j++)
       {
-        tinf->type_wt[j] = 0.0;
+        train_data->type_wt[j] = 0.0;
       }
     }
     else
@@ -619,23 +625,23 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
         treal[j] /= sum;
         if (tbg[j] != 0)
         {
-          tinf->type_wt[j] = log(treal[j]/tbg[j]);
+          train_data->type_wt[j] = log(treal[j]/tbg[j]);
         }
         else
         {
-          tinf->type_wt[j] = -4.0;
+          train_data->type_wt[j] = -4.0;
         }
-        if (tinf->type_wt[j] > 4.0)
+        if (train_data->type_wt[j] > 4.0)
         {
-          tinf->type_wt[j] = 4.0;
+          train_data->type_wt[j] = 4.0;
         }
-        if (tinf->type_wt[j] < -4.0)
+        if (train_data->type_wt[j] < -4.0)
         {
-          tinf->type_wt[j] = -4.0;
+          train_data->type_wt[j] = -4.0;
         }
       }
     }
-    if (sum <= (double)nn/2000.0)
+    if (sum <= (double)num_nodes/2000.0)
     {
       sthresh /= 2.0;
     }
@@ -647,61 +653,61 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
     sum = 0.0;
     for (j = 0; j < 4; j++)
     {
-      sum += tinf->ups_comp[i][j];
+      sum += train_data->ups_comp[i][j];
     }
     if (sum == 0.0)
     {
       for (j = 0; j < 4; j++)
       {
-        tinf->ups_comp[i][j] = 0.0;
+        train_data->ups_comp[i][j] = 0.0;
       }
     }
     else
     {
       for (j = 0; j < 4; j++)
       {
-        tinf->ups_comp[i][j] /= sum;
-        if (tinf->gc > 0.1 && tinf->gc < 0.9)
+        train_data->ups_comp[i][j] /= sum;
+        if (train_data->gc > 0.1 && train_data->gc < 0.9)
         {
           if (j == 0 || j == 3)
           {
-            tinf->ups_comp[i][j] =
-              log(tinf->ups_comp[i][j]*2.0/(1.0-tinf->gc));
+            train_data->ups_comp[i][j] =
+              log(train_data->ups_comp[i][j]*2.0/(1.0-train_data->gc));
           }
           else
           {
-            tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/tinf->gc);
+            train_data->ups_comp[i][j] = log(train_data->ups_comp[i][j]*2.0/train_data->gc);
           }
         }
-        else if (tinf->gc <= 0.1)
+        else if (train_data->gc <= 0.1)
         {
           if (j == 0 || j == 3)
           {
-            tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/0.90);
+            train_data->ups_comp[i][j] = log(train_data->ups_comp[i][j]*2.0/0.90);
           }
           else
           {
-            tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/0.10);
+            train_data->ups_comp[i][j] = log(train_data->ups_comp[i][j]*2.0/0.10);
           }
         }
         else
         {
           if (j == 0 || j == 3)
           {
-            tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/0.10);
+            train_data->ups_comp[i][j] = log(train_data->ups_comp[i][j]*2.0/0.10);
           }
           else
           {
-            tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/0.90);
+            train_data->ups_comp[i][j] = log(train_data->ups_comp[i][j]*2.0/0.90);
           }
         }
-        if (tinf->ups_comp[i][j] > 4.0)
+        if (train_data->ups_comp[i][j] > 4.0)
         {
-          tinf->ups_comp[i][j] = 4.0;
+          train_data->ups_comp[i][j] = 4.0;
         }
-        if (tinf->ups_comp[i][j] < -4.0)
+        if (train_data->ups_comp[i][j] < -4.0)
         {
-          tinf->ups_comp[i][j] = -4.0;
+          train_data->ups_comp[i][j] = -4.0;
         }
       }
     }
@@ -714,11 +720,11 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int slen,
   starts around attempting to match these discoveries.  Unlike the SD
   algorithm, it allows for any popular motif to be discovered.
 ******************************************************************************/
-void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
-                  struct _node *nod, int nn, struct _training *tinf)
+void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int seq_length,
+                  struct _node *nodes, int num_nodes, struct _training *train_data)
 {
   int i, j, k, l, fr, bindex[3], mgood[4][4][4096], stage;
-  double sum, ngenes, wt = tinf->start_weight, best[3], sthresh = 35.0;
+  double sum, ngenes, wt = train_data->start_weight, best[3], sthresh = 35.0;
   double tbg[3], treal[3];
   double mbg[4][4][4096], mreal[4][4][4096], zbg, zreal;
 
@@ -726,26 +732,26 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
   {
     for (j = 0; j < 4; j++)
     {
-      tinf->ups_comp[i][j] = 0.0;
+      train_data->ups_comp[i][j] = 0.0;
     }
   }
 
   /* Build the background of random types */
   for (i = 0; i < 3; i++)
   {
-    tinf->type_wt[i] = 0.0;
+    train_data->type_wt[i] = 0.0;
   }
   for (i = 0; i < 3; i++)
   {
     tbg[i] = 0.0;
   }
-  for (i = 0; i < nn; i++)
+  for (i = 0; i < num_nodes; i++)
   {
-    if (nod[i].type == STOP)
+    if (nodes[i].type == STOP)
     {
       continue;
     }
-    tbg[nod[i].subtype] += 1.0;
+    tbg[nodes[i].subtype] += 1.0;
   }
   sum = 0.0;
   for (i = 0; i < 3; i++)
@@ -790,14 +796,14 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
       }
     }
     zbg = 0.0;
-    for (j = 0; j < nn; j++)
+    for (j = 0; j < num_nodes; j++)
     {
-      if (nod[j].type == STOP || nod[j].edge == 1)
+      if (nodes[j].type == STOP || nodes[j].edge == 1)
       {
         continue;
       }
-      find_best_nonsd_motif(tinf, seq, rseq, slen, &nod[j], stage);
-      update_motif_counts(mbg, &zbg, seq, rseq, slen, &(nod[j]), stage);
+      find_best_nonsd_motif(train_data, seq, rseq, seq_length, &nodes[j], stage);
+      update_motif_counts(mbg, &zbg, seq, rseq, seq_length, &(nodes[j]), stage);
     }
     sum = 0.0;
     for (j = 0; j < 4; j++)
@@ -847,38 +853,38 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
       best[j] = 0.0;
       bindex[j] = -1;
     }
-    for (j = 0; j < nn; j++)
+    for (j = 0; j < num_nodes; j++)
     {
-      if (nod[j].type == START && nod[j].edge == 1)
+      if (nodes[j].type == START && nodes[j].edge == 1)
       {
         continue;
       }
-      fr = (nod[j].index)%3;
-      if (nod[j].type == STOP && nod[j].strand == 1)
+      fr = (nodes[j].index)%3;
+      if (nodes[j].type == STOP && nodes[j].strand == 1)
       {
         if (best[fr] >= sthresh)
         {
           ngenes += 1.0;
-          treal[nod[bindex[fr]].subtype] += 1.0;
-          update_motif_counts(mreal, &zreal, seq, rseq, slen,
-                              &(nod[bindex[fr]]), stage);
+          treal[nodes[bindex[fr]].subtype] += 1.0;
+          update_motif_counts(mreal, &zreal, seq, rseq, seq_length,
+                              &(nodes[bindex[fr]]), stage);
           if (i == 19)
           {
-            count_upstream_composition(seq, slen, 1, nod[bindex[fr]].index,
-                                       tinf);
+            count_upstream_composition(seq, seq_length, 1, nodes[bindex[fr]].index,
+                                       train_data);
           }
         }
         best[fr] = 0.0;
         bindex[fr] = -1;
       }
-      else if (nod[j].strand == 1)
+      else if (nodes[j].strand == 1)
       {
-        if (nod[j].cscore + wt*nod[j].mot.score +
-            wt*tinf->type_wt[nod[j].subtype]
+        if (nodes[j].cscore + wt*nodes[j].mot.score +
+            wt*train_data->type_wt[nodes[j].subtype]
             >= best[fr])
         {
-          best[fr] = nod[j].cscore + wt*nod[j].mot.score;
-          best[fr] += wt*tinf->type_wt[nod[j].subtype];
+          best[fr] = nodes[j].cscore + wt*nodes[j].mot.score;
+          best[fr] += wt*train_data->type_wt[nodes[j].subtype];
           bindex[fr] = j;
         }
       }
@@ -890,38 +896,38 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
       best[j] = 0.0;
       bindex[j] = -1;
     }
-    for (j = nn-1; j >= 0; j--)
+    for (j = num_nodes-1; j >= 0; j--)
     {
-      if (nod[j].type == START && nod[j].edge == 1)
+      if (nodes[j].type == START && nodes[j].edge == 1)
       {
         continue;
       }
-      fr = (nod[j].index)%3;
-      if (nod[j].type == STOP && nod[j].strand == -1)
+      fr = (nodes[j].index)%3;
+      if (nodes[j].type == STOP && nodes[j].strand == -1)
       {
         if (best[fr] >= sthresh)
         {
           ngenes += 1.0;
-          treal[nod[bindex[fr]].subtype] += 1.0;
-          update_motif_counts(mreal, &zreal, seq, rseq, slen,
-                              &(nod[bindex[fr]]), stage);
+          treal[nodes[bindex[fr]].subtype] += 1.0;
+          update_motif_counts(mreal, &zreal, seq, rseq, seq_length,
+                              &(nodes[bindex[fr]]), stage);
           if (i == 19)
           {
-            count_upstream_composition(rseq, slen, -1, nod[bindex[fr]].index,
-                                       tinf);
+            count_upstream_composition(rseq, seq_length, -1, nodes[bindex[fr]].index,
+                                       train_data);
           }
         }
         best[fr] = 0.0;
         bindex[fr] = -1;
       }
-      else if (nod[j].strand == -1)
+      else if (nodes[j].strand == -1)
       {
-        if (nod[j].cscore + wt*nod[j].mot.score +
-            wt*tinf->type_wt[nod[j].subtype]
+        if (nodes[j].cscore + wt*nodes[j].mot.score +
+            wt*train_data->type_wt[nodes[j].subtype]
             >= best[fr])
         {
-          best[fr] = nod[j].cscore + wt*nod[j].mot.score;
-          best[fr] += wt*tinf->type_wt[nod[j].subtype];
+          best[fr] = nodes[j].cscore + wt*nodes[j].mot.score;
+          best[fr] += wt*train_data->type_wt[nodes[j].subtype];
           bindex[fr] = j;
         }
       }
@@ -952,11 +958,11 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
         {
           for (l = 0; l < 4096; l++)
           {
-            tinf->mot_wt[j][k][l] = 0.0;
+            train_data->mot_wt[j][k][l] = 0.0;
           }
         }
       }
-      tinf->no_mot = 0.0;
+      train_data->no_mot = 0.0;
     }
     else
     {
@@ -976,19 +982,19 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
             mreal[j][k][l] /= sum;
             if (mbg[j][k][l] != 0)
             {
-              tinf->mot_wt[j][k][l] = log(mreal[j][k][l]/mbg[j][k][l]);
+              train_data->mot_wt[j][k][l] = log(mreal[j][k][l]/mbg[j][k][l]);
             }
             else
             {
-              tinf->mot_wt[j][k][l] = -4.0;
+              train_data->mot_wt[j][k][l] = -4.0;
             }
-            if (tinf->mot_wt[j][k][l] > 4.0)
+            if (train_data->mot_wt[j][k][l] > 4.0)
             {
-              tinf->mot_wt[j][k][l] = 4.0;
+              train_data->mot_wt[j][k][l] = 4.0;
             }
-            if (tinf->mot_wt[j][k][l] < -4.0)
+            if (train_data->mot_wt[j][k][l] < -4.0)
             {
-              tinf->mot_wt[j][k][l] = -4.0;
+              train_data->mot_wt[j][k][l] = -4.0;
             }
           }
         }
@@ -997,19 +1003,19 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
     zreal /= sum;
     if (zbg != 0)
     {
-      tinf->no_mot = log(zreal/zbg);
+      train_data->no_mot = log(zreal/zbg);
     }
     else
     {
-      tinf->no_mot = -4.0;
+      train_data->no_mot = -4.0;
     }
-    if (tinf->no_mot > 4.0)
+    if (train_data->no_mot > 4.0)
     {
-      tinf->no_mot = 4.0;
+      train_data->no_mot = 4.0;
     }
-    if (tinf->no_mot < -4.0)
+    if (train_data->no_mot < -4.0)
     {
-      tinf->no_mot = -4.0;
+      train_data->no_mot = -4.0;
     }
     sum = 0.0;
     for (j = 0; j < 3; j++)
@@ -1020,7 +1026,7 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
     {
       for (j = 0; j < 3; j++)
       {
-        tinf->type_wt[j] = 0.0;
+        train_data->type_wt[j] = 0.0;
       }
     }
     else
@@ -1030,23 +1036,23 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
         treal[j] /= sum;
         if (tbg[j] != 0)
         {
-          tinf->type_wt[j] = log(treal[j]/tbg[j]);
+          train_data->type_wt[j] = log(treal[j]/tbg[j]);
         }
         else
         {
-          tinf->type_wt[j] = -4.0;
+          train_data->type_wt[j] = -4.0;
         }
-        if (tinf->type_wt[j] > 4.0)
+        if (train_data->type_wt[j] > 4.0)
         {
-          tinf->type_wt[j] = 4.0;
+          train_data->type_wt[j] = 4.0;
         }
-        if (tinf->type_wt[j] < -4.0)
+        if (train_data->type_wt[j] < -4.0)
         {
-          tinf->type_wt[j] = -4.0;
+          train_data->type_wt[j] = -4.0;
         }
       }
     }
-    if (sum <= (double)nn/2000.0)
+    if (sum <= (double)num_nodes/2000.0)
     {
       sthresh /= 2.0;
     }
@@ -1057,61 +1063,61 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
     sum = 0.0;
     for (j = 0; j < 4; j++)
     {
-      sum += tinf->ups_comp[i][j];
+      sum += train_data->ups_comp[i][j];
     }
     if (sum == 0.0)
     {
       for (j = 0; j < 4; j++)
       {
-        tinf->ups_comp[i][j] = 0.0;
+        train_data->ups_comp[i][j] = 0.0;
       }
     }
     else
     {
       for (j = 0; j < 4; j++)
       {
-        tinf->ups_comp[i][j] /= sum;
-        if (tinf->gc > 0.1 && tinf->gc < 0.9)
+        train_data->ups_comp[i][j] /= sum;
+        if (train_data->gc > 0.1 && train_data->gc < 0.9)
         {
           if (j == 0 || j == 3)
           {
-            tinf->ups_comp[i][j] =
-              log(tinf->ups_comp[i][j]*2.0/(1.0-tinf->gc));
+            train_data->ups_comp[i][j] =
+              log(train_data->ups_comp[i][j]*2.0/(1.0-train_data->gc));
           }
           else
           {
-            tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/tinf->gc);
+            train_data->ups_comp[i][j] = log(train_data->ups_comp[i][j]*2.0/train_data->gc);
           }
         }
-        else if (tinf->gc <= 0.1)
+        else if (train_data->gc <= 0.1)
         {
           if (j == 0 || j == 3)
           {
-            tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/0.90);
+            train_data->ups_comp[i][j] = log(train_data->ups_comp[i][j]*2.0/0.90);
           }
           else
           {
-            tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/0.10);
+            train_data->ups_comp[i][j] = log(train_data->ups_comp[i][j]*2.0/0.10);
           }
         }
         else
         {
           if (j == 0 || j == 3)
           {
-            tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/0.10);
+            train_data->ups_comp[i][j] = log(train_data->ups_comp[i][j]*2.0/0.10);
           }
           else
           {
-            tinf->ups_comp[i][j] = log(tinf->ups_comp[i][j]*2.0/0.90);
+            train_data->ups_comp[i][j] = log(train_data->ups_comp[i][j]*2.0/0.90);
           }
         }
-        if (tinf->ups_comp[i][j] > 4.0)
+        if (train_data->ups_comp[i][j] > 4.0)
         {
-          tinf->ups_comp[i][j] = 4.0;
+          train_data->ups_comp[i][j] = 4.0;
         }
-        if (tinf->ups_comp[i][j] < -4.0)
+        if (train_data->ups_comp[i][j] < -4.0)
         {
-          tinf->ups_comp[i][j] = -4.0;
+          train_data->ups_comp[i][j] = -4.0;
         }
       }
     }
@@ -1123,26 +1129,29 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
   positions -1 and -2 and -15 to -44.  This will be used to supplement the
   SD (or other) motif finder with additional information.
 ******************************************************************************/
-void count_upstream_composition(unsigned char *seq, int slen, int strand,
-                                int pos, struct _training *tinf)
+void count_upstream_composition(unsigned char *seq, int seq_length, int strand,
+                                int pos, struct _training *train_data)
 {
-  int i, start, count = 0;
+  int i = 0;
+  int start = 0;
+  int count = 0;
   if (strand == 1)
   {
     start = pos;
   }
   else
   {
-    start = slen-1-pos;
+    start = seq_length-1-pos;
   }
 
+  /* At this stage, ups_comp just stores simple counts at each position */
   for (i = 1; i < 45; i++)
   {
     if (i > 2 && i < 15)
     {
       continue;
     }
-    tinf->ups_comp[count][mer_index(1, seq, start-i)]++;
+    train_data->ups_comp[count][mer_index(1, seq, start-i)]++;
     count++;
   }
 }
@@ -1154,15 +1163,15 @@ void count_upstream_composition(unsigned char *seq, int slen, int strand,
   counted (e.g. for AGGAG, we would count AGGAG, AGGA, GGAG, AGG, GGA, and
   GAG).  In stage 2, only the best single motif is counted.
 ******************************************************************************/
-void update_motif_counts(double mcnt[4][4][4096], double *zero, unsigned char
-                         *seq, unsigned char *rseq, int slen,
-                         struct _node *nod, int stage)
+void update_motif_counts(double mcnt[4][4][4096], double *zero,
+                         unsigned char *seq, unsigned char *rseq,
+                         int seq_length, struct _node *nodes, int stage)
 {
   int i, j, k, start, spacer_index;
   unsigned char *wseq;
-  struct _motif *mot = &(nod->mot);
+  struct _motif *mot = &(nodes->mot);
 
-  if (nod->type == STOP || nod->edge == 1)
+  if (nodes->type == STOP || nodes->edge == 1)
   {
     return;
   }
@@ -1172,15 +1181,15 @@ void update_motif_counts(double mcnt[4][4][4096], double *zero, unsigned char
     return;
   }
 
-  if (nod->strand == 1)
+  if (nodes->strand == 1)
   {
     wseq = seq;
-    start = nod->index;
+    start = nodes->index;
   }
   else
   {
     wseq = rseq;
-    start = slen-1-nod->index;
+    start = seq_length-1-nodes->index;
   }
 
   /* Stage 0:  Count all motifs.  If a motif is detected, */
@@ -1271,8 +1280,8 @@ void update_motif_counts(double mcnt[4][4][4096], double *zero, unsigned char
   training, all motifs are labeled good.  0 = bad, 1 = good, 2 = good
   w/mismatch.
 ******************************************************************************/
-void build_coverage_map(double real[4][4][4096], int good[4][4][4096], double
-                        ng)
+void build_coverage_map(double real[4][4][4096], int good[4][4][4096],
+                        double ng)
 {
   int i, j, k, l, tmp, decomp[3];
   double thresh = 0.2;
@@ -1378,18 +1387,18 @@ void build_coverage_map(double real[4][4][4096], int good[4][4][4096], double
   uses_sd to 0, which will cause Prodigal to run the non-SD motif finder for
   starts.
 ******************************************************************************/
-void determine_sd_usage(struct _training *tinf)
+void determine_sd_usage(struct _training *train_data)
 {
-  tinf->uses_sd = 1;
-  if (tinf->rbs_wt[0] >= 0.0)
+  train_data->uses_sd = 1;
+  if (train_data->rbs_wt[0] >= 0.0)
   {
-    tinf->uses_sd = 0;
+    train_data->uses_sd = 0;
   }
-  if (tinf->rbs_wt[16] < 1.0 && tinf->rbs_wt[13] < 1.0 &&
-      tinf->rbs_wt[15] < 1.0 && (tinf->rbs_wt[0] >= -0.5 ||
-      (tinf->rbs_wt[22] < 2.0 && tinf->rbs_wt[24] < 2.0 &&
-      tinf->rbs_wt[27] < 2.0)))
+  if (train_data->rbs_wt[16] < 1.0 && train_data->rbs_wt[13] < 1.0 &&
+      train_data->rbs_wt[15] < 1.0 && (train_data->rbs_wt[0] >= -0.5 ||
+      (train_data->rbs_wt[22] < 2.0 && train_data->rbs_wt[24] < 2.0 &&
+      train_data->rbs_wt[27] < 2.0)))
   {
-    tinf->uses_sd = 0;
+    train_data->uses_sd = 0;
   }
 }
