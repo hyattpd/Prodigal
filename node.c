@@ -1060,7 +1060,7 @@ void sd_rbs_score(unsigned char *seq, unsigned char *rseq, int seq_length,
           continue;
         }
         motif[0] = shine_dalgarno_exact(seq, j, nodes[i].index, rbs_weight);
-        motif[1] = shine_dalgarno_mm(seq, j, nodes[i].index, rbs_weight);
+        motif[1] = shine_dalgarno_mismatch(seq, j, nodes[i].index, rbs_weight);
         if (motif[0] > nodes[i].rbs[0])
         {
           nodes[i].rbs[0] = motif[0];
@@ -1082,8 +1082,8 @@ void sd_rbs_score(unsigned char *seq, unsigned char *rseq, int seq_length,
         }
         motif[0] = shine_dalgarno_exact(rseq, j, seq_length-1-nodes[i].index,
                                         rbs_weight);
-        motif[1] = shine_dalgarno_mm(rseq, j, seq_length-1-nodes[i].index,
-                                     rbs_weight);
+        motif[1] = shine_dalgarno_mismatch(rseq, j, seq_length - 1 -
+                                           nodes[i].index, rbs_weight);
         if (motif[0] > nodes[i].rbs[0])
         {
           nodes[i].rbs[0] = motif[0];
@@ -1158,7 +1158,7 @@ void find_best_nonsd_motif(struct _training *train_data, unsigned char *seq,
   int max_index = 0;           /* Best motif index */
   double max_score = -100.0;   /* Best motif score */
   double score = 0.0;          /* Current motif score */
-  unsigned char *wseq;         /* Working sequence - seq or rseq */
+  unsigned char *wseq = NULL;  /* Working sequence - seq or rseq */
 
   if (nodes->type == STOP || nodes->edge == 1)
   {
@@ -1240,7 +1240,7 @@ void find_best_nonsd_motif(struct _training *train_data, unsigned char *seq,
   the same strand, which often signify an operon and negate the need for an
   RBS for the second gene.  In addition, we add a slight bonus when genes are
   close and a slight penalty when switching strands or having a large
-  intergenic space.
+  space between genes.
 ******************************************************************************/
 double intergenic_mod(struct _node *n1, struct _node *n2, double start_weight)
 {

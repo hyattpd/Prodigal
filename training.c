@@ -62,8 +62,7 @@ int write_training_file(char *fn, struct _training *tinf)
 void build_training_set_full(struct _node *nodes, struct _training *train_data,
                              struct _summary *statistics, unsigned char *seq,
                              unsigned char *rseq, unsigned char *useq,
-                             int seq_length, int *num_nodes,
-                             int closed_ends, int cross_gaps, int num_seq,
+                             int seq_length, int *num_nodes, int num_seq,
                              int genetic_code, int quiet)
 {
   int train_qual = 0;
@@ -73,8 +72,7 @@ void build_training_set_full(struct _node *nodes, struct _training *train_data,
           train_data->trans_table);
   log_text(quiet, text);
   build_training_set(nodes, train_data, statistics, seq, rseq, useq,
-                     seq_length, num_nodes, closed_ends, cross_gaps,
-                     num_seq);
+                     seq_length, num_nodes, num_seq);
   log_text(quiet, "done!\n");
 
   /***********************************************************************
@@ -106,21 +104,19 @@ void build_training_set_full(struct _node *nodes, struct _training *train_data,
       log_text(quiet, "Trying genetic code 4...");
       train_data->trans_table = 4;
       build_training_set(nodes, train_data, statistics, seq, rseq, useq,
-                         seq_length, num_nodes, closed_ends,
-                         cross_gaps, num_seq);
+                         seq_length, num_nodes, num_seq);
       train_qual = training_set_quality(statistics);
       if (train_qual < 2)
       {
-        log_text(quiet, "looks good, going with genetic code 4.\n");
+        log_text(quiet, "looks good, using genetic code 4.\n");
       }
       else
       {
-        log_text(quiet, "still bad, switching back to genetic code 11.\n");
+        log_text(quiet, "still bad, reverting to genetic code 11.\n");
         log_text(quiet, "Redoing genome with genetic code 11...");
         train_data->trans_table = 11;
         build_training_set(nodes, train_data, statistics, seq, rseq, useq,
-                           seq_length, num_nodes, closed_ends,
-                           cross_gaps, num_seq);
+                           seq_length, num_nodes, num_seq);
         log_text(quiet, "done.\n");
         low_gene_len_warning(train_qual, statistics);
       }
@@ -136,8 +132,7 @@ void build_training_set_full(struct _node *nodes, struct _training *train_data,
 void build_training_set(struct _node *nodes, struct _training *train_data,
                         struct _summary *statistics, unsigned char *seq,
                         unsigned char *rseq, unsigned char *useq,
-                        int seq_length, int *num_nodes, int no_partial,
-                        int cross_gaps, int num_seq)
+                        int seq_length, int *num_nodes, int num_seq)
 {
   int initial_node = -1;
   int last_node = -1;
@@ -150,8 +145,8 @@ void build_training_set(struct _node *nodes, struct _training *train_data,
   {
     zero_nodes(nodes, *num_nodes);
   }
-  *num_nodes = add_nodes(seq, rseq, useq, seq_length, nodes, no_partial,
-                         cross_gaps, train_data->trans_table);
+  *num_nodes = add_nodes(seq, rseq, useq, seq_length, nodes, 0, 0,
+                         train_data->trans_table);
   qsort(nodes, *num_nodes, sizeof(struct _node), &compare_nodes);
 
   /***********************************************************************

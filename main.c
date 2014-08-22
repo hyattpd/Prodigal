@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
   /* Anonymous/Metagenomic Run Variables */
   int max_preset = 0;        /* Index of best preset training file */
   double max_score = -100.0; /* Highest score from anonymous run */
-  double gc_bound[2];        /* Low/high GC content bounds */
+  double gc_bound[2] = {0};  /* Low/high GC content bounds */
   int last_tt = -1;          /* Last translation table seen */
 
   /* Allocate memory for data structures */
@@ -159,17 +159,17 @@ int main(int argc, char *argv[])
   {
     log_text(quiet, "Reading in the sequence(s) to train...");
     seq_length = read_seq_training(input_ptr, seq, useq, &(train_data.gc),
-                                   closed_ends, &num_seq);
+                                   &num_seq);
     reverse_seq(seq, rseq, useq, seq_length);
-    sprintf(text, "%d bp seq created, %.2f pct GC\n", seq_length,
+    sprintf(text, "%d bp seq created, %.2f pct GC.\n", seq_length,
             train_data.gc*100.0);
     log_text(quiet, text);
     check_node_allocation(&nodes, seq_length);
 
     /* Build the training set and score the coding of every start-stop pair */
     build_training_set_full(nodes, &train_data, &statistics, seq, rseq, useq,
-                            seq_length, &num_nodes, closed_ends,
-                            gap_mode, num_seq, genetic_code, quiet);
+                            seq_length, &num_nodes, num_seq, genetic_code,
+                            quiet);
 
     /***********************************************************************
       Determine if this organism uses Shine-Dalgarno or not and score the

@@ -22,28 +22,31 @@
 
 /******************************************************************************
   Read the sequence for training purposes.  If we encounter multiple
-  sequences, we insert gaps in between each one to allow training on partial
-  genes.  When we hit MAX_SEQ bp, we stop and return what we've got so
-  far for training.  This routine reads in FASTA, and has a very 'loose'
-  Genbank and Embl parser, but, to be safe, FASTA should generally be
+  sequences, we insert gaps or stop codons in between each one to allow/forbid
+  training on partial genes.  When we hit MAX_SEQ bp, we stop and return what
+  we've got so far for training.  This routine reads in FASTA, and has a very
+  'loose' Genbank and Embl parser, but, to be safe, FASTA should generally be
   preferred.
 ******************************************************************************/
-
 int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
-                      double *gc, int closed, int *num_seq)
+                      double *gc, int *num_seq)
 {
-  char line[MAX_LINE+1];
-  int hdr = 0, fhdr = 0, bctr = 0, len = 0, wrn = 0;
-  int gc_cont = 0;
-  int i, gapsize = 0;
-  double acl = 0.0;
+  int i = 0;
+  int state = 0;                /* 0 if haven't seen header, 1 if have */
+  int num_header = 0;           /* Number of headers we've seen */
+  int bit_len = 0;              /* Length of bitstring (2x actual slen) */
+  int len = 0;                  /* Length of sequence created */
+  int warn = 0;                 /* If we've warned already, 1 or 0 */
+  int gc_cont = 0;              /* GC content of sequence */
+  int gap_size = 0;             /* Size of gap parsed from Gbk file */
+  char line[MAX_LINE+1] = "";   /* Buffer to read the sequence into */
 
   line[MAX_LINE] = '\0';
   while (fgets(line, MAX_LINE, fp) != NULL)
   {
-    if (hdr == 0 && line[strlen(line)-1] != '\n' && wrn == 0)
+    if (state == 0 && line[strlen(line)-1] != '\n' && warn == 0)
     {
-      wrn = 1;
+      warn = 1;
       fprintf(stderr, "\n\nWarning: saw non-sequence line longer than ");
       fprintf(stderr, "%d chars, sequence might not be read ", MAX_LINE);
       fprintf(stderr, "correctly.\n\n");
@@ -51,34 +54,36 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
     if (line[0] == '>' || (line[0] == 'S' && line[1] == 'Q') ||
         (strlen(line) > 6 && strncmp(line, "ORIGIN", 6) == 0))
     {
-      hdr = 1;
-      if (fhdr > 0 && closed == 0)
+      state = 1;
+      /* Put a gap in between each training sequence */
+      if (num_header > 0)
       {
         for (i = 0; i < 8; i++)
         {
           set(useq, len);
-          bctr+=2;
+          bit_len+=2;
           len++;
         }
       }
-      fhdr++;
+      num_header++;
     }
-    else if (hdr == 1 && (line[0] == '/' && line[1] == '/'))
+    else if (state == 1 && (line[0] == '/' && line[1] == '/'))
     {
-      hdr = 0;
+      state = 0;
     }
-    else if (hdr == 1)
+    else if (state == 1)
     {
+      /* Some genbank files have Expand gap directives to process */
       if (strstr(line, "Expand") != NULL && strstr(line, "gap") != NULL)
       {
-        sscanf(strstr(line, "gap")+4, "%d", &gapsize);
-        if (gapsize < 1 || gapsize > MAX_LINE)
+        sscanf(strstr(line, "gap")+4, "%d", &gap_size);
+        if (gap_size < 1 || gap_size > MAX_LINE)
         {
           fprintf(stderr, "Error: gap size in gbk file can't exceed line");
           fprintf(stderr, " size.\n");
           exit(14);
         }
-        for (i = 0; i < gapsize; i++)
+        for (i = 0; i < gap_size; i++)
         {
           line[i] = 'n';
         }
@@ -92,26 +97,26 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
         }
         if (line[i] == 'g' || line[i] == 'G')
         {
-          set(seq, bctr);
+          set(seq, bit_len);
           gc_cont++;
         }
         else if (line[i] == 't' || line[i] == 'T' ||
                  line[i] == 'u' || line[i] == 'U')
         {
-          set(seq, bctr);
-          set(seq, bctr+1);
+          set(seq, bit_len);
+          set(seq, bit_len+1);
         }
         else if (line[i] == 'c' || line[i] == 'C')
         {
-          set(seq, bctr+1);
+          set(seq, bit_len+1);
           gc_cont++;
         }
         else if (line[i] != 'a' && line[i] != 'A')
         {
-          set(seq, bctr+1);
+          set(seq, bit_len+1);
           set(useq, len);
         }
-        bctr+=2;
+        bit_len+=2;
         len++;
       }
     }
@@ -123,17 +128,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
       break;
     }
   }
-  if (fhdr > 1 && closed == 0)
-  {
-    for (i = 0; i < 8; i++)
-    {
-      set(useq, len);
-      bctr+=2;
-      len++;
-    }
-  }
   *gc = ((double)gc_cont / (double)len);
-  acl = ((double)(len - (fhdr-1)*8))/(double)fhdr;
 
   /* Exit if there are errors, warn if sequence is small */
   if (len == 0)
@@ -157,38 +152,36 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
     fprintf(stderr, "training.\nYou may get better results with the ");
     fprintf(stderr, "'-p anon' option.\n\n");
   }
-  if (acl < IDEAL_AVG_CONTIG_LEN)
-  {
-    fprintf(stderr, "\n\nWarning: Average training set contig length is");
-    fprintf(stderr, " short at %.2f bases.\nYou may", acl);
-    fprintf(stderr, " get better results with the '-p anon' option.\n\n");
-  }
-  *num_seq = fhdr;
+
+  *num_seq = num_header;
   return len;
 }
 
 /* This routine reads in the next sequence in a FASTA/GB/EMBL file */
-
 int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
-                   int *sctr, double *gc, char *cur_hdr, char *new_hdr)
+                   int *seq_ctr, double *gc, char *cur_hdr, char *new_hdr)
 {
-  char line[MAX_LINE+1];
-  int reading_seq = 0, genbank_end = 0, bctr = 0, len = 0, wrn = 0;
-  int gc_cont = 0;
-  int i, gapsize = 0;
+  int i = 0;
+  int reading_seq = 0;          /* State variable for if reading seq */
+  int genbank_end = 0;          /* State variable for if at end of gbk */
+  int bit_len = 0;              /* Length of bitstring (2x actual slen) */
+  int len = 0;                  /* Length of sequence created */
+  int warn = 0;                 /* If we've warned already, 1 or 0 */
+  int gc_cont = 0;              /* GC content of sequence */
+  int gap_size = 0;             /* Size of gap parsed from Gbk file */
+  char line[MAX_LINE+1] = "";   /* Buffer to read sequence into */
 
-  sprintf(new_hdr, "Prodigal_Seq_%d", *sctr+2);
-
-  if (*sctr > 0)
+  sprintf(new_hdr, "Prodigal_Seq_%d", *seq_ctr+2);
+  if (*seq_ctr > 0)
   {
     reading_seq = 1;
   }
   line[MAX_LINE] = '\0';
   while (fgets(line, MAX_LINE, fp) != NULL)
   {
-    if (reading_seq == 0 && line[strlen(line)-1] != '\n' && wrn == 0)
+    if (reading_seq == 0 && line[strlen(line)-1] != '\n' && warn == 0)
     {
-      wrn = 1;
+      warn = 1;
       fprintf(stderr, "\n\nWarning: saw non-sequence line longer than ");
       fprintf(stderr, "%d chars, sequence might not be read ", MAX_LINE);
       fprintf(stderr, "correctly.\n\n");
@@ -209,7 +202,7 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
     if (line[0] == '>' || (line[0] == 'S' && line[1] == 'Q') ||
         (strlen(line) > 6 && strncmp(line, "ORIGIN", 6) == 0))
     {
-      if (reading_seq == 1 || genbank_end == 1 || *sctr > 0)
+      if (reading_seq == 1 || genbank_end == 1 || *seq_ctr > 0)
       {
         if (line[0] == '>')
         {
@@ -232,16 +225,17 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
     }
     else if (reading_seq == 1)
     {
+      /* Handle gap directives in genbank file */
       if (strstr(line, "Expand") != NULL && strstr(line, "gap") != NULL)
       {
-        sscanf(strstr(line, "gap")+4, "%d", &gapsize);
-        if (gapsize < 1 || gapsize > MAX_LINE)
+        sscanf(strstr(line, "gap")+4, "%d", &gap_size);
+        if (gap_size < 1 || gap_size > MAX_LINE)
         {
           fprintf(stderr, "Error: gap size in gbk file can't exceed line");
           fprintf(stderr, " size.\n");
           exit(15);
         }
-        for (i = 0; i < gapsize; i++)
+        for (i = 0; i < gap_size; i++)
         {
           line[i] = 'n';
         }
@@ -255,26 +249,26 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
         }
         if (line[i] == 'g' || line[i] == 'G')
         {
-          set(seq, bctr);
+          set(seq, bit_len);
           gc_cont++;
         }
         else if (line[i] == 't' || line[i] == 'T' ||
                  line[i] == 'u' || line[i] == 'U')
         {
-          set(seq, bctr);
-          set(seq, bctr+1);
+          set(seq, bit_len);
+          set(seq, bit_len+1);
         }
         else if (line[i] == 'c' || line[i] == 'C')
         {
-          set(seq, bctr+1);
+          set(seq, bit_len+1);
           gc_cont++;
         }
         else if (line[i] != 'a' && line[i] != 'A')
         {
-          set(seq, bctr+1);
+          set(seq, bit_len+1);
           set(useq, len);
         }
-        bctr+=2;
+        bit_len+=2;
         len++;
       }
     }
@@ -289,14 +283,15 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
     return -1;
   }
   *gc = ((double)gc_cont / (double)len);
-  *sctr = *sctr + 1;
+  *seq_ctr = *seq_ctr + 1;
   return len;
 }
 
-/* Takes first word of header */
-void calc_short_header(char *header, char *short_header, int sctr)
+/* Takes first word of header.  If the length of the header is 0, */
+/* it instead constructs a header of the form Prodigal_Seq_<ID> */
+void calc_short_header(char *header, char *short_header, int seq_ctr)
 {
-  int i;
+  int i = 0;
 
   strcpy(short_header, header);
   for (i = 0; i < (int)strlen(header); i++)
@@ -311,36 +306,35 @@ void calc_short_header(char *header, char *short_header, int sctr)
   }
   if (i == 0)
   {
-    sprintf(short_header, "Prodigal_Seq_%d", sctr);
+    sprintf(short_header, "Prodigal_Seq_%d", seq_ctr);
   }
 }
 
-/* Takes rseq and fills it up with the rev complement of seq */
-
+/* Stores reverse complement of seq in rseq */
 void reverse_seq(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
                  int len)
 {
-  int i, slen=len*2;
-  for (i = 0; i < slen; i++)
+  int i = 0;
+  int bit_len = len*2;         /* Bitstring size is twice the seq length */
+  for (i = 0; i < bit_len; i++)
   {
     if (test(seq, i) == 0)
     {
-       set(rseq, slen-i-1+(i%2==0?-1:1));
+       set(rseq, bit_len-i-1+(i%2==0?-1:1));
     }
   }
   for (i = 0; i < len; i++)
   {
     if (test(useq, i) == 1)
     {
-      toggle(rseq, slen-1-i*2);
-      toggle(rseq, slen-2-i*2);
+      toggle(rseq, bit_len-1-i*2);
+      toggle(rseq, bit_len-2-i*2);
     }
   }
 }
 
 /* Simple routines to say whether or not bases are */
 /* a, c, t, g, starts, stops, etc. */
-
 int is_a(unsigned char *seq, int n)
 {
   int index = n*2;
@@ -392,7 +386,6 @@ int is_n(unsigned char *useq, int n)
 
 int is_stop(unsigned char *seq, int n, int trans_table)
 {
-
   /* TAG: Not a stop in genetic codes 6, 15, 16, and 22 */
   if (is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1)
   {
@@ -428,7 +421,7 @@ int is_stop(unsigned char *seq, int n, int trans_table)
     return 1;
   }
 
-  /* Code 2 */
+  /* Code 2: AGG and AGA are stops */
   if (trans_table == 2 && is_a(seq, n) == 1 && is_g(seq, n+1) == 1 &&
       is_a(seq, n+2) == 1)
   {
@@ -440,14 +433,14 @@ int is_stop(unsigned char *seq, int n, int trans_table)
     return 1;
   }
 
-  /* Code 22 */
+  /* Code 22: TCA is a stop */
   if (trans_table == 22 && is_t(seq, n) == 1 && is_c(seq, n+1) == 1 &&
       is_a(seq, n+2) == 1)
   {
     return 1;
   }
 
-  /* Code 23 */
+  /* Code 23: TTA is a stop */
   if (trans_table == 23 && is_t(seq, n) == 1 && is_t(seq, n+1) == 1 &&
       is_a(seq, n+2) == 1)
   {
@@ -462,7 +455,6 @@ int is_stop(unsigned char *seq, int n, int trans_table)
 /* support these. */
 int is_start(unsigned char *seq, int n, int trans_table)
 {
-
   /* ATG: Always a start codon */
   if (is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1)
   {
@@ -552,6 +544,7 @@ int is_tga(unsigned char *seq, int n)
   return 1;
 }
 
+/* Returns 1 if entire codon is ambiguous */
 int is_nnn(unsigned char *useq, int n)
 {
   if (is_n(useq, n) == 0 || is_n(useq, n+1) == 0 || is_n(useq, n+2) == 0)
@@ -561,6 +554,7 @@ int is_nnn(unsigned char *useq, int n)
   return 1;
 }
 
+/* Returns 1 if any base in a codon is ambiguous */
 int codon_has_n(unsigned char *useq, int n)
 {
   if (is_n(useq, n) == 1 || is_n(useq, n+1) == 1 || is_n(useq, n+2) == 1)
@@ -570,6 +564,7 @@ int codon_has_n(unsigned char *useq, int n)
   return 0;
 }
 
+/* Returns 1 if two entire codons to the left of this codon are ambiguous */
 int gap_to_left(unsigned char *useq, int n)
 {
   if (is_nnn(useq, n-3) == 1 && is_nnn(useq, n-6) == 1)
@@ -584,6 +579,7 @@ int gap_to_left(unsigned char *useq, int n)
   return 0;
 }
 
+/* Returns 1 if two entire codons to the right of this codon are ambiguous */
 int gap_to_right(unsigned char *useq, int n)
 {
   if (is_nnn(useq, n+3) == 1 && is_nnn(useq, n+6) == 1)
@@ -598,6 +594,7 @@ int gap_to_right(unsigned char *useq, int n)
   return 0;
 }
 
+/* Returns 1 if the base is a G or a C */
 int is_gc(unsigned char *seq, int n)
 {
   int index = n*2;
@@ -612,9 +609,15 @@ int is_gc(unsigned char *seq, int n)
 /* based on the GC content and genetic code of the organism */
 double prob_stop(int tt, double gc)
 {
-  int i1, i2, i3, i4, i5, i6;
-  unsigned char codon[3];
-  double cprob, stop_prob = 0.0;
+  int i1 = 0;                     /* Loop variables, two for each base */
+  int i2 = 0;                     /* (since manipulating bitstring */
+  int i3 = 0;
+  int i4 = 0;
+  int i5 = 0;
+  int i6 = 0;
+  unsigned char codon[3] = "";    /* Current codon for consideration */
+  double codon_prob = 0.0;        /* Prob of current codon */
+  double stop_prob = 0.0;         /* Cumulative prob of any stop codon */
 
   for (i1 = 0; i1 < 6; i1++)
   {
@@ -680,34 +683,34 @@ double prob_stop(int tt, double gc)
               {
                 set(codon, 5);
               }
-              cprob = 1.0;
+              codon_prob = 1.0;
               if (is_gc(codon, 0) == 1)
               {
-                cprob *= gc/2.0;
+                codon_prob *= gc/2.0;
               }
               else
               {
-                cprob *= (1.0-gc)/2.0;
+                codon_prob *= (1.0-gc)/2.0;
               }
               if (is_gc(codon, 1) == 1)
               {
-                cprob *= gc/2.0;
+                codon_prob *= gc/2.0;
               }
               else
               {
-                cprob *= (1.0-gc)/2.0;
+                codon_prob *= (1.0-gc)/2.0;
               }
               if (is_gc(codon, 2) == 1)
               {
-                cprob *= gc/2.0;
+                codon_prob *= gc/2.0;
               }
               else
               {
-                cprob *= (1.0-gc)/2.0;
+                codon_prob *= (1.0-gc)/2.0;
               }
               if (is_stop(codon, 0, tt) == 1)
               {
-                stop_prob += cprob;
+                stop_prob += codon_prob;
               }
             }
           }
@@ -718,11 +721,13 @@ double prob_stop(int tt, double gc)
   return stop_prob;
 }
 
-double gc_content(unsigned char *seq, int a, int b)
+/* Returns the GC content between 'n1' and 'n2' inclusive */
+double gc_content(unsigned char *seq, int n1, int n2)
 {
-  double sum = 0.0, gc = 0.0;
-  int i;
-  for (i = a; i <= b; i++)
+  int i = 0;
+  double sum = 0.0;
+  double gc = 0.0;
+  for (i = n1; i <= n2; i++)
   {
     if (is_g(seq, i) == 1 || is_c(seq, i) == 1)
     {
@@ -733,7 +738,9 @@ double gc_content(unsigned char *seq, int a, int b)
   return gc/sum;
 }
 
-/* Returns a single amino acid for this position */
+/* Returns a single amino acid for position 'n'. */
+/* 'Is_init' being set indicates a start codon, which we always */
+/* translate to 'M'. */
 char amino(unsigned char *seq, int n, int trans_table, int is_init)
 {
   if (is_stop(seq, n, trans_table) == 1)
@@ -1168,19 +1175,17 @@ char amino_letter(int num)
 }
 
 /* Returns the corresponding frame on the reverse strand */
-
-int rframe(int fr, int slen)
+int rev_frame(int frame, int seq_len)
 {
-  int md = slen%3-1;
-  if (md == 0)
+  int mod = seq_len%3-1;
+  if (mod == 0)
   {
-    md = 3;
+    mod = 3;
   }
-  return (md-fr);
+  return (mod-frame);
 }
 
-/* Simple 3-way max function */
-
+/* Simple 3-way max function for frames */
 int max_frame(int n1, int n2, int n3)
 {
   if (n1 > n2)
@@ -1212,81 +1217,88 @@ int max_frame(int n1, int n2, int n3)
   the highest GC content frame in a window centered on a position for every
   position in the sequence.
 ******************************************************************************/
-
-int *calc_most_gc_frame(unsigned char *seq, int slen)
+int *calc_most_gc_frame(unsigned char *seq, int seq_length)
 {
-  int i, j, *fwd, *bwd, *tot;
-  int win, *gp;
+  int i = 0;
+  int j = 0;
+  int *for_sum = NULL;     /* Running gc_count of GC frame plot left->right */
+  int *back_sum = NULL;    /* Running gc_count of GC frame plot right->left */
+  int *gc_count = NULL;    /* GC count in window centered on position */
+  int *gc_frame = NULL;    /* Frame with most GC in this position */
+  int win = 0;
 
-  gp = (int *)malloc(slen*sizeof(double));
-  fwd = (int *)malloc(slen*sizeof(int));
-  bwd = (int *)malloc(slen*sizeof(int));
-  tot = (int *)malloc(slen*sizeof(int));
-  if (fwd == NULL || bwd == NULL || gp == NULL || tot == NULL)
+  gc_frame = (int *)calloc(seq_length, sizeof(int));
+  for_sum = (int *)calloc(seq_length, sizeof(int));
+  back_sum = (int *)calloc(seq_length, sizeof(int));
+  gc_count = (int *)calloc(seq_length, sizeof(int));
+  if (for_sum == NULL || back_sum == NULL || gc_frame == NULL ||
+      gc_count == NULL)
   {
-    perror("\n\nMalloc failed on GC frame plot.");
+    perror("\n\nCalloc failed on GC frame plot.");
     exit(11);
   }
-  for (i = 0; i < slen; i++)
+  for (i = 0; i < seq_length; i++)
   {
-    fwd[i] = 0;
-    bwd[i] = 0;
-    tot[i] = 0;
-    gp[i] = -1;
+    gc_frame[i] = -1;
   }
 
+  /* Calculate running gc_count GC counts */
   for (i = 0; i < 3; i++)
   {
-    for (j = 0 + i; j < slen; j++)
+    for (j = 0 + i; j < seq_length; j++)
     {
       if (j < 3)
       {
-        fwd[j] = is_gc(seq, j);
+        for_sum[j] = is_gc(seq, j);
       }
       else
       {
-        fwd[j] = fwd[j-3] + is_gc(seq, j);
+        for_sum[j] = for_sum[j-3] + is_gc(seq, j);
       }
       if (j < 3)
       {
-        bwd[slen-j-1] = is_gc(seq, slen-j-1);
+        back_sum[seq_length-j-1] = is_gc(seq, seq_length-j-1);
       }
       else
       {
-        bwd[slen-j-1] = bwd[slen-j+2] + is_gc(seq, slen-j-1);
+        back_sum[seq_length-j-1] = back_sum[seq_length-j+2] +
+                                   is_gc(seq, seq_length-j-1);
       }
     }
   }
-  for (i = 0; i < slen; i++)
+  /* Using the counts, find the GC in a particular window */
+  for (i = 0; i < seq_length; i++)
   {
-    tot[i] = fwd[i] + bwd[i] - is_gc(seq, i);
+    gc_count[i] = for_sum[i] + back_sum[i] - is_gc(seq, i);
     if (i - WINDOW/2 >= 0)
     {
-      tot[i] -= fwd[i-WINDOW/2];
+      gc_count[i] -= for_sum[i-WINDOW/2];
     }
-    if (i + WINDOW/2 < slen)
+    if (i + WINDOW/2 < seq_length)
     {
-      tot[i] -= bwd[i+WINDOW/2];
+      gc_count[i] -= back_sum[i+WINDOW/2];
     }
   }
-  free(fwd);
-  free(bwd);
-  for (i = 0; i < slen-2; i+=3)
+  free(for_sum);
+  free(back_sum);
+  /* Find frame in window with highest GC count */
+  for (i = 0; i < seq_length-2; i+=3)
   {
-    win = max_frame(tot[i], tot[i+1], tot[i+2]);
+    win = max_frame(gc_count[i], gc_count[i+1], gc_count[i+2]);
     for (j = 0; j < 3; j++)
     {
-      gp[i+j] = win;
+      gc_frame[i+j] = win;
     }
   }
-  free(tot);
-  return gp;
+  free(gc_count);
+  return gc_frame;
 }
 
-/* Converts a word of size len to a number */
+/* Converts a word of size len to a number 1 to 4^len */
 int mer_index(int len, unsigned char *seq, int pos)
 {
-  int i, index = 0;
+  int i = 0;
+  int index = 0;
   for (i = 0; i < 2*len; i++)
   {
     index |= (test(seq, pos*2+i)<<i);
@@ -1315,13 +1327,14 @@ void start_text(char *st, int type)
 }
 
 /* Gives a text string for a mer of len 'len' (useful in outputting motifs) */
-void mer_text(char *qt, int len, int index)
+void mer_text(char *text, int len, int index)
 {
-  int i, val;
+  int i = 0;
+  int val = 0;      /* Numerical value of the letter */
   char letters[4] = { 'A', 'G', 'C', 'T' };
   if (len == 0)
   {
-    strcpy(qt, "None");
+    strcpy(text, "None");
   }
   else
   {
@@ -1329,52 +1342,65 @@ void mer_text(char *qt, int len, int index)
     {
       val = (index&(1<<(2*i))) + (index&(1<<(2*i+1)));
       val >>= (i*2);
-      qt[i] = letters[val];
+      text[i] = letters[val];
     }
-    qt[i] = '\0';
+    text[i] = '\0';
   }
 }
 
 /* Builds a 'len'-mer background for whole sequence */
-void calc_mer_bg(int len, unsigned char *seq, unsigned char *rseq, int slen,
-                 double *bg)
+void calc_mer_bg(int len, unsigned char *seq, unsigned char *rseq,
+                 int seq_length, double *background)
 {
-  int i, glob = 0, size = 1;
-  int *counts;
+  int i = 0;
+  int sum = 0;          /* Sum of all counts */
+  int size = 1;         /* Size is 4^len */
+  int *counts = NULL;   /* Counts of particular words */
 
   for (i = 1; i <= len; i++)
   {
     size *= 4;
   }
-  counts = (int *)malloc(size * sizeof(int));
-  for (i = 0; i < size; i++)
+  counts = (int *)calloc(size, sizeof(int));
+  if (counts == NULL)
   {
-    counts[i] = 0;
+    perror("\n\nCalloc failed on mer background.");
+    exit(11);
   }
-  for (i = 0; i < slen-len+1; i++)
+  for (i = 0; i < seq_length-len+1; i++)
   {
     counts[mer_index(len, seq, i)]++;
     counts[mer_index(len, rseq, i)]++;
-    glob+=2;
+    sum += 2;
   }
   for (i = 0; i < size; i++)
   {
-    bg[i] = (double)((counts[i]*1.0)/(glob*1.0));
+    background[i] = (double)((counts[i]*1.0)/(sum*1.0));
   }
   free(counts);
 }
 
 /******************************************************************************
-  Finds the highest-scoring region similar to AGGAGG in a given stretch of
-  sequence upstream of a start.
+  Finds the highest-scoring subset of AGGAGG in a given stretch of
+  sequence upstream of a start (the sequence between ups_start and
+  gene_start), using rbs_weight values to score the motifs in each bin.
 ******************************************************************************/
-
-int shine_dalgarno_exact(unsigned char *seq, int pos, int start, double *rwt)
+int shine_dalgarno_exact(unsigned char *seq, int ups_start, int gene_start,
+                         double *rbs_weight)
 {
-  int i, j, k, mism, rdis, limit, max_val, cur_val = 0;
-  double match[6], cur_ctr, dis_flag;
+  int i = 0;
+  int j = 0;
+  int k = 0;
+  int mismatch = 0;             /* To track if we see a mismatch */
+  int spacer = 0;               /* Distance between end of motif and gene */
+  int spacer_bin = 0;           /* Convert spacer to various bins */
+  int limit = 0;                /* Used to handle really close ups_start */
+  int max_bin = 0;              /* Maximum motif bin we've seen so far */
+  int motif_bin = 0;            /* Current motif bin */
+  double match[6] = {0};        /* Scoring (used to assign bins) */
+  double match_sum = 0.0;       /* Total score of this motif */
 
-  limit = imin(6, start-4-pos);
+  limit = imin(6, gene_start-4-ups_start);
   for (i = limit; i < 6; i++)
   {
     match[i] = -10.0;
@@ -1383,15 +1409,15 @@ int shine_dalgarno_exact(unsigned char *seq, int pos, int start, double *rwt)
   /* Compare the 6-base region to AGGAGG */
   for (i = 0; i < limit; i++)
   {
-    if (pos+i < 0)
+    if (ups_start+i < 0)
     {
       continue;
     }
-    if (i%3 == 0 && is_a(seq, pos+i) == 1)
+    if (i%3 == 0 && is_a(seq, ups_start+i) == 1)
     {
       match[i] = 2.0;
     }
-    else if (i%3 != 0 && is_g(seq, pos+i) == 1)
+    else if (i%3 != 0 && is_g(seq, ups_start+i) == 1)
     {
       match[i] = 3.0;
     }
@@ -1402,183 +1428,195 @@ int shine_dalgarno_exact(unsigned char *seq, int pos, int start, double *rwt)
   }
 
   /* Find the maximally scoring motif */
-  max_val = 0;
+  max_bin = 0;
   for (i = limit; i >= 3; i--)
   {
     for (j = 0; j <= limit-i; j++)
     {
-      cur_ctr = -2.0;
-      mism = 0;
+      match_sum = -2.0;
+      mismatch = 0;
       for (k = j; k < j+i; k++)
       {
-        cur_ctr += match[k];
+        match_sum += match[k];
         if (match[k] < 0.0)
         {
-          mism++;
+          mismatch++;
         }
       }
-      if (mism > 0)
+      if (mismatch > 0)
       {
         continue;
       }
-      rdis = start - (pos+j+i);
-      if (rdis < 5 && i < 5)
+      /* Calculate spacer and assign it to a bin */
+      spacer = gene_start - (ups_start+j+i);
+      if (spacer < 5 && i < 5)
       {
-        dis_flag = 2;
+        spacer_bin = 2;
       }
-      else if (rdis < 5 && i >= 5)
+      else if (spacer < 5 && i >= 5)
       {
-        dis_flag = 1;
+        spacer_bin = 1;
       }
-      else if (rdis > 10 && rdis <= 12 && i < 5)
+      else if (spacer > 10 && spacer <= 12 && i < 5)
       {
-        dis_flag = 1;
+        spacer_bin = 1;
       }
-      else if (rdis > 10 && rdis <= 12 && i >= 5)
+      else if (spacer > 10 && spacer <= 12 && i >= 5)
       {
-        dis_flag = 2;
+        spacer_bin = 2;
       }
-      else if (rdis >= 13)
+      else if (spacer >= 13)
       {
-        dis_flag = 3;
+        spacer_bin = 3;
       }
       else
       {
-        dis_flag = 0;
+        spacer_bin = 0;
       }
-      if (rdis > 15 || cur_ctr < 6.0)
+      if (spacer > 15 || match_sum < 6.0)
       {
         continue;
       }
 
       /* Exact-Matching RBS Motifs */
-      if (cur_ctr < 6.0)
+      /* Map the match score and spacer bin to an overall motif bin */
+      if (match_sum < 6.0)
       {
-        cur_val = 0;
+        motif_bin = 0;
       }
-      else if (cur_ctr == 6.0 && dis_flag == 2)
+      else if (match_sum == 6.0 && spacer_bin == 2)
       {
-        cur_val = 1;
+        motif_bin = 1;
       }
-      else if (cur_ctr == 6.0 && dis_flag == 3)
+      else if (match_sum == 6.0 && spacer_bin == 3)
       {
-        cur_val = 2;
+        motif_bin = 2;
       }
-      else if (cur_ctr == 8.0 && dis_flag == 3)
+      else if (match_sum == 8.0 && spacer_bin == 3)
       {
-        cur_val = 3;
+        motif_bin = 3;
       }
-      else if (cur_ctr == 9.0 && dis_flag == 3)
+      else if (match_sum == 9.0 && spacer_bin == 3)
       {
-        cur_val = 3;
+        motif_bin = 3;
       }
-      else if (cur_ctr == 6.0 && dis_flag == 1)
+      else if (match_sum == 6.0 && spacer_bin == 1)
       {
-        cur_val = 6;
+        motif_bin = 6;
       }
-      else if (cur_ctr == 11.0 && dis_flag == 3)
+      else if (match_sum == 11.0 && spacer_bin == 3)
       {
-        cur_val = 10;
+        motif_bin = 10;
       }
-      else if (cur_ctr == 12.0 && dis_flag == 3)
+      else if (match_sum == 12.0 && spacer_bin == 3)
       {
-        cur_val = 10;
+        motif_bin = 10;
       }
-      else if (cur_ctr == 14.0 && dis_flag == 3)
+      else if (match_sum == 14.0 && spacer_bin == 3)
       {
-        cur_val = 10;
+        motif_bin = 10;
       }
-      else if (cur_ctr == 8.0 && dis_flag == 2)
+      else if (match_sum == 8.0 && spacer_bin == 2)
       {
-        cur_val = 11;
+        motif_bin = 11;
       }
-      else if (cur_ctr == 9.0 && dis_flag == 2)
+      else if (match_sum == 9.0 && spacer_bin == 2)
       {
-        cur_val = 11;
+        motif_bin = 11;
       }
-      else if (cur_ctr == 8.0 && dis_flag == 1)
+      else if (match_sum == 8.0 && spacer_bin == 1)
       {
-        cur_val = 12;
+        motif_bin = 12;
       }
-      else if (cur_ctr == 9.0 && dis_flag == 1)
+      else if (match_sum == 9.0 && spacer_bin == 1)
       {
-        cur_val = 12;
+        motif_bin = 12;
       }
-      else if (cur_ctr == 6.0 && dis_flag == 0)
+      else if (match_sum == 6.0 && spacer_bin == 0)
       {
-        cur_val = 13;
+        motif_bin = 13;
       }
-      else if (cur_ctr == 8.0 && dis_flag == 0)
+      else if (match_sum == 8.0 && spacer_bin == 0)
       {
-        cur_val = 15;
+        motif_bin = 15;
       }
-      else if (cur_ctr == 9.0 && dis_flag == 0)
+      else if (match_sum == 9.0 && spacer_bin == 0)
       {
-        cur_val = 16;
+        motif_bin = 16;
       }
-      else if (cur_ctr == 11.0 && dis_flag == 2)
+      else if (match_sum == 11.0 && spacer_bin == 2)
       {
-        cur_val = 20;
+        motif_bin = 20;
       }
-      else if (cur_ctr == 11.0 && dis_flag == 1)
+      else if (match_sum == 11.0 && spacer_bin == 1)
       {
-        cur_val = 21;
+        motif_bin = 21;
       }
-      else if (cur_ctr == 11.0 && dis_flag == 0)
+      else if (match_sum == 11.0 && spacer_bin == 0)
       {
-        cur_val = 22;
+        motif_bin = 22;
       }
-      else if (cur_ctr == 12.0 && dis_flag == 2)
+      else if (match_sum == 12.0 && spacer_bin == 2)
       {
-        cur_val = 20;
+        motif_bin = 20;
       }
-      else if (cur_ctr == 12.0 && dis_flag == 1)
+      else if (match_sum == 12.0 && spacer_bin == 1)
       {
-        cur_val = 23;
+        motif_bin = 23;
       }
-      else if (cur_ctr == 12.0 && dis_flag == 0)
+      else if (match_sum == 12.0 && spacer_bin == 0)
       {
-        cur_val = 24;
+        motif_bin = 24;
       }
-      else if (cur_ctr == 14.0 && dis_flag == 2)
+      else if (match_sum == 14.0 && spacer_bin == 2)
       {
-        cur_val = 25;
+        motif_bin = 25;
       }
-      else if (cur_ctr == 14.0 && dis_flag == 1)
+      else if (match_sum == 14.0 && spacer_bin == 1)
       {
-        cur_val = 26;
+        motif_bin = 26;
       }
-      else if (cur_ctr == 14.0 && dis_flag == 0)
+      else if (match_sum == 14.0 && spacer_bin == 0)
       {
-        cur_val = 27;
+        motif_bin = 27;
       }
 
-      if (rwt[cur_val] < rwt[max_val])
+      /* Use the values passed in by rbs_weight to find the score */
+      /* for this bin.  For initial runs, when rbs_weights are all 0, */
+      /* the highest numbered bin wins. */
+      if (rbs_weight[motif_bin] > rbs_weight[max_bin] ||
+          (rbs_weight[motif_bin] == rbs_weight[max_bin] &&
+          motif_bin >= max_bin))
       {
-        continue;
+        max_bin = motif_bin;
       }
-      if (rwt[cur_val] == rwt[max_val] && cur_val < max_val)
-      {
-        continue;
-      }
-      max_val = cur_val;
     }
   }
-
-  return max_val;
+  return max_bin;
 }
 
 /******************************************************************************
-  Finds the highest-scoring region similar to AGGAGG in a given stretch of
-  sequence upstream of a start.  Only considers 5/6-mers with 1 mismatch.
+  Finds the highest-scoring subset of AGGAGG with at least 1 mismatch in a
+  given stretch of sequence upstream of a start (the sequence between
+  ups_start and gene_start), using rbs_weight values to score the motifs in
+  each bin.
 ******************************************************************************/
-
-int shine_dalgarno_mm(unsigned char *seq, int pos, int start, double *rwt)
+int shine_dalgarno_mismatch(unsigned char *seq, int ups_start, int gene_start,
+                            double *rbs_weight)
 {
-  int i, j, k, mism, rdis, limit, max_val, cur_val = 0;
-  double match[6], cur_ctr, dis_flag;
+  int i = 0;
+  int j = 0;
+  int k = 0;
+  int mismatch = 0;             /* To track if we see a mismatch */
+  int spacer = 0;               /* Distance between end of motif and gene */
+  int spacer_bin = 0;           /* Convert spacer to various bins */
+  int limit = 0;                /* Used to handle really close ups_start */
+  int max_bin = 0;              /* Maximum motif bin we've seen so far */
+  int motif_bin = 0;            /* Current motif bin */
+  double match[6] = {0};        /* Scoring (used to assign bins) */
+  double match_sum = 0.0;       /* Total score of this motif */
 
-  limit = imin(6, start-4-pos);
+  limit = imin(6, gene_start-4-ups_start);
   for (i = limit; i < 6; i++)
   {
     match[i] = -10.0;
@@ -1587,13 +1625,13 @@ int shine_dalgarno_mm(unsigned char *seq, int pos, int start, double *rwt)
   /* Compare the 6-base region to AGGAGG */
   for (i = 0; i < limit; i++)
   {
-    if (pos+i < 0)
+    if (ups_start+i < 0)
     {
       continue;
     }
     if (i % 3 == 0)
     {
-      if (is_a(seq, pos+i) == 1)
+      if (is_a(seq, ups_start+i) == 1)
       {
         match[i] = 2.0;
       }
@@ -1604,7 +1642,7 @@ int shine_dalgarno_mm(unsigned char *seq, int pos, int start, double *rwt)
     }
     else
     {
-      if (is_g(seq, pos+i) == 1)
+      if (is_g(seq, ups_start+i) == 1)
       {
         match[i] = 3.0;
       }
@@ -1616,118 +1654,118 @@ int shine_dalgarno_mm(unsigned char *seq, int pos, int start, double *rwt)
   }
 
   /* Find the maximally scoring motif */
-  max_val = 0;
+  max_bin = 0;
   for (i = limit; i >= 5; i--)
   {
     for (j = 0; j <= limit-i; j++)
     {
-      cur_ctr = -2.0;
-      mism = 0;
+      match_sum = -2.0;
+      mismatch = 0;
       for (k = j; k < j+i; k++)
       {
-        cur_ctr += match[k];
+        match_sum += match[k];
         if (match[k] < 0.0)
         {
-          mism++;
+          mismatch++;
         }
         if (match[k] < 0.0 && (k <= j+1 || k >= j+i-2))
         {
-          cur_ctr -= 10.0;
+          match_sum -= 10.0;
         }
       }
-      if (mism != 1)
+      if (mismatch != 1)
       {
         continue;
       }
-      rdis = start - (pos+j+i);
-      if (rdis < 5)
+      spacer = gene_start - (ups_start+j+i);
+      if (spacer < 5)
       {
-        dis_flag = 1;
+        spacer_bin = 1;
       }
-      else if (rdis > 10 && rdis <= 12)
+      else if (spacer > 10 && spacer <= 12)
       {
-        dis_flag = 2;
+        spacer_bin = 2;
       }
-      else if (rdis >= 13)
+      else if (spacer >= 13)
       {
-        dis_flag = 3;
+        spacer_bin = 3;
       }
       else
       {
-        dis_flag = 0;
+        spacer_bin = 0;
       }
-      if (rdis > 15 || cur_ctr < 6.0)
+      if (spacer > 15 || match_sum < 6.0)
       {
         continue;
       }
 
       /* Single-Mismatch RBS Motifs */
-      if (cur_ctr < 6.0)
+      if (match_sum < 6.0)
       {
-        cur_val = 0;
+        motif_bin = 0;
       }
-      else if (cur_ctr == 6.0 && dis_flag == 3)
+      else if (match_sum == 6.0 && spacer_bin == 3)
       {
-        cur_val = 2;
+        motif_bin = 2;
       }
-      else if (cur_ctr == 7.0 && dis_flag == 3)
+      else if (match_sum == 7.0 && spacer_bin == 3)
       {
-        cur_val = 2;
+        motif_bin = 2;
       }
-      else if (cur_ctr == 9.0 && dis_flag == 3)
+      else if (match_sum == 9.0 && spacer_bin == 3)
       {
-        cur_val = 3;
+        motif_bin = 3;
       }
-      else if (cur_ctr == 6.0 && dis_flag == 2)
+      else if (match_sum == 6.0 && spacer_bin == 2)
       {
-        cur_val = 4;
+        motif_bin = 4;
       }
-      else if (cur_ctr == 6.0 && dis_flag == 1)
+      else if (match_sum == 6.0 && spacer_bin == 1)
       {
-        cur_val = 5;
+        motif_bin = 5;
       }
-      else if (cur_ctr == 6.0 && dis_flag == 0)
+      else if (match_sum == 6.0 && spacer_bin == 0)
       {
-        cur_val = 9;
+        motif_bin = 9;
       }
-      else if (cur_ctr == 7.0 && dis_flag == 2)
+      else if (match_sum == 7.0 && spacer_bin == 2)
       {
-        cur_val = 7;
+        motif_bin = 7;
       }
-      else if (cur_ctr == 7.0 && dis_flag == 1)
+      else if (match_sum == 7.0 && spacer_bin == 1)
       {
-        cur_val = 8;
+        motif_bin = 8;
       }
-      else if (cur_ctr == 7.0 && dis_flag == 0)
+      else if (match_sum == 7.0 && spacer_bin == 0)
       {
-        cur_val = 14;
+        motif_bin = 14;
       }
-      else if (cur_ctr == 9.0 && dis_flag == 2)
+      else if (match_sum == 9.0 && spacer_bin == 2)
       {
-        cur_val = 17;
+        motif_bin = 17;
       }
-      else if (cur_ctr == 9.0 && dis_flag == 1)
+      else if (match_sum == 9.0 && spacer_bin == 1)
       {
-        cur_val = 18;
+        motif_bin = 18;
       }
-      else if (cur_ctr == 9.0 && dis_flag == 0)
+      else if (match_sum == 9.0 && spacer_bin == 0)
       {
-        cur_val = 19;
+        motif_bin = 19;
       }
 
-      if (rwt[cur_val] < rwt[max_val])
+      if (rbs_weight[motif_bin] < rbs_weight[max_bin])
       {
         continue;
       }
-      if (rwt[cur_val] == rwt[max_val] && cur_val < max_val)
+      if (rbs_weight[motif_bin] == rbs_weight[max_bin] && motif_bin < max_bin)
       {
         continue;
       }
-      max_val = cur_val;
+      max_bin = motif_bin;
     }
   }
 
-  return max_val;
+  return max_bin;
 }
 
 /* Zero out the sequence bitstrings for reuse */
@@ -1739,7 +1777,7 @@ void zero_sequence(unsigned char *seq, unsigned char *rseq,
   memset(useq, 0, (slen/8 + 1) * sizeof(unsigned char));
 }
 
-/* Returns the minimum of two numbers */
+/* Returns the minimum of two integers */
 int imin(int x, int y)
 {
   if (x < y)

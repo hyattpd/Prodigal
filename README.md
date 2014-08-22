@@ -35,6 +35,8 @@ $ make install
 $ prodigal --help
 ```
 
+  These options are described in the [Options Cheat Sheet](https://github.com/hyattpd/prodigal/wiki/cheat-sheet).
+
 ### Features
 
   * **Predicts protein-coding genes**: Prodigal provides fast, accurate protein-coding gene predictions in GFF3, Genbank, or Sequin table format.
@@ -49,7 +51,7 @@ $ prodigal --help
 
   * [Website](http://prodigal.ornl.gov/)
   * [Wiki Documentation](https://github.com/hyattpd/prodigal/wiki)
-  * [Options Cheat Sheet](https://github.com/hyattpd/prodigal/wiki#cheat-sheet)
+  * [Options Cheat Sheet](https://github.com/hyattpd/prodigal/wiki/cheat-sheet)
   * [Google Discussion Group](https://groups.google.com/group/prodigal-discuss)
 
 #### Contributors

@@ -31,9 +31,9 @@
 #define WINDOW 120
 #define MIN_SINGLE_GENOME 20000
 #define IDEAL_SINGLE_GENOME 100000
-#define IDEAL_AVG_CONTIG_LEN 1500
+#define MIN_CLOSED_CONTIG_LEN 20000
 
-int read_seq_training(FILE *, unsigned char *, unsigned char *, double *, int,
+int read_seq_training(FILE *, unsigned char *, unsigned char *, double *,
                       int *);
 int next_seq_multi(FILE *, unsigned char *, unsigned char *, int *, double *,
                    char *, char *);
@@ -80,7 +80,7 @@ void mer_text(char *, int, int);
 void calc_mer_bg(int, unsigned char *, unsigned char *, int, double *);
 
 int shine_dalgarno_exact(unsigned char *, int, int, double *);
-int shine_dalgarno_mm(unsigned char *, int, int, double *);
+int shine_dalgarno_mismatch(unsigned char *, int, int, double *);
 
 void zero_sequence(unsigned char *, unsigned char *, unsigned char *, int);
 
