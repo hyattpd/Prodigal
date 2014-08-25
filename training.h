@@ -30,8 +30,12 @@
 #include "sequence.h"
 #include "summary.h"
 
+#define SD_ITER 10
+#define NONSD_ITER 20
+#define MIN_TRAIN_GENE_SCORE 35.0
 #define MIN_AVG_TRAIN_GENE_LEN 600
 #define MIN_AVG_TRAIN_CTG_LEN 3000
+#define SMALL_TRAIN_SET_NODES 2000
 
 extern void log_text(int, char *);
 int write_training_file(char *, struct _training *);
@@ -58,9 +62,9 @@ void train_starts_nonsd(unsigned char *, unsigned char *, int, struct _node *,
 
 void count_upstream_composition(unsigned char *, int, int, int,
                                 struct _training *);
-void build_coverage_map(double [4][4][4096], int [4][4][4096], double);
-void update_motif_counts(double [4][4][4096], double *, unsigned char *,
-                         unsigned char *, int, struct _node *, int);
+void label_good_nonsd_motifs(double [4][4][4096], int [4][4][4096], double);
+void update_nonsd_motif_counts(double [4][4][4096], double *, unsigned char *,
+                               unsigned char *, int, struct _node *, int);
 
 void determine_sd_usage(struct _training *);
 
