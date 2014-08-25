@@ -37,6 +37,7 @@
 #define EDGE_BONUS 0.74
 #define EDGE_UPS -1.00
 #define META_PEN 7.5
+#define SSTRUCT_SIZE 24
 #define MODE_NORM 0
 #define MODE_TRN 1
 #define MODE_ANON 2

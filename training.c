@@ -259,7 +259,7 @@ void calc_dicodon_gene(struct _training *train_data, unsigned char *seq,
     if (in_gene == -1 && nodes[path].strand == -1 && nodes[path].type == STOP)
     {
       right = seq_length-nodes[path].index+1;
-      for (i = left; i < right-5; i+=3)
+      for (i = left + SSTRUCT_SIZE; i < right-5; i+=3)
       {
         counts[mer_index(6, rseq, i)]++;
         total++;
@@ -269,7 +269,7 @@ void calc_dicodon_gene(struct _training *train_data, unsigned char *seq,
     if (in_gene == 1 && nodes[path].strand == 1 && nodes[path].type == START)
     {
       left = nodes[path].index;
-      for (i = left; i < right-5; i+=3)
+      for (i = left + SSTRUCT_SIZE; i < right-5; i+=3)
       {
         counts[mer_index(6, seq, i)]++;
         total++;
@@ -369,48 +369,14 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
   double rreal[28] = {0};  /* RBS foreground - i.e. only real genes */
   double tbg[3] = {0};     /* Type background - i.e. all nodes */
   double treal[3] = {0};   /* Type foreground - i.e. only real genes */
+  double pcbg[48][4][4] = {{{0}}};  /* Pair composition background */
   double score_thresh = MIN_TRAIN_GENE_SCORE;  
                            /* Minimum score for genes to be "real" */
 
   wt = train_data->start_weight;
-  for (j = 0; j < 3; j++)
-  {
-    train_data->type_wt[j] = 0.0;
-  }
-  for (j = 0; j < 28; j++)
-  {
-    train_data->rbs_wt[j] = 0.0;
-  }
-  for (i = 0; i < 32; i++)
-  {
-    for (j = 0; j < 4; j++)
-    {
-      train_data->ups_comp[i][j] = 0.0;
-    }
-  }
-
-  /* Build the background of random types */
-  for (i = 0; i < 3; i++)
-  {
-    tbg[i] = 0.0;
-  }
-  for (i = 0; i < num_nodes; i++)
-  {
-    if (nodes[i].type == STOP)
-    {
-      continue;
-    }
-    tbg[nodes[i].subtype] += 1.0;
-  }
-  denom = 0.0;
-  for (i = 0; i < 3; i++)
-  {
-    denom += tbg[i];
-  }
-  for (i = 0; i < 3; i++)
-  {
-    tbg[i] /= denom;
-  }
+  zero_start_weights(train_data, 0);
+  calc_type_background(nodes, num_nodes, tbg);
+  calc_pair_comp_background(seq, rseq, seq_length, nodes, num_nodes, pcbg);
 
   /* Iterate SD_ITER times through the list of nodes                    */
   /* Converge upon optimal weights for ATG vs GTG vs TTG and RBS motifs */
@@ -494,6 +460,9 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
             count_upstream_composition(seq, seq_length, 1,
                                        nodes[best_index[frame]].index,
                                        train_data);
+            count_pair_composition(seq, seq_length, 1,
+                                   nodes[best_index[frame]].index,
+                                   train_data->pair_comp);
           }
         }
         best_score[frame] = 0.0;
@@ -556,6 +525,9 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
           {
             count_upstream_composition(rseq, seq_length, -1,
                                        nodes[best_index[frame]].index, train_data);
+            count_pair_composition(rseq, seq_length, -1,
+                                   nodes[best_index[frame]].index,
+                                   train_data->pair_comp);
           }
         }
         best_score[frame] = 0.0;
@@ -766,6 +738,7 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
   double best_score[3] = {0};    /* Best scoring node in each frame */
   double tbg[3] = {0};     /* Type background - i.e. all nodes */
   double treal[3] = {0};   /* Type foreground - i.e. only real genes */
+  double pcbg[48][4][4] = {{{0}}};  /* Pair composition background */
   double zbg = 0.0;        /* Background for zero motif */
   double zreal = 0.0;      /* Zero motif weight for real genes */
   double ngenes = 0.0;     /* Gene counter, double in case of weighting */
@@ -773,40 +746,9 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
                            /* Minimum score for genes to be "real" */
 
   wt = train_data->start_weight;
-  for (i = 0; i < 32; i++)
-  {
-    for (j = 0; j < 4; j++)
-    {
-      train_data->ups_comp[i][j] = 0.0;
-    }
-  }
-
-  /* Build the background of random types */
-  for (i = 0; i < 3; i++)
-  {
-    train_data->type_wt[i] = 0.0;
-  }
-  for (i = 0; i < 3; i++)
-  {
-    tbg[i] = 0.0;
-  }
-  for (i = 0; i < num_nodes; i++)
-  {
-    if (nodes[i].type == STOP)
-    {
-      continue;
-    }
-    tbg[nodes[i].subtype] += 1.0;
-  }
-  denom = 0.0;
-  for (i = 0; i < 3; i++)
-  {
-    denom += tbg[i];
-  }
-  for (i = 0; i < 3; i++)
-  {
-    tbg[i] /= denom;
-  }
+  zero_start_weights(train_data, 1);
+  calc_type_background(nodes, num_nodes, tbg);
+  calc_pair_comp_background(seq, rseq, seq_length, nodes, num_nodes, pcbg);
 
   /* Iterate NONSD_ITER times through the list of nodes                 */
   /* Converge upon optimal weights for ATG vs GTG vs TTG and RBS motifs */
@@ -919,6 +861,9 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
           {
             count_upstream_composition(seq, seq_length, 1,
                                        nodes[best_index[fr]].index, train_data);
+            count_pair_composition(seq, seq_length, 1,
+                                   nodes[best_index[fr]].index,
+                                   train_data->pair_comp);
           }
         }
         best_score[fr] = 0.0;
@@ -962,6 +907,9 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
           {
             count_upstream_composition(rseq, seq_length, -1,
                                        nodes[best_index[fr]].index, train_data);
+            count_pair_composition(rseq, seq_length, -1,
+                                   nodes[best_index[fr]].index,
+                                   train_data->pair_comp);
           }
         }
         best_score[fr] = 0.0;
@@ -1177,6 +1125,64 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
 }
 
 /******************************************************************************
+  For a given start, record the base composition of the 24 bases downstream
+  and upstream of the start site, as well as the bases they could potentially
+  pair with to produce secondary structure.  Returns a 1 on success, 0 on
+  failure (return value is meant to be used as a count if succeeded).
+******************************************************************************/
+int count_pair_composition(unsigned char *seq, int seq_length, int strand,
+                           int pos, double pcdata[48][4][4])
+{
+  int i = 0;
+  int j = 0;
+  int start = 0;
+  int count[4] = {0};         /* Simple count of A, C, T, G */
+  int index = 0;              /* Index to hold mer index of base */
+  int prohibit = 0;           /* Index of pairs that can't bond */
+
+  if (strand == 1)
+  {
+    start = pos;
+  }
+  else
+  {
+    start = seq_length-1-pos;
+  }
+
+  if (start - SSTRUCT_SIZE < 0 || start + SSTRUCT_SIZE > seq_length)
+  {
+    return 0;
+  }
+
+  /* Gather simple count of ACTG in total window */
+  for (i = -SSTRUCT_SIZE; i < SSTRUCT_SIZE; i++)
+  {
+    count[mer_index(1, seq, start+i)]++;
+  }
+
+  /* Now do the pair count */
+  for (i = -SSTRUCT_SIZE; i < SSTRUCT_SIZE; i++)
+  {
+    index = mer_index(1, seq, start+i);
+    for (j = 0; j < 4; j++)
+    {
+      pcdata[i+SSTRUCT_SIZE][index][j] += count[j];
+    }
+    for (j = -3; j < 3; j++)
+    {
+      if (i + j < -SSTRUCT_SIZE || i + j >= SSTRUCT_SIZE)
+      {
+        continue;
+      }
+      prohibit = mer_index(1, seq, start+i+j);
+      pcdata[i+SSTRUCT_SIZE][index][prohibit]--;
+    }
+  }
+
+  return 1;
+}
+
+/******************************************************************************
   For a given start, record the base composition of the upstream region at
   positions -1 and -2 and -15 to -44.  This will be used to supplement the
   SD (or other) motif finder with additional information.
@@ -1194,6 +1200,11 @@ void count_upstream_composition(unsigned char *seq, int seq_length, int strand,
   else
   {
     start = seq_length-1-pos;
+  }
+
+  if (start - 45 < 0)
+  {
+    return;
   }
 
   /* At this stage, ups_comp just stores simple counts at each position */
@@ -1461,5 +1472,137 @@ void determine_sd_usage(struct _training *train_data)
       train_data->rbs_wt[27] < 2.0)))
   {
     train_data->uses_sd = 0;
+  }
+}
+
+/* Zero out start weights, 'which' is SD vs. nonSD */
+void zero_start_weights(struct _training *train_data, int which)
+{
+  int i = 0;
+  int j = 0;
+  int k = 0;
+
+  for (i = 0; j < 3; j++)
+  {
+    train_data->type_wt[j] = 0.0;
+  }
+  for (i = 0; i < 48; i++)
+  {
+    for (j = 0; j < 4; j++)
+    {
+      for (k = 0; k < 4; k++)
+      {
+        train_data->pair_comp[i][j][k] = 0.0;
+      }
+    }
+  }
+
+  if (which == 0)
+  {
+    for (i = 0; i < 28; i++)
+    {
+      train_data->rbs_wt[j] = 0.0;
+    }
+  }
+  else if (which == 1)
+  {
+    train_data->no_mot = 0.0;
+    for (i = 0; i < 4; i++)
+    {
+      for (j = 0; j < 4; j++)
+      {
+        for (k = 0; k < 4096; k++)
+        {
+          train_data->mot_wt[i][j][k] = 0.0;
+        }
+      }   
+    }
+  }
+}
+
+/* Calculate ATG/GTG/TTG for every single node and build background */
+void calc_type_background(struct _node *nodes, int num_nodes, double *tbg)
+{
+  int i = 0;
+  int denom = 0;
+
+  /* Build the background of random types */
+  for (i = 0; i < num_nodes; i++)
+  {
+    if (nodes[i].type == STOP)
+    {
+      continue;
+    }
+    tbg[nodes[i].subtype] += 1.0;
+  }
+  denom = 0.0;
+  for (i = 0; i < 3; i++)
+  {
+    denom += tbg[i];
+  }
+  for (i = 0; i < 3; i++)
+  {
+    tbg[i] /= denom;
+  }
+}
+
+/* Calculate the pair composition background */
+void calc_pair_comp_background(unsigned char *seq, unsigned char *rseq,
+                               int seq_length, struct _node *nodes,
+                               int num_nodes, double pcbg[48][4][4])
+{
+  int i = 0;
+  int j = 0;
+  int k = 0;
+  double denom = 0;
+
+  /* Build the background of pair composition */
+  for (i = 0; i < num_nodes; i++)
+  {
+    if (nodes[i].type == STOP)
+    {
+      continue;
+    }
+    if (nodes[i].strand == 1)
+    {
+      denom += (double)count_pair_composition(seq, seq_length, 1,
+                                              nodes[i].index, pcbg);
+    }
+    else if (nodes[i].strand == -1)
+    {
+      denom += (double)count_pair_composition(rseq, seq_length, -1,
+                                              nodes[i].index, pcbg);
+    }
+  }
+
+  for (i = 0; i < 48; i++)
+  {
+    for (j = 0; j < 4; j++)
+    {
+      for (k = 0; k < 4; k++)
+      {
+        pcbg[i][j][k] /= denom;
+      }
+    }
+  }
+
+  for (i = 0; i < 48; i++)
+  {
+    denom = 0.0;
+    for (j = 0; j < 4; j++)
+    {
+      for (k = 0; k < 4; k++)
+      {
+        denom += pcbg[i][j][k];
+      }
+    }
+    for (j = 0; j < 4; j++)
+    {
+      for (k = 0; k < 4; k++)
+      {
+        pcbg[i][j][k] /= denom;
+/*        printf("%d\t%d\t%d\t%.6f\n", i, j, k, pcbg[i][j][k]); */
+      }
+    }
   }
 }

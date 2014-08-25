@@ -74,10 +74,6 @@ struct _training
   double type_wt[3];           /* Weights for ATG vs GTG vs TTG */
   int uses_sd;                 /* 0 = doesn't use SD motif, 1 = it does */
   double rbs_wt[28];           /* Set of weights for RBS scores */
-  double ups_comp[32][4];      /* Base composition weights for non-RBS-distance
-                                  motifs.  0-1 are the -1/-2 position, 2-31 are
-                                  the -15 to -44 positions.  Second array is
-                                  the base A,C,T,G,etc. */
   double mot_wt[4][4][4096];   /* Weights for upstream motifs.  First index is
                                   the motif length (3-6), the second is the
                                   spacer distance (0 = 5-10bp, 1 = 3-4bp, 2 =
@@ -87,6 +83,11 @@ struct _training
                                   motifs) */
   double no_mot;               /* Weight for the case of no motif */
   double gene_dc[4096];        /* Coding statistics for the genome */
+  double pair_comp[48][4][4];  /* Pair composition (sec structure) stats */
+  double ups_comp[32][4];      /* Base composition weights for non-RBS-distance
+                                  motifs.  0-1 are the -1/-2 position, 2-31 are
+                                  the -15 to -44 positions.  Second array is
+                                  the base A,C,T,G,etc. */
 };
 
 /* Struct for genes, with start/stop and link to node structure */

@@ -868,14 +868,14 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
     frame = (nodes[i].index)%3;
     if (nodes[i].strand == 1 && nodes[i].type == STOP)
     {
-      last[frame] = nodes[i].index;
+      last[frame] = nodes[i].index - SSTRUCT_SIZE;
       score[frame] = 0.0;
     }
     else if (nodes[i].strand == 1)
     {
       for (j = last[frame]-3; j >= nodes[i].index; j-=3)
       {
-        score[frame] += hex_probs[mer_index(6, seq, j)];
+        score[frame] += hex_probs[mer_index(6, seq, j + SSTRUCT_SIZE)];
       }
       nodes[i].cscore = score[frame];
       last[frame] = nodes[i].index;
@@ -890,14 +890,15 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
     frame = (nodes[i].index)%3;
     if (nodes[i].strand == -1 && nodes[i].type == STOP)
     {
-      last[frame] = nodes[i].index;
+      last[frame] = nodes[i].index + SSTRUCT_SIZE;
       score[frame] = 0.0;
     }
     else if (nodes[i].strand == -1)
     {
       for (j = last[frame]+3; j <= nodes[i].index; j+=3)
       {
-        score[frame] += hex_probs[mer_index(6, rseq, seq_length-j-1)];
+        score[frame] +=
+          hex_probs[mer_index(6, rseq, seq_length - j + SSTRUCT_SIZE - 1)];
       }
       nodes[i].cscore = score[frame];
       last[frame] = nodes[i].index;

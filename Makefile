@@ -21,7 +21,7 @@
 SHELL   = /bin/sh
 CC      = gcc
 
-CFLAGS  = -pedantic -Wall -Wextra -O2
+CFLAGS  = -pedantic -Wall -O2
 LFLAGS = -lm
 
 TARGET  = prodigal
@@ -37,6 +37,7 @@ $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS)
 
 %.o: %.c $(HEADERS)
+# %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 install: $(TARGET)
@@ -44,7 +45,7 @@ install: $(TARGET)
 	install -m 0755 $(TARGET) $(INSTALLDIR)
  
 uninstall:
-	-rm $(BINDIR)/$(TARGET)
+	-rm $(INSTALLDIR)/$(TARGET)
 
 clean:
 	-rm -f $(OBJECTS)

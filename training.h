@@ -60,6 +60,7 @@ void train_starts_sd(unsigned char *, unsigned char *, int, struct _node *,
 void train_starts_nonsd(unsigned char *, unsigned char *, int, struct _node *,
                         int, struct _training *);
 
+int count_pair_composition(unsigned char *, int, int, int, double [48][4][4]);
 void count_upstream_composition(unsigned char *, int, int, int,
                                 struct _training *);
 void label_good_nonsd_motifs(double [4][4][4096], int [4][4][4096], double);
@@ -67,5 +68,9 @@ void update_nonsd_motif_counts(double [4][4][4096], double *, unsigned char *,
                                unsigned char *, int, struct _node *, int);
 
 void determine_sd_usage(struct _training *);
+void zero_start_weights(struct _training *, int);
+void calc_type_background(struct _node *, int, double *);
+void calc_pair_comp_background(unsigned char *, unsigned char *, int,
+                               struct _node *, int, double [48][4][4]);
 
 #endif
