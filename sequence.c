@@ -1174,6 +1174,58 @@ char amino_letter(int num)
   return 'X';
 }
 
+/* Assign the appropriate start value to this node */
+int assign_start_value(unsigned char *seq, int n)
+{
+  if (is_atg(seq, n) == 1)
+  {
+    return ATG;
+  }
+  else if (is_gtg(seq, n) == 1)
+  {
+    return GTG;
+  }
+  else if (is_ttg(seq, n) == 1)
+  {
+    return TTG;
+  }
+  else
+  {
+    return NONST;
+  }
+}
+
+/* Assign the appropriate stop value to this node */
+int assign_stop_value(unsigned char *seq, int n)
+{
+  if (is_taa(seq, n) == 1)
+  {
+    return TAA;
+  }
+  else if (is_tag(seq, n) == 1)
+  {
+    return TAG;
+  }
+  else if (is_tga(seq, n) == 1)
+  {
+    return TGA;
+  }
+  else
+  {
+    return NONST;
+  }
+}
+
+/* Assign the appropriate dimer value to this node */
+int assign_dimer_value(unsigned char *seq, int n)
+{
+  if (n < 2)
+  {
+    return 0;
+  }
+  return (mer_index(2, seq, n-2) + 1);
+}
+
 /* Returns the corresponding frame on the reverse strand */
 int rev_frame(int frame, int seq_len)
 {
@@ -1378,6 +1430,59 @@ void calc_mer_background(int len, unsigned char *seq, unsigned char *rseq,
     background[i] = (double)((counts[i]*1.0)/(sum*1.0));
   }
   free(counts);
+}
+
+/******************************************************************************
+  For a given start, record the base composition of the 24 bases downstream
+  and upstream of the start site, as well as the bases they could potentially
+  pair with to produce secondary structure.  Only adds counts to passed-in
+  array, doesn't set to 0 to start with, so initialize to 0 ahead of time if
+  want a count for just one node.
+******************************************************************************/
+void count_pair_composition(unsigned char *seq, int seq_length, int strand,
+                            int pos, double *pcdata)
+{
+  int i = 0;
+  int j = 0;
+  int start = 0;              /* Start site position */
+  int index1 = 0;             /* Index counters */
+  int index2 = 0;
+  int counter = 0;            /* Counter */
+  int ndx_map[4][4] = {{0}};  /* Map 16 bases to 10 */
+
+  if (strand == 1)
+  {
+    start = pos;
+  }
+  else
+  {
+    start = seq_length-1-pos;
+  }
+  if (start - SSTRUCT_SIZE < 0 || start + SSTRUCT_SIZE > seq_length)
+  {
+    return;
+  }
+
+  for (i = 0; i < 4; i++)
+  {
+    for (j = i; j < 4; j++)
+    {
+      ndx_map[i][j] = counter;
+      ndx_map[j][i] = counter;
+      counter++;
+    }
+  }
+
+  /* Gather simple count of ACTG in total window */
+  for (i = start-SSTRUCT_SIZE; i < start+SSTRUCT_SIZE-4; i++)
+  {
+    index1 = mer_index(1, seq, i);
+    for (j = i+4; j < start+SSTRUCT_SIZE; j++)
+    {
+      index2 = mer_index(1, seq, j);
+      pcdata[ndx_map[index1][index2]]++;
+    } 
+  }
 }
 
 /******************************************************************************
@@ -1781,6 +1886,36 @@ void zero_sequence(unsigned char *seq, unsigned char *rseq,
 int imin(int x, int y)
 {
   if (x < y)
+  {
+    return x;
+  }
+  return y;
+}
+
+/* Returns the maximum of two integers */
+int imax(int x, int y)
+{
+  if (x > y)
+  {
+    return x;
+  }
+  return y;
+}
+
+/* Return the minimum of two numbers */
+double dmin(double x, double y)
+{
+  if (x < y)
+  {
+    return x;
+  }
+  return y;
+}
+
+/* Return the maximum of two numbers */
+double dmax(double x, double y)
+{
+  if (x > y)
   {
     return x;
   }

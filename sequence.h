@@ -32,6 +32,18 @@
 #define MIN_SINGLE_GENOME 20000
 #define IDEAL_SINGLE_GENOME 100000
 #define MIN_CLOSED_CONTIG_LEN 20000
+#define SSTRUCT_SIZE 24
+
+#define START 0
+#define STOP 1
+#define ATG 0
+#define GTG 1
+#define TTG 2
+#define TAA 0
+#define TAG 1
+#define TGA 2
+#define NONST 3   /* Nonstandard start or stop*/
+#define EDGE 4    /* Edge start or stop */
 
 int read_seq_training(FILE *, unsigned char *, unsigned char *, double *,
                       int *);
@@ -70,14 +82,19 @@ char amino(unsigned char *, int, int, int);
 int amino_num(char);
 char amino_letter(int);
 
+int assign_start_value(unsigned char *seq, int);
+int assign_dimer_value(unsigned char *seq, int);
+int assign_stop_value(unsigned char *seq, int);
+
 int rframe(int, int);
 int max_frame(int, int, int);
-
 int *calc_most_gc_frame(unsigned char *, int);
 
 int mer_index(int, unsigned char *, int);
 void mer_text(char *, int, int);
 void calc_mer_background(int, unsigned char *, unsigned char *, int, double *);
+
+void count_pair_composition(unsigned char *, int, int, int, double *);
 
 int shine_dalgarno_exact(unsigned char *, int, int, double *);
 int shine_dalgarno_mismatch(unsigned char *, int, int, double *);
@@ -85,5 +102,8 @@ int shine_dalgarno_mismatch(unsigned char *, int, int, double *);
 void zero_sequence(unsigned char *, unsigned char *, unsigned char *, int);
 
 int imin(int, int);
+int imax(int, int);
+double dmin(double, double);
+double dmax(double, double);
 
 #endif

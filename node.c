@@ -120,6 +120,9 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
       nodes[num_nodes].index = i;
       nodes[num_nodes].type = START;
       nodes[num_nodes].subtype = assign_start_value(seq, i);
+      nodes[num_nodes].dimer = assign_dimer_value(seq, i);
+      count_pair_composition(seq, seq_length, 1, i, nodes[num_nodes].pairs);
+      normalize_array(nodes[num_nodes].pairs, 10);
       saw_start[i%3] = 1;
       nodes[num_nodes].stop_val = last_stop[i%3];
       nodes[num_nodes++].strand = 1;
@@ -240,6 +243,10 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
       nodes[num_nodes].index = seq_length-i-1;
       nodes[num_nodes].type = START;
       nodes[num_nodes].subtype = assign_start_value(rseq, i);
+      nodes[num_nodes].dimer = assign_dimer_value(rseq, i);
+      count_pair_composition(rseq, seq_length, -1, seq_length-i-1,
+                             nodes[num_nodes].pairs);
+      normalize_array(nodes[num_nodes].pairs, 10);
       saw_start[i%3] = 1;
       nodes[num_nodes].stop_val = seq_length-last_stop[i%3]-1;
       nodes[num_nodes++].strand = -1;
@@ -601,9 +608,10 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
     else
     {
 
-      /* Type Score */
+      /* Start Sequence Score: Upstream Dimer plus Codon */
       nodes[i].tscore = train_data->type_wt[nodes[i].subtype] *
                         train_data->start_weight;
+      nodes[i].tscore += 2 * train_data->dimer_wt[nodes[i].dimer];
 
       /* RBS Motif Score */
       rbs_exact = train_data->rbs_wt[nodes[i].rbs[0]];
@@ -622,19 +630,16 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
         }
       }
 
-      /* Upstream Score */
-      if (nodes[i].strand == 1)
+      /* Secondary Structure Score */
+      for (j = 0; j < 10; j++)
       {
-        score_upstream_composition(seq, seq_length, &nodes[i], train_data);
-      }
-      else
-      {
-        score_upstream_composition(rseq, seq_length, &nodes[i], train_data);
+        nodes[i].uscore += 4 * (SSTRUCT_SIZE - 6) * train_data->pair_wt[j] * nodes[i].pairs[j];
+/* printf("node %d, pair %d, adding %.4f pairs with %.4f weight, new score %.4f\n", i, j, nodes[i].pairs[j], train_data->pair_wt[j], nodes[i].uscore); */
       }
 
       /****************************************************************
       ** Penalize upstream score if choosing this start would stop   **
-      ** the gene from runum_nodesing off the edge.                         **
+      ** the gene from running off the edge.                         **
       ****************************************************************/
       if (closed == 0 && nodes[i].index <= 2 && nodes[i].strand == 1)
       {
@@ -868,14 +873,14 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
     frame = (nodes[i].index)%3;
     if (nodes[i].strand == 1 && nodes[i].type == STOP)
     {
-      last[frame] = nodes[i].index - SSTRUCT_SIZE;
+      last[frame] = nodes[i].index - COD_SKIP;
       score[frame] = 0.0;
     }
     else if (nodes[i].strand == 1)
     {
       for (j = last[frame]-3; j >= nodes[i].index; j-=3)
       {
-        score[frame] += hex_probs[mer_index(6, seq, j + SSTRUCT_SIZE)];
+        score[frame] += hex_probs[mer_index(6, seq, j + COD_SKIP)];
       }
       nodes[i].cscore = score[frame];
       last[frame] = nodes[i].index;
@@ -890,7 +895,7 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
     frame = (nodes[i].index)%3;
     if (nodes[i].strand == -1 && nodes[i].type == STOP)
     {
-      last[frame] = nodes[i].index + SSTRUCT_SIZE;
+      last[frame] = nodes[i].index + COD_SKIP;
       score[frame] = 0.0;
     }
     else if (nodes[i].strand == -1)
@@ -898,7 +903,7 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
       for (j = last[frame]+3; j <= nodes[i].index; j+=3)
       {
         score[frame] +=
-          hex_probs[mer_index(6, rseq, seq_length - j + SSTRUCT_SIZE - 1)];
+          hex_probs[mer_index(6, rseq, seq_length - j - 1 + COD_SKIP)];
       }
       nodes[i].cscore = score[frame];
       last[frame] = nodes[i].index;
@@ -1099,45 +1104,6 @@ void sd_rbs_score(unsigned char *seq, unsigned char *rseq, int seq_length,
 }
 
 /******************************************************************************
-  For a given start, score the base composition of the upstream region at
-  positions -1 and -2 and -15 to -44.  This will be used to supplement the
-  SD (or other) motif finder with additional information.
-******************************************************************************/
-void score_upstream_composition(unsigned char *seq, int seq_length,
-                                struct _node *nodes,
-                                struct _training *train_data)
-{
-  int i = 0;
-  int start = 0;       /* Forward strand index to begin search at */
-  int count = 0;
-
-  if (nodes->strand == 1)
-  {
-    start = nodes->index;
-  }
-  else
-  {
-    start = seq_length - 1 - nodes->index;
-  }
-
-  nodes->uscore = 0.0;
-  for (i = 1; i < 45; i++)
-  {
-    if (i > 2 && i < 15)
-    {
-      continue;
-    }
-    if (start - i < 0)
-    {
-      continue;
-    }
-    nodes->uscore += 0.4 * train_data->start_weight *
-                   train_data->ups_comp[count][mer_index(1, seq, start-i)];
-    count++;
-  }
-}
-
-/******************************************************************************
   Given the weights for various motifs/distances from the training file,
   return the highest scoring mer/spacer combination of 3-6bp motifs with a
   spacer ranging from 3bp to 15bp.  In the final stage of start training, only
@@ -1236,6 +1202,25 @@ void find_best_nonsd_motif(struct _training *train_data, unsigned char *seq,
   }
 }
 
+/* Return rbs value for a node */
+int get_rbs_value(struct _node *n1, double *rbs_wt)
+{
+  if (rbs_wt[n1->rbs[0]] > rbs_wt[n1->rbs[1]] + 1.0 ||
+      n1->rbs[1] == 0)
+  {
+    return n1->rbs[0];
+  }
+  else if (rbs_wt[n1->rbs[0]] < rbs_wt[n1->rbs[1]] - 1.0 ||
+           n1->rbs[0] == 0)
+  {
+    return n1->rbs[1];
+  }
+  else
+  {
+    return (int)dmax(n1->rbs[0], n1->rbs[1]);
+  }
+}
+
 /******************************************************************************
   When connecting two genes, we add a bonus for the -1 and -4 base overlaps on
   the same strand, which often signify an operon and negate the need for an
@@ -1289,70 +1274,6 @@ double intergenic_mod(struct _node *n1, struct _node *n2, double start_weight)
     ret_val += (2.0 - (double)(dist)/OPER_DIST) * 0.15 * start_weight;
   }
   return ret_val;
-}
-
-/* Assign the appropriate start value to this node */
-int assign_start_value(unsigned char *seq, int n)
-{
-  if (is_atg(seq, n) == 1)
-  {
-    return ATG;
-  }
-  else if (is_gtg(seq, n) == 1)
-  {
-    return GTG;
-  }
-  else if (is_ttg(seq, n) == 1)
-  {
-    return TTG;
-  }
-  else
-  {
-    return NONST;
-  }
-}
-
-/* Assign the appropriate stop value to this node */
-int assign_stop_value(unsigned char *seq, int n)
-{
-  if (is_taa(seq, n) == 1)
-  {
-    return TAA;
-  }
-  else if (is_tag(seq, n) == 1)
-  {
-    return TAG;
-  }
-  else if (is_tga(seq, n) == 1)
-  {
-    return TGA;
-  }
-  else
-  {
-    return NONST;
-  }
-}
-
-/* Return the minimum of two numbers */
-
-double dmin(double x, double y)
-{
-  if (x < y)
-  {
-    return x;
-  }
-  return y;
-}
-
-/* Return the maximum of two numbers */
-
-double dmax(double x, double y)
-{
-  if (x > y)
-  {
-    return x;
-  }
-  return y;
 }
 
 /* Default sorting routine for nodes */

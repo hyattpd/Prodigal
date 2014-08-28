@@ -139,7 +139,8 @@ void adjust_starts(struct _gene *genes, int num_genes, struct _node *nodes,
 
       /* Start of less common type but with better coding, rbs, and */
       /* upstream.  Must be 18 or more bases away from original.    */
-      if (nodes[tmp_index].tscore < nodes[index].tscore && max_score[j] -
+      if (nodes[tmp_index].subtype != nodes[index].subtype &&
+          nodes[tmp_index].tscore < nodes[index].tscore && max_score[j] -
           nodes[tmp_index].tscore >= score-nodes[index].tscore +
           start_weight && nodes[tmp_index].rscore > nodes[index].rscore &&
           nodes[tmp_index].uscore > nodes[index].uscore &&
@@ -159,10 +160,6 @@ void adjust_starts(struct _gene *genes, int num_genes, struct _node *nodes,
         if (nodes[index].cscore > nodes[tmp_index].cscore)
         {
           max_score[j] += nodes[index].cscore - nodes[tmp_index].cscore;
-        }
-        if (nodes[index].uscore > nodes[tmp_index].uscore)
-        {
-          max_score[j] += nodes[index].uscore - nodes[tmp_index].uscore;
         }
         if (ig_mod > max_ig_mod[j])
         {

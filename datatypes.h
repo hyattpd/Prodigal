@@ -45,6 +45,8 @@ struct _node
   int start_ptr[3];    /* Array of starts w/in MAX_SAM_OVLP bases of stop in 3
                           frames */
   int gc_bias;         /* Frame of highest GC content within this node */
+  int dimer;           /* Value of the dimer right before start */
+  double pairs[10];    /* Counts of the pairs in 48 bases around start */
   double gc_score[3];  /* % GC content in different codon positions */
   double cscore;       /* Coding score for this node (based on 6-mer usage) */
   double gc_cont;      /* GC Content for the node */
@@ -72,6 +74,7 @@ struct _training
   double start_weight;         /* Start weight */
   double bias[3];              /* GC frame bias for each of the 3 positions */
   double type_wt[3];           /* Weights for ATG vs GTG vs TTG */
+  double stop_wt[3];           /* Weights for TAA vs TGA vs TAG */
   int uses_sd;                 /* 0 = doesn't use SD motif, 1 = it does */
   double rbs_wt[28];           /* Set of weights for RBS scores */
   double mot_wt[4][4][4096];   /* Weights for upstream motifs.  First index is
@@ -83,11 +86,8 @@ struct _training
                                   motifs) */
   double no_mot;               /* Weight for the case of no motif */
   double gene_dc[4096];        /* Coding statistics for the genome */
-  double pair_comp[48][4][4];  /* Pair composition (sec structure) stats */
-  double ups_comp[32][4];      /* Base composition weights for non-RBS-distance
-                                  motifs.  0-1 are the -1/-2 position, 2-31 are
-                                  the -15 to -44 positions.  Second array is
-                                  the base A,C,T,G,etc. */
+  double pair_wt[10];          /* Pair composition (sec structure) stats */
+  double dimer_wt[17];         /* Weights for the dimer next to the start */
 };
 
 /* Struct for genes, with start/stop and link to node structure */

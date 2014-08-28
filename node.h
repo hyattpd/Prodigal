@@ -27,6 +27,7 @@
 #include <math.h>
 #include "datatypes.h"
 #include "sequence.h"
+#include "training.h"
 
 #define STT_NOD 100000
 #define MIN_GENE 90
@@ -37,22 +38,9 @@
 #define EDGE_BONUS 0.74
 #define EDGE_UPS -1.00
 #define META_PEN 7.5
-#define SSTRUCT_SIZE 24
 #define MODE_NORM 0
 #define MODE_TRN 1
 #define MODE_ANON 2
-
-/* Node Types: We use 0 to 9 as starts and 10 to 19 for stops */
-#define START 0
-#define STOP 1
-#define ATG 0
-#define GTG 1
-#define TTG 2
-#define TAA 0
-#define TAG 1
-#define TGA 2
-#define NONST 3   /* Nonstandard start or stop*/
-#define EDGE 4    /* Edge start or stop */
 
 int add_nodes(unsigned char *, unsigned char *, unsigned char *, int,
               struct _node *, int, int, int);
@@ -75,15 +63,9 @@ void sd_rbs_score(unsigned char *, unsigned char *, int, struct _node *, int,
 
 void find_best_nonsd_motif(struct _training *, unsigned char *, unsigned
                            char *, int, struct _node *, int);
-void score_upstream_composition(unsigned char *, int, struct _node *,
-                                struct _training *);
 
 double intergenic_mod(struct _node *, struct _node *, double);
 
-int assign_start_value(unsigned char *seq, int);
-int assign_stop_value(unsigned char *seq, int);
-
-double dmax(double, double);
-double dmin(double, double);
+int get_rbs_value(struct _node *, double *);
 
 #endif
