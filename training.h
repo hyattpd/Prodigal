@@ -30,7 +30,7 @@
 #include "sequence.h"
 #include "summary.h"
 
-#define COD_SKIP 24
+#define COD_SKIP 0
 #define SD_ITER 10
 #define NONSD_ITER 20
 #define MIN_TRAIN_GENE_SCORE 35.0
@@ -68,8 +68,7 @@ void update_nonsd_motif_counts(double [4][4][4096], double *, unsigned char *,
 void determine_sd_usage(struct _training *);
 void zero_start_weights(struct _training *, int);
 void calc_type_background(struct _node *, int, double *);
-void calc_dimer_background(struct _node *, int, double *);
-void calc_pair_comp_background(struct _node *, int, double *);
+void calc_upstream_background(struct _node *, int, double [32][4]);
 void calc_sd_rbs_background(struct _node *, int, double *, double *);
 
 void normalize_array(double *, int);

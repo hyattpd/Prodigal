@@ -83,7 +83,6 @@ int amino_num(char);
 char amino_letter(int);
 
 int assign_start_value(unsigned char *seq, int);
-int assign_dimer_value(unsigned char *seq, int);
 int assign_stop_value(unsigned char *seq, int);
 
 int rframe(int, int);
@@ -94,7 +93,7 @@ int mer_index(int, unsigned char *, int);
 void mer_text(char *, int, int);
 void calc_mer_background(int, unsigned char *, unsigned char *, int, double *);
 
-void count_pair_composition(unsigned char *, int, int, int, double *);
+void count_upstream_composition(unsigned char *, int, int, int, int *);
 
 int shine_dalgarno_exact(unsigned char *, int, int, double *);
 int shine_dalgarno_mismatch(unsigned char *, int, int, double *);

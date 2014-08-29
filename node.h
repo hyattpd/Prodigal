@@ -27,7 +27,6 @@
 #include <math.h>
 #include "datatypes.h"
 #include "sequence.h"
-#include "training.h"
 
 #define STT_NOD 100000
 #define MIN_GENE 90
@@ -47,8 +46,6 @@ int add_nodes(unsigned char *, unsigned char *, unsigned char *, int,
 void zero_nodes(struct _node *, int);
 void check_node_allocation(struct _node **, int);
 void reset_node_scores(struct _node *, int);
-int compare_nodes(const void *, const void *);
-int stopcmp_nodes(const void *, const void *);
 
 void record_overlapping_starts(struct _node *, int, double, int);
 void frame_score(int *, struct _node *, int);
@@ -58,14 +55,23 @@ void score_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
 void calc_coding_score(unsigned char *, unsigned char *, int, struct _node *,
                        int, int, double, double *);
 void calc_orf_gc(unsigned char *, struct _node *, int);
-void sd_rbs_score(unsigned char *, unsigned char *, int, struct _node *, int,
-                  double *);
 
+void rbs_assign(unsigned char *, unsigned char *, int, struct _node *, int,
+                struct _training *);
+void find_best_sd_rbs(unsigned char *, unsigned char *, int, struct _node *,
+                      int, double *);
 void find_best_nonsd_motif(struct _training *, unsigned char *, unsigned
                            char *, int, struct _node *, int);
+
+void codon_type_score(struct _node *, struct _training *);
+void rbs_score(struct _node *, int, struct _training *);
+void upstream_score(struct _node *, int, int, int, int, struct _training *);
 
 double intergenic_mod(struct _node *, struct _node *, double);
 
 int get_rbs_value(struct _node *, double *);
+
+int compare_nodes(const void *, const void *);
+int stopcmp_nodes(const void *, const void *);
 
 #endif

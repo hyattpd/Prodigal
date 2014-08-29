@@ -176,7 +176,8 @@ int main(int argc, char *argv[])
       nodes appropriately.
     ***********************************************************************/
     log_text(quiet, "Examining upstream regions and training starts...");
-    sd_rbs_score(seq, rseq, seq_length, nodes, num_nodes, train_data.rbs_wt);
+    find_best_sd_rbs(seq, rseq, seq_length, nodes, num_nodes,
+                     train_data.rbs_wt);
     train_starts_sd(seq, rseq, seq_length, nodes, num_nodes, &train_data);
     determine_sd_usage(&train_data);
     if (force_nonsd == 1)

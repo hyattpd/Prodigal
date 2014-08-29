@@ -259,7 +259,7 @@ void calc_dicodon_gene(struct _training *train_data, unsigned char *seq,
     if (in_gene == -1 && nodes[path].strand == -1 && nodes[path].type == STOP)
     {
       right = seq_length-nodes[path].index+1;
-      for (i = left + COD_SKIP; i < right-5; i+=3)
+      for (i = left; i < right-5; i+=3)
       {
         counts[mer_index(6, rseq, i)]++;
         total++;
@@ -269,7 +269,7 @@ void calc_dicodon_gene(struct _training *train_data, unsigned char *seq,
     if (in_gene == 1 && nodes[path].strand == 1 && nodes[path].type == START)
     {
       left = nodes[path].index;
-      for (i = left + COD_SKIP; i < right-5; i+=3)
+      for (i = left; i < right-5; i+=3)
       {
         counts[mer_index(6, seq, i)]++;
         total++;
@@ -360,7 +360,7 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
   int k = 0;
   int num_genes = 0;       /* Track the number of genes used */
   int frame = 0;           /* Reading frame */
-  int rbs_value = 0;      /* Best motif between exact and mismatch */
+  int rbs_value = 0;       /* Best motif between exact and mismatch */
   int best_rbs[3] = {0};   /* RBS of the best gene in each frame */
   int best_type[3] = {0};  /* Type of the best gene in each frame */
   int best_index[3] = {0}; /* Index of best gene in each frame */
@@ -368,12 +368,10 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
   double wt = 0.0;         /* Shorthand for start weight to save space */
   double rbg[28] = {0};    /* RBS background - i.e. all nodes */
   double tbg[3] = {0};     /* Type background - i.e. all nodes */
-  double dbg[17] = {0};    /* Dimer background - i.e. all nodes */
-  double pbg[10] = {0};    /* Pair composition background */
+  double ubg[32][4] = {{0}};    /* Pair composition background */
   double rreal[28] = {0};  /* RBS foreground - i.e. only real genes */
   double treal[3] = {0};   /* Type foreground - i.e. only real genes */
-  double dreal[17] = {0};  /* Dimer foreground - i.e. only real genes */
-  double preal[10] = {0};  /* Pair comp foreground - i.e. only real genes */
+  double ureal[32][4] = {{0}};  /* Pair comp foreground - i.e. only real genes */
   double node_score = 0.0; /* Score for current node */
   double score_thresh = MIN_TRAIN_GENE_SCORE;
                            /* Minimum score for genes to be "real" */
@@ -383,8 +381,7 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
 
   /* Calculate the backgrounds that don't change */
   calc_type_background(nodes, num_nodes, tbg);
-  calc_dimer_background(nodes, num_nodes, dbg);
-  calc_pair_comp_background(nodes, num_nodes, pbg);
+  calc_upstream_background(nodes, num_nodes, ubg);
 
   /* Iterate SD_ITER times through the list of nodes                    */
   /* Converge upon optimal weights for ATG vs GTG vs TTG and RBS motifs */
@@ -400,7 +397,6 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
     /* Set real values to 0 since we're recounting */
     memset(rreal, 0, 28*sizeof(double));
     memset(treal, 0, 3*sizeof(double));
-    memset(dreal, 0, 17*sizeof(double));
 
     /* Forward strand pass */
     for (j = 0; j < 3; j++)
@@ -428,10 +424,9 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
           if (i == SD_ITER-1)
           {
             train_data->stop_wt[nodes[j].subtype] += 1.0;
-            dreal[nodes[best_index[frame]].dimer] += 1.0;
-            for (k = 0; k < 10; k++)
+            for (k = 0; k < 32; k++)
             {
-              preal[k] += nodes[best_index[frame]].pairs[k];
+              ureal[k][nodes[best_index[frame]].ups[k]] += 1.0;
             }
           }
         }
@@ -481,10 +476,9 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
           if (i == SD_ITER-1)
           {
             train_data->stop_wt[nodes[j].subtype] += 1.0;
-            dreal[nodes[best_index[frame]].dimer] += 1.0;
-            for (k = 0; k < 10; k++)
+            for (k = 0; k < 32; k++)
             {
-              preal[k] += nodes[best_index[frame]].pairs[k];
+              ureal[k][nodes[best_index[frame]].ups[k]] += 1.0;
             }
           }
         }
@@ -520,10 +514,16 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
   }
   normalize_array(train_data->stop_wt, 3);
   create_log_score(train_data->stop_wt, NULL, NULL, 3);
-  normalize_array(dreal, 17);
-  create_log_score(train_data->dimer_wt, dreal, dbg, 17);
-  normalize_array(preal, 17);
-  create_log_score(train_data->pair_wt, preal, pbg, 10);
+  for (i = 0; i < 32; i++)
+  {
+    normalize_array(ureal[i], 4);
+    create_log_score(train_data->ups_wt[i], ureal[i], ubg[i], 4);
+  }
+/*
+printf("base/real/bg/log\t%d\n", i);
+for(j = 0; j < 4; j++) { printf("\t%d\t%.4f\t%.4f\t%.4f\n", j, ureal[i][j], ubg[i][j], train_data->ups_wt[i][j]); }
+exit(0);
+*/
 }
 
 /******************************************************************************
@@ -550,9 +550,7 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
   double mreal[4][4][4096] = {{{0}}};  /* RBS foreground - i.e. real genes */
   double best_score[3] = {0};    /* Best scoring node in each frame */
   double tbg[3] = {0};     /* Type background - i.e. all nodes */
-  double dbg[17] = {0};    /* Dimer background - i.e. all nodes */
   double treal[3] = {0};   /* Type foreground - i.e. only real genes */
-  double pbg[10] = {0};    /* Pair composition background */
   double zbg = 0.0;        /* Background for zero motif */
   double zreal = 0.0;      /* Zero motif weight for real genes */
   double ngenes = 0.0;     /* Gene counter, double in case of weighting */
@@ -562,8 +560,6 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
   wt = train_data->start_weight;
   zero_start_weights(train_data, 1);
   calc_type_background(nodes, num_nodes, tbg);
-  calc_dimer_background(nodes, num_nodes, dbg);
-  calc_pair_comp_background(nodes, num_nodes, pbg);
 
   /* Iterate NONSD_ITER times through the list of nodes                 */
   /* Converge upon optimal weights for ATG vs GTG vs TTG and RBS motifs */
@@ -1126,13 +1122,12 @@ void zero_start_weights(struct _training *train_data, int which)
   {
     train_data->type_wt[i] = 0.0;
   }
-  for (i = 0; i < 16; i++)
+  for (i = 0; i < 32; i++)
   {
-    train_data->dimer_wt[i] = 0.0;
-  }
-  for (i = 0; i < 10; i++)
-  {
-    train_data->pair_wt[i] = 0.0;
+    for (j = 0; j < 4; j++)
+    {
+      train_data->ups_wt[i][j] = 0.0;
+    }
   }
 
   if (which == 0)
@@ -1175,24 +1170,6 @@ void calc_type_background(struct _node *nodes, int num_nodes, double *tbg)
   normalize_array(tbg, 3);
 }
 
-/* Calculate the dimer composition background */
-void calc_dimer_background(struct _node *nodes, int num_nodes, double *dbg)
-{
-  int i = 0;
-
-  memset(dbg, 0, 17*sizeof(double));
-  for (i = 0; i < num_nodes; i++)
-  {
-    if (nodes[i].type == STOP || nodes[i].edge == 1)
-    {
-      continue;
-    }
-    dbg[nodes[i].dimer] += 1.0;
-  }
-  dbg[0] = 0.0;
-  normalize_array(dbg, 17);
-}
-
 /* Calculate the background for rbs given a set of weights */
 void calc_sd_rbs_background(struct _node *nodes, int num_nodes, double *rbs_wt,
                             double *rbg)
@@ -1226,26 +1203,36 @@ void calc_sd_rbs_background(struct _node *nodes, int num_nodes, double *rbs_wt,
   normalize_array(rbg, 28);
 }
 
-/* Calculate the pair composition background */
-void calc_pair_comp_background(struct _node *nodes, int num_nodes, double *pbg)
+/* Calculate the upstream background */
+void calc_upstream_background(struct _node *nodes, int num_nodes, double ubg[32][4])
 {
   int i = 0;
   int j = 0;
 
   /* Build the background of pair composition */
-  memset(pbg, 0, 10*sizeof(double));
+  for (i = 0; i < 32; i++)
+  {
+    for (j = 0; j < 4; j++)
+    {
+      ubg[i][j] = 0.0;
+    }
+  }
+
   for (i = 0; i < num_nodes; i++)
   {
     if (nodes[i].type == STOP || nodes[i].edge == 1)
     {
       continue;
     }
-    for (j = 0; j < 10; j++)
+    for (j = 0; j < 32; j++)
     {
-      pbg[j] += nodes[i].pairs[j];
+      ubg[j][nodes[i].ups[j]] += 1.0;
     }
   }
-  normalize_array(pbg, 10);
+  for (i = 0; i < 32; i++)
+  {
+    normalize_array(ubg[i], 4);
+  }
 }
 
 /* Make the components of a double array sum to 1.0 */

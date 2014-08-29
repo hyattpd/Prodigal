@@ -125,6 +125,8 @@ void adjust_starts(struct _gene *genes, int num_genes, struct _node *nodes,
                                     index, start_weight, max_index, max_score,
                                     max_ig_mod);
 
+    /* Dueling starts: See if one start is the clear victor. */
+
     /* Now we look at the 2nd and 3rd best starts to see if we can find a */
     /* reason to make them our preferred start. */
     /* Change the start if it's a TTG with better coding/RBS/upstream score */
@@ -160,6 +162,10 @@ void adjust_starts(struct _gene *genes, int num_genes, struct _node *nodes,
         if (nodes[index].cscore > nodes[tmp_index].cscore)
         {
           max_score[j] += nodes[index].cscore - nodes[tmp_index].cscore;
+        }
+        if (nodes[index].uscore > nodes[tmp_index].uscore)
+        {
+          max_score[j] += nodes[index].uscore - nodes[tmp_index].uscore;
         }
         if (ig_mod > max_ig_mod[j])
         {

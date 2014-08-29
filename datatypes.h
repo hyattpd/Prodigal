@@ -42,11 +42,11 @@ struct _node
   int strand;          /* 1 = forward, -1 = reverse */
   int stop_val;        /* For a stop, record previous stop; for a start, record
                           its stop */
+  int stop_type;       /* For starts: record subtype of matching stop node */
   int start_ptr[3];    /* Array of starts w/in MAX_SAM_OVLP bases of stop in 3
                           frames */
   int gc_bias;         /* Frame of highest GC content within this node */
-  int dimer;           /* Value of the dimer right before start */
-  double pairs[10];    /* Counts of the pairs in 48 bases around start */
+  int ups[32];         /* Upstream base composition */
   double gc_score[3];  /* % GC content in different codon positions */
   double cscore;       /* Coding score for this node (based on 6-mer usage) */
   double gc_cont;      /* GC Content for the node */
@@ -56,6 +56,7 @@ struct _node
   struct _motif mot;   /* Upstream motif information for this node */
   double uscore;       /* Score for the upstream -1/-2, -15to-45 region */
   double tscore;       /* Score for the ATG/GTG/TTG value */
+  double xscore;       /* Score for the stop codon TAA/TGA/TAG value */
   double rscore;       /* Score for the RBS motif */
   double sscore;       /* Score for the strength of the start codon */
   int trace_back;      /* Traceback to connecting node */
@@ -77,6 +78,10 @@ struct _training
   double stop_wt[3];           /* Weights for TAA vs TGA vs TAG */
   int uses_sd;                 /* 0 = doesn't use SD motif, 1 = it does */
   double rbs_wt[28];           /* Set of weights for RBS scores */
+  double ups_wt[32][4];        /* Base composition weights for non-RBS-distance
+                                  motifs.  0-1 are the -1/-2 position, 2-31 are
+                                  the -15 to -44 positions.  Second array is
+                                  the base A,C,T,G,etc. */
   double mot_wt[4][4][4096];   /* Weights for upstream motifs.  First index is
                                   the motif length (3-6), the second is the
                                   spacer distance (0 = 5-10bp, 1 = 3-4bp, 2 =
@@ -86,8 +91,6 @@ struct _training
                                   motifs) */
   double no_mot;               /* Weight for the case of no motif */
   double gene_dc[4096];        /* Coding statistics for the genome */
-  double pair_wt[10];          /* Pair composition (sec structure) stats */
-  double dimer_wt[17];         /* Weights for the dimer next to the start */
 };
 
 /* Struct for genes, with start/stop and link to node structure */
