@@ -31,7 +31,7 @@
     stage = 0: The GC frame bias is used as the coding score.
     stage = 1: The hexamer coding scores are used instead.
 ******************************************************************************/
-int dynamic_programming(struct _node *nodes, int num_nodes, double *frame_bias,
+int dynamic_programming(struct _node *nodes, int num_nodes,
                         double start_weight, int stage)
 {
   int i = 0;
@@ -61,9 +61,10 @@ int dynamic_programming(struct _node *nodes, int num_nodes, double *frame_bias,
        node-1 with the current_node */
     for (j = low_bound; j < i; j++)
     {
-      score_connection(nodes, j, i, frame_bias, start_weight, stage);
+      score_connection(nodes, j, i, start_weight, stage);
     }
   }
+
   /* Locate the highest scoring node in the traceback and record its index */
   for (i = num_nodes-1; i >= 0; i--)
   {
@@ -152,7 +153,7 @@ int find_farthest_allowable_node(struct _node *nodes, int index)
   and n3 is used to untangle the 5' end of the second gene.
 ******************************************************************************/
 void score_connection(struct _node *nodes, int node_a, int node_b,
-                      double *frame_bias, double start_weight, int stage)
+                      double start_weight, int stage)
 {
   struct _node *n1 = &(nodes[node_a]);   /* Short reference to left node */
   struct _node *n2 = &(nodes[node_b]);   /* Short reference to right node */
@@ -225,15 +226,7 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
       return;
     }
     right += 2;
-    if (stage == 0)
-    {
-      score = frame_bias[0]*n1->gc_score[0] + frame_bias[1]*n1->gc_score[1] +
-              frame_bias[2]*n1->gc_score[2];
-    }
-    else if (stage == 1)
-    {
-      score = n1->cscore + n1->sscore;
-    }
+    score = n1->cscore + n1->sscore;
   }
 
   /* 3'rev->5'rev */
@@ -249,15 +242,7 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
       return;
     }
     left -= 2;
-    if (stage == 0)
-    {
-      score = frame_bias[0]*n2->gc_score[0] + frame_bias[1]*n2->gc_score[1] +
-              frame_bias[2]*n2->gc_score[2];
-    }
-    else if (stage == 1)
-    {
-      score = n2->cscore + n2->sscore;
-    }
+    score = n2->cscore + n2->sscore;
   }
 
   /********************************/
@@ -318,26 +303,18 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
       }
       if ((stage == 1 && n3->cscore + n3->sscore +
           intergenic_mod(n3, n2, start_weight) > max_val) || (stage == 0 &&
-          frame_bias[0]*n3->gc_score[0] + frame_bias[1]*n3->gc_score[1] +
-          frame_bias[2]*n3->gc_score[2] > max_val))
+          n3->cscore > max_val))
       {
         max_frame = i;
         max_val = n3->cscore + n3->sscore +
-                  intergenic_mod(n3, n2, start_weight);
+                  stage * intergenic_mod(n3, n2, start_weight);
       }
     }
     if (max_frame != -1)
     {
       n3 = &(nodes[n2->start_ptr[max_frame]]);
-      if (stage == 0)
-      {
-        score = frame_bias[0]*n3->gc_score[0] + frame_bias[1]*n3->gc_score[1] +
-                frame_bias[2]*n3->gc_score[2];
-      }
-      else if (stage == 1)
-      {
-        score = n3->cscore + n3->sscore + intergenic_mod(n3, n2, start_weight);
-      }
+      score = n3->cscore + n3->sscore +
+              stage * intergenic_mod(n3, n2, start_weight);
     }
     else if (stage == 1)
     {
@@ -393,15 +370,8 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
     n3 = &(nodes[n1->start_ptr[n2->index%3]]);
     left = n3->index;
     right += 2;
-    if (stage == 0)
-    {
-      score = frame_bias[0]*n3->gc_score[0] + frame_bias[1]*n3->gc_score[1] +
-              frame_bias[2]*n3->gc_score[2];
-    }
-    else if (stage == 1)
-    {
-      score = n3->cscore + n3->sscore + intergenic_mod(n1, n3, start_weight);
-    }
+    score = n3->cscore + n3->sscore +
+            stage*intergenic_mod(n1, n3, start_weight);
   }
 
   /* 3'rev->3'rev, check for a start just to right of second 3' */
@@ -419,15 +389,8 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
     n3 = &(nodes[n2->start_ptr[n1->index%3]]);
     left -= 2;
     right = n3->index;
-    if (stage == 0)
-    {
-      score = frame_bias[0]*n3->gc_score[0] + frame_bias[1]*n3->gc_score[1] +
-              frame_bias[2]*n3->gc_score[2];
-    }
-    else if (stage == 1)
-    {
-      score = n3->cscore + n3->sscore + intergenic_mod(n3, n2, start_weight);
-    }
+    score = n3->cscore + n3->sscore +
+            stage*intergenic_mod(n3, n2, start_weight);
   }
 
   /***************************************/
@@ -466,19 +429,12 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
     left = n2->stop_val-2;
     if (stage == 0)
     {
-      score = frame_bias[0]*n2->gc_score[0] + frame_bias[1]*n2->gc_score[1] +
-              frame_bias[2]*n2->gc_score[2];
+      score = n2->cscore;
     }
     else if (stage == 1)
     {
       score = n2->cscore + n2->sscore - 0.15*start_weight;
     }
-  }
-
-  /* Frame bias score is multiplied by length */
-  if (stage == 0)
-  {
-    score = ((double)(right-left+1-(overlap*2))) * score;
   }
 
   /* New best score for this node */

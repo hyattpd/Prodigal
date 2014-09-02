@@ -28,8 +28,8 @@
 #define MAX_OPP_OVLP 200
 #define MAX_NODE_DIST 500
 
-int dynamic_programming(struct _node *, int, double *, double, int);
-void score_connection(struct _node *, int, int, double *, double, int);
+int dynamic_programming(struct _node *, int, double, int);
+void score_connection(struct _node *, int, int, double, int);
 int find_farthest_allowable_node(struct _node *, int);
 void untangle_overlaps(struct _node *, int);
 void record_trace_forward_pointers(struct _node *, int);

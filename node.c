@@ -308,7 +308,7 @@ void reset_node_scores(struct _node *nodes, int num_nodes)
     for (j = 0; j < 3; j++)
     {
       nodes[i].start_ptr[j] = 0;
-      nodes[i].gc_score[j] = 0.0;
+      nodes[i].gc_frame[j] = 0;
     }
     for (j = 0; j < 2; j++)
     {
@@ -325,7 +325,6 @@ void reset_node_scores(struct _node *nodes, int num_nodes)
     nodes[i].trace_forward = -1;
     nodes[i].overlap_frame = -1;
     nodes[i].status = 0;
-    nodes[i].gc_bias = 0;
     memset(&nodes[i].mot, 0, sizeof(struct _motif));
   }
 }
@@ -427,97 +426,6 @@ void record_overlapping_starts(struct _node *nodes, int num_nodes,
 }
 
 /******************************************************************************
-  This routine goes through all the ORFs and counts the relative frequency of
-  the most common frame for G+C content.  In high GC genomes, this tends to be
-  the third position.  In low GC genomes, this tends to be the first position.
-  Genes will be selected as a training set based on the nature of this bias
-  for this particular organism.  The "gc" variable contains the most common
-  frame at a window centered on each position in the sequence.
-******************************************************************************/
-void frame_score(int *gc, struct _node *nodes, int num_nodes)
-{
-  int i = 0;
-  int j = 0;
-  int counter[3][3] = {{0}};     /* Counts for winning frame in each frame */
-  int last[3] = {0};             /* Last stop codon we saw in each frame */
-  int frame_mod = 0;             /* Relative-to-absolute frame modifier */
-  int frame = 0;                 /* Frame of the current node */
-  int best_frame = 0;            /* The final winning frame for a node */
-
-  if (num_nodes == 0)
-  {
-    return;
-  }
-  for (i = 0; i < 3; i++)
-  {
-    for (j = 0; j < 3; j++)
-    {
-      counter[i][j] = 0;
-    }
-  }
-  for (i = num_nodes-1; i >= 0; i--)
-  {
-    frame = (nodes[i].index)%3;
-    frame_mod = 3 - frame;
-    if (nodes[i].strand == 1 && nodes[i].type == STOP)
-    {
-      for (j = 0; j < 3; j++)
-      {
-        counter[frame][j] = 0;
-      }
-      last[frame] = nodes[i].index;
-      counter[frame][(gc[nodes[i].index] + frame_mod)%3] = 1;
-    }
-    else if (nodes[i].strand == 1)
-    {
-      for (j = last[frame]-3; j >= nodes[i].index; j-=3)
-      {
-        counter[frame][(gc[j] + frame_mod)%3] ++;
-      }
-      best_frame = max_frame(counter[frame][0], counter[frame][1],
-                             counter[frame][2]);
-      nodes[i].gc_bias = best_frame;
-      for (j = 0; j < 3; j++)
-      {
-        nodes[i].gc_score[j] = (3.0*counter[frame][j]);
-        nodes[i].gc_score[j] /= (1.0*(nodes[i].stop_val - nodes[i].index + 3));
-      }
-      last[frame] = nodes[i].index;
-    }
-  }
-  for (i = 0; i < num_nodes; i++)
-  {
-    frame = (nodes[i].index)%3;
-    frame_mod = frame;
-    if (nodes[i].strand == -1 && nodes[i].type == STOP)
-    {
-      for (j = 0; j < 3; j++)
-      {
-        counter[frame][j] = 0;
-      }
-      last[frame] = nodes[i].index;
-      counter[frame][((3-gc[nodes[i].index]) + frame_mod)%3] = 1;
-    }
-    else if (nodes[i].strand == -1)
-    {
-      for (j = last[frame]+3; j <= nodes[i].index; j+=3)
-      {
-        counter[frame][((3-gc[j]) + frame_mod)%3]++;
-      }
-      best_frame = max_frame(counter[frame][0], counter[frame][1],
-                             counter[frame][2]);
-      nodes[i].gc_bias = best_frame;
-      for (j = 0; j < 3; j++)
-      {
-        nodes[i].gc_score[j] = (3.0*counter[frame][j]);
-        nodes[i].gc_score[j] /= (1.0*(nodes[i].index - nodes[i].stop_val + 3));
-      }
-      last[frame] = nodes[i].index;
-    }
-  }
-}
-
-/******************************************************************************
   Scoring function for all the start nodes.  This score has two factors:  (1)
   Coding, which is a composite of coding score and length, and (2) Start
   score, which is a composite of RBS score and ATG/TTG/GTG.
@@ -570,6 +478,10 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
       {
         nodes[i].tscore *= neg_fac;
       }
+      if (nodes[i].xscore < 0)
+      {
+        nodes[i].xscore *= neg_fac;
+      }
       if (nodes[i].rscore > 0)
       {
         nodes[i].rscore *= pos_fac;
@@ -581,6 +493,10 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
       if (nodes[i].tscore > 0)
       {
         nodes[i].tscore *= pos_fac;
+      }
+      if (nodes[i].xscore > 0)
+      {
+        nodes[i].xscore *= pos_fac;
       }
     }
 
@@ -725,7 +641,7 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
   double prob_no_stop = 0.0;   /* Prob of seeing a non-stop-codon */
   double gene_size = 0.0;      /* Size of current gene */
 
-  prob_no_stop = 1.0-prob_stop(trans_table, gc);
+  prob_no_stop = 1.0-prob_stop_random(trans_table, gc);
 
   /* Initial Pass: Score coding potential (start->stop) */
   for (i = 0; i < 3; i++)
@@ -737,12 +653,12 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
     frame = (nodes[i].index)%3;
     if (nodes[i].strand == 1 && nodes[i].type == STOP)
     {
-      last[frame] = nodes[i].index;
+      last[frame] = nodes[i].index - 3;
       score[frame] = 0.0;
     }
     else if (nodes[i].strand == 1)
     {
-      for (j = last[frame]-3; j >= nodes[i].index; j-=3)
+      for (j = last[frame]-3; j >= nodes[i].index+3; j-=3)
       {
         score[frame] += hex_probs[mer_index(6, seq, j)];
       }
@@ -759,12 +675,12 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
     frame = (nodes[i].index)%3;
     if (nodes[i].strand == -1 && nodes[i].type == STOP)
     {
-      last[frame] = nodes[i].index;
+      last[frame] = nodes[i].index+3;
       score[frame] = 0.0;
     }
     else if (nodes[i].strand == -1)
     {
-      for (j = last[frame]+3; j <= nodes[i].index; j+=3)
+      for (j = last[frame]+3; j <= nodes[i].index-3; j+=3)
       {
         score[frame] +=
           hex_probs[mer_index(6, rseq, seq_length - j - 1)];
@@ -1129,7 +1045,7 @@ void codon_type_score(struct _node *node, struct _training *train_data)
   else
   {
     node->xscore = train_data->stop_wt[node->stop_type] *
-                      train_data->start_weight;
+                   train_data->start_weight;
   }
 }
 

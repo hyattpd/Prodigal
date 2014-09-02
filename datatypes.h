@@ -45,11 +45,10 @@ struct _node
   int stop_type;       /* For starts: record subtype of matching stop node */
   int start_ptr[3];    /* Array of starts w/in MAX_SAM_OVLP bases of stop in 3
                           frames */
-  int gc_bias;         /* Frame of highest GC content within this node */
   int ups[32];         /* Upstream base composition */
-  double gc_score[3];  /* % GC content in different codon positions */
   double cscore;       /* Coding score for this node (based on 6-mer usage) */
   double gc_cont;      /* GC Content for the node */
+  int gc_frame[3];     /* Counter for best GC frames throughout the node */
   int rbs[2];          /* SD RBS score for this node (based on binding energy)
                           rbs[0] = best motif with exact match, rbs[1] = with
                           mismatches */
@@ -73,9 +72,8 @@ struct _training
   int trans_table;             /* 11 = Standard Microbial, NCBI Trans Table to
                                   use */
   double start_weight;         /* Start weight */
-  double bias[3];              /* GC frame bias for each of the 3 positions */
-  double type_wt[3];           /* Weights for ATG vs GTG vs TTG */
-  double stop_wt[3];           /* Weights for TAA vs TGA vs TAG */
+  double type_wt[4];           /* Weights for ATG vs GTG vs TTG */
+  double stop_wt[4];           /* Weights for TAA vs TGA vs TAG */
   int uses_sd;                 /* 0 = doesn't use SD motif, 1 = it does */
   double rbs_wt[28];           /* Set of weights for RBS scores */
   double ups_wt[32][4];        /* Base composition weights for non-RBS-distance

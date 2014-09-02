@@ -284,7 +284,7 @@ int main(int argc, char *argv[])
       score_nodes(seq, rseq, seq_length, nodes, num_nodes, &train_data,
                   closed_ends, mode);
       record_overlapping_starts(nodes, num_nodes, train_data.start_weight, 1);
-      last_node = dynamic_programming(nodes, num_nodes, train_data.bias,
+      last_node = dynamic_programming(nodes, num_nodes,
                                       train_data.start_weight, 1);
       initial_node = find_first_node_from_last_node(nodes, last_node);
       num_genes = add_genes(genes, nodes, initial_node);
@@ -335,7 +335,6 @@ int main(int argc, char *argv[])
         record_overlapping_starts(nodes, num_nodes,
                                   presets[i].data->start_weight, 1);
         last_node = dynamic_programming(nodes, num_nodes,
-                                        presets[i].data->bias,
                                         presets[i].data->start_weight, 1);
         initial_node = find_first_node_from_last_node(nodes, last_node);
         if (nodes[last_node].score > max_score)

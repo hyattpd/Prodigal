@@ -605,9 +605,34 @@ int is_gc(unsigned char *seq, int n)
   return 0;
 }
 
+/* Returns the probability a codon is expected to be a stop codon */
+/* in the actual sequence. */
+double prob_stop_sequence(int trans_table, unsigned char *seq,
+                          unsigned char *rseq, int seq_length)
+{
+  int i = 0;
+  double total_ctr = 0.0;
+  double stop_ctr = 0.0;
+
+  for (i = 0; i <= seq_length - 3; i++)
+  {
+    total_ctr += 1.0;
+    if (is_stop(seq, i, trans_table) == 1)
+    {
+      stop_ctr += 1.0;
+    }
+    if (is_stop(rseq, i, trans_table) == 1)
+    {
+      stop_ctr += 1.0;
+    }
+  }
+  return stop_ctr / total_ctr;
+  
+}
+
 /* Returns the probability a random codon should be a stop codon */
 /* based on the GC content and genetic code of the organism */
-double prob_stop(int tt, double gc)
+double prob_stop_random(int tt, double gc)
 {
   int i1 = 0;                     /* Loop variables, two for each base */
   int i2 = 0;                     /* (since manipulating bitstring */

@@ -48,7 +48,6 @@ void check_node_allocation(struct _node **, int);
 void reset_node_scores(struct _node *, int);
 
 void record_overlapping_starts(struct _node *, int, double, int);
-void frame_score(int *, struct _node *, int);
 
 void score_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
                  struct _training *, int, int);
