@@ -37,8 +37,8 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
                               /* Can be different for edge vs. normal */
   int edge[3] = {0};          /* 0/1 if the node in frame runs off edge */
   int sl_mod = 0;             /* Variable to help with frame math */
-  int stop_codon = 0;         /* 0/1 if current codon is a stop codon */
-  int start_codon = 0;        /* 0/1 if current codon is a start codon */
+  int stop_codon = 0;         /* Stop codon type, -1 = not a stop */
+  int start_codon = 0;        /* Start codon type, -1 = not a start */
 
   /* Forward strand nodes */
   sl_mod = seq_length%3;
@@ -54,11 +54,12 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
   for (i = 0; i < 3; i++)
   {
     saw_start[i] = 0;
-    if (is_stop(seq, last_stop[i], trans_table) == 1)
+    stop_codon = get_stop_type(seq, last_stop[i], trans_table);
+    if (stop_codon != -1)
     {
       min_dist[i] = MIN_GENE;
       edge[i] = 0;
-      stop_type[i] = assign_stop_value(seq, last_stop[i]);
+      stop_type[i] = stop_codon;
     }
     else
     {
@@ -70,9 +71,9 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
   /* Work backwards through forward strand. */
   for (i = seq_length-3; i >= 0; i--)
   {
-    stop_codon = is_stop(seq, i, trans_table);
+    stop_codon = get_stop_type(seq, i, trans_table);
     /* Stop Codon or a Run of N's to the Right */
-    if (stop_codon == 1 || (i <= seq_length-12 && gap_mode < 2 &&
+    if (stop_codon != -1 || (i <= seq_length-12 && gap_mode < 2 &&
         gap_to_right(useq, i) == 1))
     {
       /* If previous stop had a valid start codon, we add it */
@@ -86,11 +87,11 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
         nodes[num_nodes++].stop_val = i;
       }
       /* Update minimum distances depending if edge node or not */
-      if (stop_codon == 1)
+      if (stop_codon != -1)
       {
         min_dist[i%3] = MIN_GENE;
         edge[i%3] = 0;
-        stop_type[i%3] = assign_stop_value(seq, i);
+        stop_type[i%3] = stop_codon;
       }
       else
       {
@@ -111,14 +112,15 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
     }
 
     /* Start Nodes */
-    start_codon = is_start(seq, i, trans_table);
+    start_codon = get_start_type(seq, i, trans_table);
     /* Actual Start Codon */
-    if (start_codon == 1 && ((last_stop[i%3]-i+3) >= min_dist[i%3]) &&
+    if (start_codon != -1 && ((last_stop[i%3]-i+3) >= min_dist[i%3]) &&
         (i > 2 || closed == 1))
     {
       nodes[num_nodes].index = i;
       nodes[num_nodes].type = START;
-      nodes[num_nodes].subtype = assign_start_value(seq, i);
+      nodes[num_nodes].subtype = start_codon;
+      nodes[num_nodes].dimer = assign_dimer_value(seq, i);
       count_upstream_composition(seq, seq_length, 1, i, nodes[num_nodes].ups);
       saw_start[i%3] = 1;
       nodes[num_nodes].stop_val = last_stop[i%3];
@@ -168,11 +170,12 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
   for (i = 0; i < 3; i++)
   {
     saw_start[i] = 0;
-    if (is_stop(rseq, last_stop[i], trans_table) == 1)
+    stop_codon = get_stop_type(rseq, last_stop[i], trans_table);
+    if (stop_codon != 1)
     {
       min_dist[i] = MIN_GENE;
       edge[i] = 0;
-      stop_type[i] = assign_stop_value(rseq, last_stop[i]);
+      stop_type[i] = stop_codon;
     }
     else
     {
@@ -185,8 +188,8 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
   for (i = seq_length-3; i >= 0; i--)
   {
     /* Stop Codon or a Run of N's to the Left (since useq is flipped) */
-    stop_codon = is_stop(rseq, i, trans_table);
-    if (stop_codon == 1 || (i <= seq_length-12 && gap_mode < 2 &&
+    stop_codon = get_stop_type(rseq, i, trans_table);
+    if (stop_codon != -1 || (i <= seq_length-12 && gap_mode < 2 &&
         gap_to_left(useq, seq_length-3-i) == 1))
     {
       /* If previous stop had a valid start codon, we add it */
@@ -200,11 +203,11 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
         nodes[num_nodes++].stop_val = seq_length-i-1;
       }
       /* Update minimum distances depending if edge node or not */
-      if (is_stop(rseq, i, trans_table) == 1)
+      if (stop_codon != -1)
       {
         min_dist[i%3] = MIN_GENE;
         edge[i%3] = 0;
-        stop_type[i%3] = assign_stop_value(rseq, i);
+        stop_type[i%3] = stop_codon;
       }
       else
       {
@@ -225,14 +228,15 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
     }
 
     /* Start Nodes */
-    start_codon = is_start(rseq, i, trans_table);
+    start_codon = get_start_type(rseq, i, trans_table);
     /* Actual Start Codon */
-    if (start_codon == 1 && ((last_stop[i%3]-i+3) >= min_dist[i%3]) &&
+    if (start_codon != -1 && ((last_stop[i%3]-i+3) >= min_dist[i%3]) &&
         (i > 2 || closed == 1))
     {
       nodes[num_nodes].index = seq_length-i-1;
       nodes[num_nodes].type = START;
-      nodes[num_nodes].subtype = assign_start_value(rseq, i);
+      nodes[num_nodes].subtype = start_codon;
+      nodes[num_nodes].dimer = assign_dimer_value(rseq, i);
       count_upstream_composition(rseq, seq_length, -1, seq_length-i-1,
                                  nodes[num_nodes].ups);
       saw_start[i%3] = 1;
@@ -320,6 +324,7 @@ void reset_node_scores(struct _node *nodes, int num_nodes)
     nodes[i].rscore = 0.0;
     nodes[i].tscore = 0.0;
     nodes[i].xscore = 0.0;
+    nodes[i].dscore = 0.0;
     nodes[i].uscore = 0.0;
     nodes[i].trace_back = -1;
     nodes[i].trace_forward = -1;
@@ -443,7 +448,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
   calc_orf_gc(seq, nodes, num_nodes);
   calc_coding_score(seq, rseq, seq_length, nodes, num_nodes,
                     train_data->trans_table, train_data->gc,
-                    train_data->gene_dc);
+                    train_data->gene_dc, train_data->prob_no_stop);
 
   /* Step 2: Calculate raw RBS Scores for every start node. */
   rbs_assign(seq, rseq, seq_length, nodes, num_nodes, train_data);
@@ -458,51 +463,23 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
 
     codon_type_score(&(nodes[i]), train_data);
     rbs_score(&(nodes[i]), seq_length, train_data);
+    dimer_score(&(nodes[i]), seq_length, train_data);
     upstream_score(nodes, num_nodes, i, closed, seq_length, train_data);
 
-    /* Penalize non-edge genes < 250bp */
-    if (nodes[i].edge == 0 && nodes[i].stop_type != EDGE &&
-        abs(nodes[i].index-nodes[i].stop_val) < 250)
-    {
-      neg_fac = 250.0/(float)abs(nodes[i].index-nodes[i].stop_val);
-      pos_fac = (float)abs(nodes[i].index-nodes[i].stop_val)/250.0;
-      if (nodes[i].rscore < 0)
-      {
-        nodes[i].rscore *= neg_fac;
-      }
-      if (nodes[i].uscore < 0)
-      {
-        nodes[i].uscore *= neg_fac;
-      }
-      if (nodes[i].tscore < 0)
-      {
-        nodes[i].tscore *= neg_fac;
-      }
-      if (nodes[i].xscore < 0)
-      {
-        nodes[i].xscore *= neg_fac;
-      }
-      if (nodes[i].rscore > 0)
-      {
-        nodes[i].rscore *= pos_fac;
-      }
-      if (nodes[i].uscore > 0)
-      {
-        nodes[i].uscore *= pos_fac;
-      }
-      if (nodes[i].tscore > 0)
-      {
-        nodes[i].tscore *= pos_fac;
-      }
-      if (nodes[i].xscore > 0)
-      {
-        nodes[i].xscore *= pos_fac;
-      }
-    }
-
     /* Base Start Score */
-    nodes[i].sscore = nodes[i].tscore + nodes[i].rscore + nodes[i].uscore +
-                      nodes[i].xscore;
+    nodes[i].sscore = nodes[i].tscore + nodes[i].xscore +
+                      nodes[i].rscore + nodes[i].dscore +
+                      nodes[i].uscore;
+    
+/*
+    if (nodes[i].edge == 0 && nodes[i].stop_type != EDGE &&
+        abs(nodes[i].index-nodes[i].stop_val) < 300)
+    {
+      neg_fac = 300.0/(float)abs(nodes[i].index-nodes[i].stop_val);
+      pos_fac = (float)abs(nodes[i].index-nodes[i].stop_val)/300.0;
+      nodes[i].cscore *= neg_fac;
+    }
+*/
 
     /**************************************************************/
     /* Coding Penalization in Anonymous Fragments:    Internal    */
@@ -522,6 +499,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
     /* edge genes, since the start is offset by a smaller amount  */
     /* of coding than normal.                                     */
     /**************************************************************/
+/*
     if (nodes[i].cscore < 0.0)
     {
       if (nodes[i].stop_type == EDGE && nodes[i].edge == 0)
@@ -546,6 +524,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
           }
           nodes[i].sscore = 0.0;
           nodes[i].uscore = 0.0;
+          nodes[i].dscore = 0.0;
         }
       }
       else
@@ -559,6 +538,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
     {
       nodes[i].sscore -= train_data->start_weight;
     }
+*/
   }
 }
 
@@ -630,7 +610,7 @@ void calc_orf_gc(unsigned char *seq, struct _node *nodes, int num_nodes)
 ******************************************************************************/
 void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
                        struct _node *nodes, int num_nodes, int trans_table,
-                       double gc, double *hex_probs)
+                       double gc, double *hex_probs, double prob_no_stop)
 {
   int i = 0;
   int j = 0;
@@ -638,10 +618,7 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
   int frame = 0;               /* Frame of current node */
   double score[3] = {0};       /* Running coding score in each frameame */
   double len_fac = 0.0;        /* Length factor added for long genes */
-  double prob_no_stop = 0.0;   /* Prob of seeing a non-stop-codon */
   double gene_size = 0.0;      /* Size of current gene */
-
-  prob_no_stop = 1.0-prob_stop_random(trans_table, gc);
 
   /* Initial Pass: Score coding potential (start->stop) */
   for (i = 0; i < 3; i++)
@@ -1082,6 +1059,20 @@ void rbs_score(struct _node *node, int seq_length,
   }
 }
 
+/* Dimer score */
+void dimer_score(struct _node *node, int seq_length,
+                 struct _training *train_data)
+{
+  if (node->edge == 1 || node->dimer == -1)
+  {
+    node->dscore = 0.0;
+  }
+  else
+  {
+    node->dscore = train_data->dimer_wt[node->dimer];
+  }
+}
+
 /* Score upstream for a given node */
 void upstream_score(struct _node *nodes, int num_nodes, int which, int closed,
                     int seq_length, struct _training *train_data)
@@ -1096,10 +1087,9 @@ void upstream_score(struct _node *nodes, int num_nodes, int which, int closed,
   }
   else
   {
-    for (i = 0; i < 32; i++)
+    for (i = 0; i < 30; i++)
     {
-      nodes[which].uscore += 0.4 * train_data->start_weight *
-                             train_data->ups_wt[i][nodes[which].ups[i]];
+      nodes[which].uscore += train_data->ups_wt[i][nodes[which].ups[i]];
     }
   }
 

@@ -60,8 +60,8 @@ int is_t(unsigned char *, int);
 int is_n(unsigned char *, int);
 int is_gc(unsigned char *, int);
 
-int is_stop(unsigned char *, int, int);
-int is_start(unsigned char *, int, int);
+int get_stop_type(unsigned char *, int, int);
+int get_start_type(unsigned char *, int, int);
 int is_atg(unsigned char *, int);
 int is_gtg(unsigned char *, int);
 int is_ttg(unsigned char *, int);
@@ -74,8 +74,7 @@ int codon_has_n(unsigned char *, int);
 int gap_to_left(unsigned char *, int);
 int gap_to_right(unsigned char *, int);
 
-double prob_stop_random(int, double);
-double prob_stop_sequence(int, unsigned char *, unsigned char *, int);
+double prob_not_stop(int, unsigned char *, unsigned char *, int);
 
 double gc_content(unsigned char *, int, int);
 
@@ -85,6 +84,7 @@ char amino_letter(int);
 
 int assign_start_value(unsigned char *seq, int);
 int assign_stop_value(unsigned char *seq, int);
+int assign_dimer_value(unsigned char *seq, int);
 
 int rframe(int, int);
 int max_frame(int, int, int);
@@ -92,7 +92,7 @@ int *calc_most_gc_frame(unsigned char *, int);
 
 int mer_index(int, unsigned char *, int);
 void mer_text(char *, int, int);
-void calc_mer_background(int, unsigned char *, unsigned char *, int, double *);
+void get_word_counts(int, unsigned char *, unsigned char *, int, double *);
 
 void count_upstream_composition(unsigned char *, int, int, int, int *);
 

@@ -163,6 +163,10 @@ void adjust_starts(struct _gene *genes, int num_genes, struct _node *nodes,
         {
           max_score[j] += nodes[index].cscore - nodes[tmp_index].cscore;
         }
+        if (nodes[index].dscore > nodes[tmp_index].dscore)
+        {
+          max_score[j] += nodes[index].dscore - nodes[tmp_index].dscore;
+        }
         if (nodes[index].uscore > nodes[tmp_index].uscore)
         {
           max_score[j] += nodes[index].uscore - nodes[tmp_index].uscore;

@@ -384,7 +384,9 @@ int is_n(unsigned char *useq, int n)
   return 1;
 }
 
-int is_stop(unsigned char *seq, int n, int trans_table)
+/* Return the stop type for a particular codon */
+/* -1 is not a stop, the rest are defined in sequence.h */
+int get_stop_type(unsigned char *seq, int n, int trans_table)
 {
   /* TAG: Not a stop in genetic codes 6, 15, 16, and 22 */
   if (is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1)
@@ -392,9 +394,9 @@ int is_stop(unsigned char *seq, int n, int trans_table)
     if (trans_table == 6 || trans_table == 15 ||
         trans_table == 16 || trans_table == 22)
     {
-       return 0;
+       return -1;
     }
-    return 1;
+    return TAG;
   }
 
   /* TGA: Not a stop in genetic codes 2-5, 9-10, 13-14, 21, 24-25 */
@@ -406,9 +408,9 @@ int is_stop(unsigned char *seq, int n, int trans_table)
         trans_table == 21 || trans_table == 24 ||
         trans_table == 25)
     {
-      return 0;
+      return -1;
     }
-    return 1;
+    return TGA;
   }
 
   /* TAA: Not a stop in genetic codes 6 and 14 */
@@ -416,49 +418,51 @@ int is_stop(unsigned char *seq, int n, int trans_table)
   {
     if (trans_table == 6 || trans_table == 14)
     {
-      return 0;
+      return -1;
     }
-    return 1;
+    return TAA;
   }
 
   /* Code 2: AGG and AGA are stops */
   if (trans_table == 2 && is_a(seq, n) == 1 && is_g(seq, n+1) == 1 &&
       is_a(seq, n+2) == 1)
   {
-    return 1;
+    return NONST;
   }
   if (trans_table == 2 && is_a(seq, n) == 1 && is_g(seq, n+1) == 1 &&
       is_g(seq, n+2) == 1)
   {
-    return 1;
+    return NONST;
   }
 
   /* Code 22: TCA is a stop */
   if (trans_table == 22 && is_t(seq, n) == 1 && is_c(seq, n+1) == 1 &&
       is_a(seq, n+2) == 1)
   {
-    return 1;
+    return NONST;
   }
 
   /* Code 23: TTA is a stop */
   if (trans_table == 23 && is_t(seq, n) == 1 && is_t(seq, n+1) == 1 &&
       is_a(seq, n+2) == 1)
   {
-    return 1;
+    return NONST;
   }
 
-  return 0;
+  return -1;
 }
 
 /* Prodigal only supports ATG/GTG/TTG starts as 'standard' possibilities. */
 /* Some genetic codes have other initiation codons listed, but we do not  */
 /* support these. */
-int is_start(unsigned char *seq, int n, int trans_table)
+/* Return the start type for a particular codon */
+/* -1 is not a start, the rest are defined in sequence.h */
+int get_start_type(unsigned char *seq, int n, int trans_table)
 {
   /* ATG: Always a start codon */
   if (is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1)
   {
-    return 1;
+    return ATG;
   }
 
   /* GTG: Start codon in 2/4/5/9/11/13/21/23/24/25 */
@@ -470,7 +474,7 @@ int is_start(unsigned char *seq, int n, int trans_table)
         trans_table == 21 || trans_table == 23 ||
         trans_table == 24 || trans_table == 25)
     {
-      return 1;
+      return GTG;
     }
   }
 
@@ -481,12 +485,12 @@ int is_start(unsigned char *seq, int n, int trans_table)
         trans_table == 11 || trans_table == 13 ||
         trans_table == 24 || trans_table == 25)
     {
-      return 1;
+      return TTG;
     }
   }
 
   /* We do not handle other initiation codons */
-  return 0;
+  return -1;
 }
 
 /* Routines to say if codons are common start or stop triplets */
@@ -605,145 +609,28 @@ int is_gc(unsigned char *seq, int n)
   return 0;
 }
 
-/* Returns the probability a codon is expected to be a stop codon */
-/* in the actual sequence. */
-double prob_stop_sequence(int trans_table, unsigned char *seq,
-                          unsigned char *rseq, int seq_length)
+/* Returns the probability a codon is expected to not be a stop codon in the */
+/* actual sequence.  Just divides total non-stop codons by all codons. */
+double prob_not_stop(int trans_table, unsigned char *seq,
+                     unsigned char *rseq, int seq_length)
 {
   int i = 0;
   double total_ctr = 0.0;
-  double stop_ctr = 0.0;
+  double not_stop_ctr = 0.0;
 
   for (i = 0; i <= seq_length - 3; i++)
   {
-    total_ctr += 1.0;
-    if (is_stop(seq, i, trans_table) == 1)
+    total_ctr += 2.0;
+    if (get_stop_type(seq, i, trans_table) == -1)
     {
-      stop_ctr += 1.0;
+      not_stop_ctr += 1.0;
     }
-    if (is_stop(rseq, i, trans_table) == 1)
+    if (get_stop_type(rseq, i, trans_table) == -1)
     {
-      stop_ctr += 1.0;
-    }
-  }
-  return stop_ctr / total_ctr;
-  
-}
-
-/* Returns the probability a random codon should be a stop codon */
-/* based on the GC content and genetic code of the organism */
-double prob_stop_random(int tt, double gc)
-{
-  int i1 = 0;                     /* Loop variables, two for each base */
-  int i2 = 0;                     /* (since manipulating bitstring */
-  int i3 = 0;
-  int i4 = 0;
-  int i5 = 0;
-  int i6 = 0;
-  unsigned char codon[3] = "";    /* Current codon for consideration */
-  double codon_prob = 0.0;        /* Prob of current codon */
-  double stop_prob = 0.0;         /* Cumulative prob of any stop codon */
-
-  for (i1 = 0; i1 < 6; i1++)
-  {
-    clear(codon, i1);
-  }
-  for (i1 = 0; i1 < 2; i1++)
-  {
-    if (i1 == 0)
-    {
-      clear(codon, 0);
-    }
-    else
-    {
-      set(codon, 0);
-    }
-    for (i2 = 0; i2 < 2; i2++)
-    {
-      if (i2 == 0)
-      {
-        clear(codon, 1);
-      }
-      else
-      {
-        set(codon, 1);
-      }
-      for (i3 = 0; i3 < 2; i3++)
-      {
-        if (i3 == 0)
-        {
-          clear(codon, 2);
-        }
-        else
-        {
-          set(codon, 2);
-        }
-        for (i4 = 0; i4 < 2; i4++)
-        {
-          if (i4 == 0)
-          {
-            clear(codon, 3);
-          }
-          else
-          {
-            set(codon, 3);
-          }
-          for (i5 = 0; i5 < 2; i5++)
-          {
-            if (i5 == 0)
-            {
-              clear(codon, 4);
-            }
-            else
-            {
-              set(codon, 4);
-            }
-            for (i6 = 0; i6 < 2; i6++)
-            {
-              if (i6 == 0)
-              {
-                clear(codon, 5);
-              }
-              else
-              {
-                set(codon, 5);
-              }
-              codon_prob = 1.0;
-              if (is_gc(codon, 0) == 1)
-              {
-                codon_prob *= gc/2.0;
-              }
-              else
-              {
-                codon_prob *= (1.0-gc)/2.0;
-              }
-              if (is_gc(codon, 1) == 1)
-              {
-                codon_prob *= gc/2.0;
-              }
-              else
-              {
-                codon_prob *= (1.0-gc)/2.0;
-              }
-              if (is_gc(codon, 2) == 1)
-              {
-                codon_prob *= gc/2.0;
-              }
-              else
-              {
-                codon_prob *= (1.0-gc)/2.0;
-              }
-              if (is_stop(codon, 0, tt) == 1)
-              {
-                stop_prob += codon_prob;
-              }
-            }
-          }
-        }
-      }
+      not_stop_ctr += 1.0;
     }
   }
-  return stop_prob;
+  return not_stop_ctr / total_ctr;
 }
 
 /* Returns the GC content between 'n1' and 'n2' inclusive */
@@ -768,11 +655,11 @@ double gc_content(unsigned char *seq, int n1, int n2)
 /* translate to 'M'. */
 char amino(unsigned char *seq, int n, int trans_table, int is_init)
 {
-  if (is_stop(seq, n, trans_table) == 1)
+  if (get_stop_type(seq, n, trans_table) != -1)
   {
     return '*';
   }
-  if (is_start(seq, n, trans_table) == 1 && is_init == 1)
+  if (get_start_type(seq, n, trans_table) != -1 && is_init == 1)
   {
     return 'M';
   }
@@ -1241,6 +1128,16 @@ int assign_stop_value(unsigned char *seq, int n)
   }
 }
 
+/* Assign the appropriate dimer value to this node */
+int assign_dimer_value(unsigned char *seq, int n)
+{
+  if (n < 2)
+  {
+    return -1;
+  }
+  return mer_index(2, seq, n-2);
+}
+
 /* Returns the corresponding frame on the reverse strand */
 int rev_frame(int frame, int seq_len)
 {
@@ -1415,40 +1312,31 @@ void mer_text(char *text, int len, int index)
   }
 }
 
-/* Builds a 'len'-mer background for whole sequence */
-void calc_mer_background(int len, unsigned char *seq, unsigned char *rseq,
-                         int seq_length, double *background)
+/* Counts all occurrences of words of size 'len' over both */
+/* strands of the sequence. */
+void get_word_counts(int len, unsigned char *seq, unsigned char *rseq,
+                     int seq_length, double *word_counts)
 {
   int i = 0;
-  int sum = 0;          /* Sum of all counts */
   int size = 1;         /* Size is 4^len */
-  int *counts = NULL;   /* Counts of particular words */
 
   for (i = 1; i <= len; i++)
   {
     size *= 4;
   }
-  counts = (int *)calloc(size, sizeof(int));
-  if (counts == NULL)
+  for (i = 0; i < size; i++)
   {
-    perror("\n\nCalloc failed on mer background.");
-    exit(11);
+    word_counts[i] = 1.0;
   }
   for (i = 0; i < seq_length-len+1; i++)
   {
-    counts[mer_index(len, seq, i)]++;
-    counts[mer_index(len, rseq, i)]++;
-    sum += 2;
+    word_counts[mer_index(len, seq, i)] += 1.0;
+    word_counts[mer_index(len, rseq, i)] += 1.0;
   }
-  for (i = 0; i < size; i++)
-  {
-    background[i] = (double)((counts[i]*1.0)/(sum*1.0));
-  }
-  free(counts);
 }
 
 /******************************************************************************
-  For a given start, record the base composition of the -1/-2 and -15 to -44
+  For a given start, record the base composition of the -15 to -44
   positions upstream.
 ******************************************************************************/
 void count_upstream_composition(unsigned char *seq, int seq_length, int strand,
@@ -1471,12 +1359,8 @@ void count_upstream_composition(unsigned char *seq, int seq_length, int strand,
     return;
   }
 
-  for (i = start-44; i < start; i++)
+  for (i = start-44; i < start-14; i++)
   {
-    if (i >= start-14 && i <= start-3)
-    {
-      continue;
-    }
     ups[counter] = mer_index(1, seq, i);
     counter++;
   }

@@ -258,10 +258,7 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
     {
       return;
     }
-    if (stage == 1)
-    {
-      score = intergenic_mod(n1, n2, start_weight);
-    }
+    score = stage * intergenic_mod(n1, n2, start_weight);
   }
 
   /* 3'fwd->3'rev */
@@ -306,15 +303,15 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
           n3->cscore > max_val))
       {
         max_frame = i;
-        max_val = n3->cscore + n3->sscore +
-                  stage * intergenic_mod(n3, n2, start_weight);
+        max_val = n3->cscore + stage * (n3->sscore +
+                  intergenic_mod(n3, n2, start_weight));
       }
     }
     if (max_frame != -1)
     {
       n3 = &(nodes[n2->start_ptr[max_frame]]);
-      score = n3->cscore + n3->sscore +
-              stage * intergenic_mod(n3, n2, start_weight);
+      score = n3->cscore + stage * (n3->sscore +
+              intergenic_mod(n3, n2, start_weight));
     }
     else if (stage == 1)
     {
@@ -331,10 +328,7 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
     {
       return;
     }
-    if (stage == 1)
-    {
-      score = intergenic_mod(n1, n2, start_weight);
-    }
+    score = stage * intergenic_mod(n1, n2, start_weight);
   }
 
   /* 5'rev->5'fwd */
@@ -345,10 +339,7 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
     {
       return;
     }
-    if (stage == 1)
-    {
-      score = intergenic_mod(n1, n2, start_weight);
-    }
+    score = stage * intergenic_mod(n1, n2, start_weight);
   }
 
   /********************/
@@ -370,8 +361,8 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
     n3 = &(nodes[n1->start_ptr[n2->index%3]]);
     left = n3->index;
     right += 2;
-    score = n3->cscore + n3->sscore +
-            stage*intergenic_mod(n1, n3, start_weight);
+    score = n3->cscore + stage * (n3->sscore +
+            intergenic_mod(n1, n3, start_weight));
   }
 
   /* 3'rev->3'rev, check for a start just to right of second 3' */
@@ -389,8 +380,8 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
     n3 = &(nodes[n2->start_ptr[n1->index%3]]);
     left -= 2;
     right = n3->index;
-    score = n3->cscore + n3->sscore +
-            stage*intergenic_mod(n3, n2, start_weight);
+    score = n3->cscore + stage * (n3->sscore +
+            intergenic_mod(n3, n2, start_weight));
   }
 
   /***************************************/
@@ -427,14 +418,7 @@ void score_connection(struct _node *nodes, int node_a, int node_b,
       return;
     }
     left = n2->stop_val-2;
-    if (stage == 0)
-    {
-      score = n2->cscore;
-    }
-    else if (stage == 1)
-    {
-      score = n2->cscore + n2->sscore - 0.15*start_weight;
-    }
+    score = n2->cscore + stage * (n2->sscore - 0.15*start_weight);
   }
 
   /* New best score for this node */
