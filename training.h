@@ -29,11 +29,11 @@
 #include "node.h"
 #include "sequence.h"
 #include "summary.h"
+#include "gene.h"
 
-#define COD_SKIP 0
 #define SD_ITER 10
 #define NONSD_ITER 20
-#define MIN_TRAIN_GENE_SCORE 35.0
+#define MIN_TRAIN_GENE_SCORE 35
 #define MIN_AVG_TRAIN_GENE_LEN 600
 #define MIN_AVG_TRAIN_CTG_LEN 3000
 #define SMALL_TRAIN_SET_NODES 2000
@@ -49,7 +49,8 @@ void build_training_set_full(struct _node *, struct _training *,
 void build_training_set(struct _node *, struct _training *, struct _summary *,
                         unsigned char *, unsigned char *, unsigned char *, int,
                         int *, int);
-void frame_plot_score(unsigned char *, int, struct _node *, int, double);
+void frame_plot_score(unsigned char *, int, struct _node *, int,
+                      struct _training *);
 void calc_dicodon_gene(struct _training *, unsigned char *, unsigned char *,
                        int, struct _node *, int);
 int training_set_quality(struct _summary *);
@@ -63,7 +64,8 @@ void label_good_nonsd_motifs(double [4][4][4096], int [4][4][4096], double);
 void update_nonsd_motif_counts(double [4][4][4096], double *, unsigned char *,
                                unsigned char *, int, struct _node *, int);
 
-void calc_prob_gene(struct _node *, int, int, struct _training *);
+void calc_start_and_stop_probs(unsigned char *, unsigned char *, int,
+                               struct _training *);
 
 void determine_sd_usage(struct _training *);
 void zero_start_weights(struct _training *, int);

@@ -148,17 +148,15 @@ void build_training_set(struct _node *nodes, struct _training *train_data,
                          train_data->trans_table);
   qsort(nodes, *num_nodes, sizeof(struct _node), &compare_nodes);
 
-  /* Get base probability of stop codon */
-  train_data->prob_no_stop = prob_not_stop(train_data->trans_table, seq,
-                                           rseq, seq_length);
+  /* Get base probability of stop and start codons */
+  calc_start_and_stop_probs(seq, rseq, seq_length, train_data);
 
   /***********************************************************************
     Scan all the ORFS looking for a potential GC bias in a particular
     codon position.  This information will be used to acquire a good
     initial set of genes.
   ***********************************************************************/
-  frame_plot_score(seq, seq_length, nodes, *num_nodes,
-                   train_data->prob_no_stop);
+  frame_plot_score(seq, seq_length, nodes, *num_nodes, train_data);
 
   /***********************************************************************
     Do an initial dynamic programming routine with just the GC frame
@@ -175,9 +173,7 @@ void build_training_set(struct _node *nodes, struct _training *train_data,
     of nodes.
   ***********************************************************************/
   calc_dicodon_gene(train_data, seq, rseq, seq_length, nodes, last_node);
-  calc_coding_score(seq, rseq, seq_length, nodes, *num_nodes,
-                    train_data->trans_table, train_data->gc,
-                    train_data->gene_dc, train_data->prob_no_stop);
+  calc_coding_score(seq, rseq, seq_length, nodes, *num_nodes, train_data);
 
   /***********************************************************************
     Gather statistics about average gene length to see if the training
@@ -187,9 +183,43 @@ void build_training_set(struct _node *nodes, struct _training *train_data,
                           seq_length);
 }
 
+/* Calculates base probabilities a codon is a start/stop */
+void calc_start_and_stop_probs(unsigned char *seq, unsigned char *rseq,
+                               int seq_length, struct _training *train_data)
+{
+  int i = 0;
+  int trans_table = train_data->trans_table;
+  double total_ctr = 0.0;
+  double start_ctr = 0.0;
+  double stop_ctr = 0.0;
+
+  for (i = 0; i <= seq_length - 3; i++)
+  {
+    total_ctr += 2.0;
+    if (get_start_type(seq, i, trans_table) != -1)
+    {
+      start_ctr += 1.0;
+    }
+    if (get_start_type(rseq, i, trans_table) != -1)
+    {
+      start_ctr += 1.0;
+    }
+    if (get_stop_type(seq, i, trans_table) != -1)
+    {
+      stop_ctr += 1.0;
+    }
+    if (get_stop_type(rseq, i, trans_table) != -1)
+    {
+      stop_ctr += 1.0;
+    }
+  }
+  train_data->prob_start = start_ctr / total_ctr;
+  train_data->prob_stop = stop_ctr / total_ctr;
+}
+
 /* Records the GC frame bias from the node GC statistics */
 void frame_plot_score(unsigned char *seq, int seq_length, struct _node *nodes,
-                      int num_nodes, double prob_no_stop)
+                      int num_nodes, struct _training *train_data)
 {
   int i = 0;
   int j = 0;
@@ -200,11 +230,10 @@ void frame_plot_score(unsigned char *seq, int seq_length, struct _node *nodes,
   int frame_mod = 0;             /* Relative-to-absolute frame modifier */
   int frame = 0;                 /* Frame of the current node */
   int best_frame = 0;            /* The final winning frame for a node */
-  double bias_mag = 0.0;         /* Magnitude of the log weights */
   double gene_len = 0.0;         /* Length of the gene */
   double base_prob = 0.0;        /* Base probability a node is a gene */
 
-  base_prob = 1.0 / (1100 * (1.0 - prob_no_stop) * 6.0);
+  base_prob = 1.0 / (1100 * (train_data->prob_stop) * 6.0);
 
   /* Calculate highest GC frame for each position in sequence */
   gc_frame = calc_most_gc_frame(seq, seq_length);
@@ -275,37 +304,26 @@ void frame_plot_score(unsigned char *seq, int seq_length, struct _node *nodes,
       last[frame] = nodes[i].index;
     }
   }
-  normalize_array(bias, 3);
-  create_log_score(bias, NULL, NULL, 3);
   free(gc_frame);
 
-printf("bias values %.4f %.4f %.4f\n", bias[0], bias[1], bias[2]);
   /* Further normalization to reduce the log bias terms to sum to 1 */
-  for (i = 0; i < 3; i++)
-  {
-    bias_mag += bias[i]*bias[i];
-  }
-  bias_mag = sqrt(bias_mag);
-  for (i = 0; i < 3; i++)
-  {
-    bias[i] /= bias_mag;
-  }
-printf("bias values %.4f %.4f %.4f\n", bias[0], bias[1], bias[2]);
+  normalize_array(bias, 3);
 
   /* Now create a coding score for each node.  Score uses length */
-  /* and the frame bias. */
+  /* and the frame bias.  Effective gene length is modified by the */
+  /* frame bias to be longer or shorter. */
   for (i = 0; i < num_nodes; i++)
   {
     if (nodes[i].type == STOP)
     {
       continue;
     }
-    gene_len = nodes[i].gc_frame[0] + nodes[i].gc_frame[1] +
-               nodes[i].gc_frame[2];
-    nodes[i].cscore = log(base_prob) + gene_len * log(1.0/prob_no_stop);
-    nodes[i].cscore += (nodes[i].gc_frame[0] * bias[0] +
-                       nodes[i].gc_frame[1] * bias[1] +
-                       nodes[i].gc_frame[2] * bias[2]);
+    gene_len = 3.0 * (bias[0]*nodes[i].gc_frame[0] +
+                      bias[1]*nodes[i].gc_frame[1] +
+                      bias[2]*nodes[i].gc_frame[2]);
+    nodes[i].cscore = (1-gene_len) * log(1.0-train_data->prob_stop);
+    nodes[i].cscore -= log(train_data->prob_start);
+    nodes[i].cscore += log(base_prob);
   }
 }
 
@@ -325,20 +343,20 @@ void calc_dicodon_gene(struct _training *train_data, unsigned char *seq,
   int right = -1;                  /* Right boundary of gene */
   int in_gene = 0;                 /* -1 if not in gene, 1 if in gene */
   int index = 0;                   /* Index in 4096-length array */
+  double prob = 0.0;               /* Probability a gene is real */
   double sum_real = 0.0;           /* Total of all real hexamer counts */
   double sum_bg = 0.0;             /* Total of all background hexamer counts */
-  double counts[4096] = {0};       /* Counts of each hexamer in real genes */
+  double counts[4096] = {0};       /* Counts within a single gene */
   double background[4096] = {0};   /* Counts over the whole sequence */
-double mag = 0;
-
+  double stop_bg[4] = {0};         /* Background for stop codons */
+  double stop_real[4] = {0};       /* Stop codon counts in real genes */
+ char qt[10];
+ 
   /* Count words across whole sequence */
   get_word_counts(6, seq, rseq, seq_length, background);
+  calc_stop_background(seq, rseq, seq_length, train_data->trans_table,
+                       stop_bg);
 
-  /* Smoothing: use 1 pseudocount to prevent division by 0 or log 0 */
-  for (i = 0; i < 4096; i++)
-  {
-    counts[i] = 1.0;
-  }
   /* Count words in training set genes */
   while (path != -1)
   {
@@ -346,31 +364,35 @@ double mag = 0;
     {
       in_gene = -1;
       left = seq_length-nodes[path].index-1;
+      prob = calculate_confidence(nodes[path].cscore, 1.0)/100.0;
     }
     if (nodes[path].strand == 1 && nodes[path].type == STOP)
     {
       in_gene = 1;
       right = nodes[path].index+2;
+      stop_real[nodes[path].subtype] += 1.0;
     }
     if (in_gene == -1 && nodes[path].strand == -1 && nodes[path].type == STOP)
     {
+      stop_real[nodes[path].subtype] += 1.0;
       right = seq_length-nodes[path].index+1;
-      for (i = left; i < right - 8; i+=3)
+      for (i = left; i < right - 5; i+=3)
       {
         index = mer_index(6, rseq, i);
-        counts[index] += 1.0;
-        background[index] -= 1.0;
+        counts[index] += prob;
+        background[index] -= prob;
       }
       in_gene = 0;
     }
     if (in_gene == 1 && nodes[path].strand == 1 && nodes[path].type == START)
     {
+      prob = calculate_confidence(nodes[path].cscore, 1.0)/100.0;
       left = nodes[path].index;
       for (i = left; i < right - 8; i+=3)
       {
         index = mer_index(6, seq, i);
-        counts[index] += 1.0;
-        background[index] -= 1.0;
+        counts[index] += prob;
+        background[index] -= prob;
       }
       in_gene = 0;
     }
@@ -390,6 +412,11 @@ double mag = 0;
     train_data->gene_dc[i] = log(counts[i]/background[i]);
   }
 */
+printf("stop weights: %.4f\t%.4f\t%.4f\t%.4f\n", stop_bg[0], stop_bg[1], stop_bg[2], stop_bg[3]);
+  normalize_array(stop_real, 4);
+printf("stop weights: %.4f\t%.4f\t%.4f\t%.4f\n", stop_real[0], stop_real[1], stop_real[2], stop_real[3]);
+  create_log_score(train_data->stop_wt, stop_real, stop_bg, 4);
+printf("stop weights: %.4f\t%.4f\t%.4f\t%.4f\n", train_data->stop_wt[0], train_data->stop_wt[1], train_data->stop_wt[2], train_data->stop_wt[3]);
   for (i = 0; i < 64; i++)
   {
     sum_real = 0.0;
@@ -397,19 +424,25 @@ double mag = 0;
     for (j = 0; j < 64; j++)
     {
       index = j*64 + i;
-      sum_real += counts[index];
-      sum_bg += background[index];
+      if (counts[index] > 0 && background[index] > 0)
+      {
+        sum_real += counts[index];
+        sum_bg += background[index];
+      }
     }
     for (j = 0; j < 64; j++)
     {
       index = j*64 + i;
-      counts[index] /= sum_real;
-      background[index] /= sum_bg;
-      train_data->gene_dc[index] = log(counts[index]/background[index]);
-/*
-mer_text(qt, 6, index);
-printf("%d\t%s\t%.6f\t%.6f\t%.6f\n", index, qt, train_data->gene_dc[index], counts[index], background[index]);
-*/
+      if (counts[index] > 0 && background[index] > 0)
+      {
+        counts[index] /= sum_real;
+        background[index] /= sum_bg;
+        train_data->gene_dc[index] = log(counts[index]/background[index]);
+      }
+      else
+      {
+        train_data->gene_dc[index] = -4.0;
+      }
     }
   }
 }
@@ -478,12 +511,10 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
   double wt = 0.0;         /* Shorthand for start weight to save space */
   double rbg[28] = {0};    /* RBS background - i.e. all nodes */
   double tbg[4] = {0};     /* Type background - i.e. all nodes */
-  double sbg[4] = {0};     /* Stop background - i.e. all nodes */
   double dbg[16] = {0};    /* Dimer background - i.e. all nodes */
   double ubg[30][4] = {{0}};    /* Pair composition background */
   double rreal[28] = {0};  /* RBS foreground - i.e. only real genes */
   double treal[4] = {0};   /* Type foreground - i.e. only real genes */
-  double sreal[4] = {0};   /* Stop foreground - i.e. only real genes */
   double dreal[16] = {0};  /* Dimer foreground - i.e. only real genes */
   double ureal[30][4] = {{0}};  /* Pair comp foreground - i.e. only real genes */
   double node_score = 0.0; /* Score for current node */
@@ -495,7 +526,6 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
 
   /* Calculate the backgrounds that don't change */
   calc_start_background(seq, rseq, seq_length, train_data->trans_table, tbg);
-  calc_stop_background(seq, rseq, seq_length, train_data->trans_table, sbg);
   get_word_counts(2, seq, rseq, seq_length, dbg);
   normalize_array(dbg, 16);
   calc_upstream_background(nodes, num_nodes, ubg);
@@ -540,7 +570,6 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
           treal[best_type[frame]] += 1.0;
           if (i == SD_ITER-1)
           {
-            sreal[nodes[j].subtype] += 1.0;
             if (nodes[best_index[frame]].dimer >= 0)
             {
               dreal[nodes[best_index[frame]].dimer] += 1.0;
@@ -596,7 +625,6 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
           treal[best_type[frame]] += 1.0;
           if (i == SD_ITER-1)
           {
-            sreal[nodes[j].subtype] += 1.0;
             if (nodes[j].dimer >= 0)
             {
               dreal[nodes[best_index[frame]].dimer] += 1.0;
@@ -637,8 +665,6 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
       score_thresh /= 2.0;
     }
   }
-  normalize_array(sreal, 4);
-  create_log_score(train_data->stop_wt, sreal, sbg, 4);
   normalize_array(dreal, 16);
   create_log_score(train_data->dimer_wt, dreal, dbg, 16);
   for (i = 0; i < 30; i++)

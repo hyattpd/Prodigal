@@ -609,30 +609,6 @@ int is_gc(unsigned char *seq, int n)
   return 0;
 }
 
-/* Returns the probability a codon is expected to not be a stop codon in the */
-/* actual sequence.  Just divides total non-stop codons by all codons. */
-double prob_not_stop(int trans_table, unsigned char *seq,
-                     unsigned char *rseq, int seq_length)
-{
-  int i = 0;
-  double total_ctr = 0.0;
-  double not_stop_ctr = 0.0;
-
-  for (i = 0; i <= seq_length - 3; i++)
-  {
-    total_ctr += 2.0;
-    if (get_stop_type(seq, i, trans_table) == -1)
-    {
-      not_stop_ctr += 1.0;
-    }
-    if (get_stop_type(rseq, i, trans_table) == -1)
-    {
-      not_stop_ctr += 1.0;
-    }
-  }
-  return not_stop_ctr / total_ctr;
-}
-
 /* Returns the GC content between 'n1' and 'n2' inclusive */
 double gc_content(unsigned char *seq, int n1, int n2)
 {
@@ -1323,10 +1299,6 @@ void get_word_counts(int len, unsigned char *seq, unsigned char *rseq,
   for (i = 1; i <= len; i++)
   {
     size *= 4;
-  }
-  for (i = 0; i < size; i++)
-  {
-    word_counts[i] = 1.0;
   }
   for (i = 0; i < seq_length-len+1; i++)
   {

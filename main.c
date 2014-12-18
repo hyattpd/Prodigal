@@ -113,7 +113,7 @@ int main(int argc, char *argv[])
                   &gap_mode, &force_nonsd, &quiet);
 
   /* Defaults for genetic code and start weight */
-  train_data.start_weight = 3.40;
+  train_data.start_weight = 3.50;
   if (genetic_code == 0)
   {
     train_data.trans_table = 11; /* 11 default genetic code */

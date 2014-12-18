@@ -52,7 +52,7 @@ void record_overlapping_starts(struct _node *, int, double, int);
 void score_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
                  struct _training *, int, int);
 void calc_coding_score(unsigned char *, unsigned char *, int, struct _node *,
-                       int, int, double, double *, double);
+                       int, struct _training *);
 void calc_orf_gc(unsigned char *, struct _node *, int);
 
 void rbs_assign(unsigned char *, unsigned char *, int, struct _node *, int,

@@ -74,8 +74,6 @@ int codon_has_n(unsigned char *, int);
 int gap_to_left(unsigned char *, int);
 int gap_to_right(unsigned char *, int);
 
-double prob_not_stop(int, unsigned char *, unsigned char *, int);
-
 double gc_content(unsigned char *, int, int);
 
 char amino(unsigned char *, int, int, int);

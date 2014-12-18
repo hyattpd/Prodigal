@@ -446,9 +446,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
 
   /* Step 1: Calculate raw coding potential for every start-stop pair. */
   calc_orf_gc(seq, nodes, num_nodes);
-  calc_coding_score(seq, rseq, seq_length, nodes, num_nodes,
-                    train_data->trans_table, train_data->gc,
-                    train_data->gene_dc, train_data->prob_no_stop);
+  calc_coding_score(seq, rseq, seq_length, nodes, num_nodes, train_data);
 
   /* Step 2: Calculate raw RBS Scores for every start node. */
   rbs_assign(seq, rseq, seq_length, nodes, num_nodes, train_data);
@@ -470,7 +468,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
     nodes[i].sscore = nodes[i].tscore + nodes[i].xscore +
                       nodes[i].rscore + nodes[i].dscore +
                       nodes[i].uscore;
-    
+
 /*
     if (nodes[i].edge == 0 && nodes[i].stop_type != EDGE &&
         abs(nodes[i].index-nodes[i].stop_val) < 300)
@@ -492,7 +490,6 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
     {
       nodes[i].cscore -= META_PEN*dmax(0, (3000-seq_length)/2700.0);
     }
-
 
     /**************************************************************/
     /* Penalize starts if coding is negative.  Larger penalty for */
@@ -604,22 +601,25 @@ void calc_orf_gc(unsigned char *seq, struct _node *nodes, int num_nodes)
 }
 
 /******************************************************************************
-  Score each candidate's coding.  We also sharpen coding/noncoding thresholds
-  to prevent choosing interior starts when there is strong coding continuing
-  upstream.
+  Score each candidate's coding. 
 ******************************************************************************/
 void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
-                       struct _node *nodes, int num_nodes, int trans_table,
-                       double gc, double *hex_probs, double prob_no_stop)
+                       struct _node *nodes, int num_nodes,
+                       struct _training *train_data)
 {
   int i = 0;
   int j = 0;
   int last[3] = {0};           /* Last index seen in this frameame */
   int frame = 0;               /* Frame of current node */
   double score[3] = {0};       /* Running coding score in each frameame */
-  double len_fac = 0.0;        /* Length factor added for long genes */
   double gene_size = 0.0;      /* Size of current gene */
+  double base_log = 0.0;
 
+  /* Base probability a node is a gene.  In the naive Bayes classifier, */
+  /* this corresponds to the initial probs ln(P(gene)) - ln(P(not a gene)). */
+  base_log = log(1.0 / (1100 * (train_data->prob_stop) * 6.0));
+  base_log -= log(train_data->prob_start);
+ 
   /* Initial Pass: Score coding potential (start->stop) */
   for (i = 0; i < 3; i++)
   {
@@ -637,7 +637,7 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
     {
       for (j = last[frame]-3; j >= nodes[i].index+3; j-=3)
       {
-        score[frame] += hex_probs[mer_index(6, seq, j)];
+        score[frame] += train_data->gene_dc[mer_index(6, seq, j)];
       }
       nodes[i].cscore = score[frame];
       last[frame] = nodes[i].index;
@@ -659,64 +659,34 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
     {
       for (j = last[frame]+3; j <= nodes[i].index-3; j+=3)
       {
-        score[frame] +=
-          hex_probs[mer_index(6, rseq, seq_length - j - 1)];
+        score[frame] += 
+          train_data->gene_dc[mer_index(6, rseq, seq_length - j - 1)];
       }
       nodes[i].cscore = score[frame];
       last[frame] = nodes[i].index;
     }
   }
 
-  /* Second Pass: Penalize start nodes with ascending coding upstream */
-  for (i = 0; i < 3; i++)
-  {
-    score[i] = -10000.0;
-  }
+  /* Second Pass: Add length-based factor to the score */
   for (i = 0; i < num_nodes; i++)
   {
-    frame = (nodes[i].index)%3;
-    if (nodes[i].strand == 1 && nodes[i].type == STOP)
+    if (nodes[i].type == START)
     {
-      score[frame] = -10000.0;
-    }
-    else if (nodes[i].strand == 1)
-    {
-      if (nodes[i].cscore > score[frame])
-      {
-        score[frame] = nodes[i].cscore;
-      }
-      else
-      {
-        nodes[i].cscore -= (score[frame] - nodes[i].cscore);
-      }
-    }
-  }
-  for (i = 0; i < 3; i++)
-  {
-    score[i] = -10000.0;
-  }
-  for (i = num_nodes-1; i >= 0; i--)
-  {
-    frame = (nodes[i].index)%3;
-    if (nodes[i].strand == -1 && nodes[i].type == STOP)
-    {
-      score[frame] = -10000.0;
-    }
-    else if (nodes[i].strand == -1)
-    {
-      if (nodes[i].cscore > score[frame])
-      {
-        score[frame] = nodes[i].cscore;
-      }
-      else
-      {
-        nodes[i].cscore -= (score[frame] - nodes[i].cscore);
-      }
+ nodes[i].cscore *= 1.0;
+      gene_size = ((double)(abs(nodes[i].stop_val-nodes[i].index) - 3.0))/3.0;
+/* printf("%d\t%.4f\t%.4f\t", i, gene_size, nodes[i].cscore); */
+      nodes[i].cscore += 3.5 * (base_log + gene_size *
+                         log(1.0/(1.0-train_data->prob_stop)));
+/* printf("%.4f\n", base_log + gene_size * log(1.0/(1.0-train_data->prob_stop))); */
     }
   }
 
-  /* Third Pass: Add length-based factor to the score      */
-  /* Penalize start nodes based on length to their left    */
+  /* Third Pass: Penalize start nodes with ascending coding upstream */
+/*
+  for (i = 0; i < 3; i++)
+  {
+    score[i] = -10000.0;
+  }
   for (i = 0; i < num_nodes; i++)
   {
     frame = (nodes[i].index)%3;
@@ -726,33 +696,19 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
     }
     else if (nodes[i].strand == 1)
     {
-      gene_size = ((float)(abs(nodes[i].stop_val-nodes[i].index) + 3.0))/3.0;
-      if (gene_size > 1000.0)
+      if (nodes[i].cscore > score[frame])
       {
-        len_fac = log((1-pow(prob_no_stop, 1000.0))/pow(prob_no_stop, 1000.0));
-        len_fac -= log((1-pow(prob_no_stop, 80))/pow(prob_no_stop, 80));
-        len_fac *= (gene_size - 80) / 920.0;
+        score[frame] = nodes[i].cscore;
       }
       else
       {
-        len_fac = log((1-pow(prob_no_stop, gene_size))/
-                      pow(prob_no_stop, gene_size));
-        len_fac -= log((1-pow(prob_no_stop, 80))/pow(prob_no_stop, 80));
+        nodes[i].cscore -= (score[frame] - nodes[i].cscore);
       }
-      if (len_fac > score[frame])
-      {
-        score[frame] = len_fac;
-      }
-      else
-      {
-        len_fac -= dmax(dmin(score[frame] - len_fac, len_fac), 0);
-      }
-      if (len_fac > 3.0 && nodes[i].cscore < 0.5*len_fac)
-      {
-        nodes[i].cscore = 0.5*len_fac;
-      }
-      nodes[i].cscore += len_fac;
     }
+  }
+  for (i = 0; i < 3; i++)
+  {
+    score[i] = -10000.0;
   }
   for (i = num_nodes-1; i >= 0; i--)
   {
@@ -763,34 +719,17 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
     }
     else if (nodes[i].strand == -1)
     {
-      gene_size = ((float)(abs(nodes[i].stop_val-nodes[i].index)+3.0))/3.0;
-      if (gene_size > 1000.0)
+      if (nodes[i].cscore > score[frame])
       {
-        len_fac = log((1-pow(prob_no_stop, 1000.0))/pow(prob_no_stop, 1000.0));
-        len_fac -= log((1-pow(prob_no_stop, 80))/pow(prob_no_stop, 80));
-        len_fac *= (gene_size - 80) / 920.0;
+        score[frame] = nodes[i].cscore;
       }
       else
       {
-        len_fac = log((1-pow(prob_no_stop, gene_size))/
-                      pow(prob_no_stop, gene_size));
-        len_fac -= log((1-pow(prob_no_stop, 80))/pow(prob_no_stop, 80));
+        nodes[i].cscore -= (score[frame] - nodes[i].cscore);
       }
-      if (len_fac > score[frame])
-      {
-        score[frame] = len_fac;
-      }
-      else
-      {
-        len_fac -= dmax(dmin(score[frame] - len_fac, len_fac), 0);
-      }
-      if (len_fac > 3.0 && nodes[i].cscore < 0.5*len_fac)
-      {
-        nodes[i].cscore = 0.5*len_fac;
-      }
-      nodes[i].cscore += len_fac;
     }
   }
+*/
 }
 
 /* Wrapper for the two RBS scoring functions (SD and non-SD) */
@@ -1089,7 +1028,7 @@ void upstream_score(struct _node *nodes, int num_nodes, int which, int closed,
   {
     for (i = 0; i < 30; i++)
     {
-      nodes[which].uscore += train_data->ups_wt[i][nodes[which].ups[i]];
+      nodes[which].uscore += 0.0*train_data->start_weight * train_data->ups_wt[i][nodes[which].ups[i]];
     }
   }
 

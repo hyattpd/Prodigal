@@ -47,7 +47,8 @@ struct _node
   int start_ptr[3];    /* Array of starts w/in MAX_SAM_OVLP bases of stop in 3
                           frames */
   int ups[30];         /* Upstream base composition */
-  double cscore;       /* Coding score for this node (based on 6-mer usage) */
+  double cscore;       /* Coding score for this node (based on dicodons) */
+  double lscore;       /* Length factor to the score */
   double gc_cont;      /* GC Content for the node */
   int gc_frame[3];     /* Counter for best GC frames throughout the node */
   int rbs[2];          /* SD RBS score for this node (based on binding energy)
@@ -75,7 +76,8 @@ struct _training
                                   use */
   int uses_sd;                 /* 0 = doesn't use SD motif, 1 = it does */
   double start_weight;         /* Start weight */
-  double prob_no_stop;         /* Base probability a codon is not a stop */
+  double prob_start;           /* Base probability a codon is a start */
+  double prob_stop;            /* Base probability a codon is a stop */
   double type_wt[4];           /* Weights for ATG vs GTG vs TTG */
   double stop_wt[4];           /* Weights for TAA vs TGA vs TAG */
   double rbs_wt[28];           /* Set of weights for RBS scores */
