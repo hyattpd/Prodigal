@@ -1,6 +1,6 @@
 /*******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2015 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -1158,7 +1158,7 @@ void count_upstream_composition(unsigned char *seq, int slen, int strand,
 
   for(i = 1; i < 45; i++) {
     if(i > 2 && i < 15) continue;
-    tinf->ups_comp[count][mer_ndx(1, seq, start-i)]++;
+    if(start-i >= 0) tinf->ups_comp[count][mer_ndx(1, seq, start-i)]++;
     count++;
   }
 }

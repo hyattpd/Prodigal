@@ -8,15 +8,10 @@ prodigal -i my.metagenome.fna -o my.genes -a my.proteins.faa -p meta
 prodigal -h
 ```
 
-### New in 2.6.1
-  * Fixed a bug that mainly affected Mac compiles 7/2013 and
-posted to Google Code and Github as 2.60 (bad, as we already
-had a 2.60).  Re-released this version 8/2014 as 2.6.1,
-but the source is identical to the last release except for updated dates, 
-a more streamlined Makefile, and a new markdown README.md.
-  * Moved to semantic versioning (major.minor.patch) with the 8/2014
-re-release.  Committed to being more rigorous about this moving
-forward.
+### New in 2.6.2
+  * Added support for translation table 25.
+  * Fixed another bug affecting the Mac version.
+  * Fixed an error in the 'uninstall' portion of the Makefile.
 
 ### Getting Started
 

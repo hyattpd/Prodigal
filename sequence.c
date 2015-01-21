@@ -1,6 +1,6 @@
 /*******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2015 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -299,7 +299,7 @@ int is_stop(unsigned char *seq, int n, struct _training *tinf) {
     if((tinf->trans_table >= 2 && tinf->trans_table <= 5) ||
        tinf->trans_table == 9 || tinf->trans_table == 10 ||
        tinf->trans_table == 13 || tinf->trans_table == 14 ||
-       tinf->trans_table == 21) return 0;
+       tinf->trans_table == 21 || tinf->trans_table == 25) return 0;
     return 1;
   }
 
@@ -414,8 +414,10 @@ char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
     return 'C';
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_c(seq, n+2) == 1)
     return 'C';
-  if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_a(seq, n+2) == 1)
-    return 'W';
+  if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
+    if(tinf->trans_table == 25) return 'G';
+    else return 'W';
+  }
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_g(seq, n+2) == 1)
     return 'W';
   if(is_c(seq, n) == 1 && is_t(seq, n+1) == 1 && is_t(seq, n+2) == 1) {

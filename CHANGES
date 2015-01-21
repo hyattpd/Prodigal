@@ -1,3 +1,9 @@
+VERSION 2.6.2
+
+* Added support for translation table 25.
+* Corrected another bug affecting MacOS.
+* Fixed a line in the 'uninstall' directive in the Makefile.
+
 VERSION 2.6.1
 
 * Fixed a bug that mainly affected Mac compiles 7/2013 and
