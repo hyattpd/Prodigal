@@ -44,7 +44,7 @@ install: $(TARGET)
 	install -m 0755 $(TARGET) $(INSTALLDIR)
  
 uninstall:
-	-rm $(BINDIR)/$(TARGET)
+	-rm $(INSTALLDIR)/$(TARGET)
 
 clean:
 	-rm -f $(OBJECTS)
