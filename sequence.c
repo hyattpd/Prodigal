@@ -58,7 +58,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
     else if(hdr == 1 && (line[0] == '/' && line[1] == '/')) hdr = 0;
     else if(hdr == 1) {
       if(strstr(line, "Expand") != NULL && strstr(line, "gap") != NULL) {
-        sscanf(strstr(line, "gap")+4, "%d", &gapsize); 
+        sscanf(strstr(line, "gap")+4, "%u", &gapsize); 
         if(gapsize < 1 || gapsize > MAX_LINE) {
           fprintf(stderr, "Error: gap size in gbk file can't exceed line");
           fprintf(stderr, " size.\n");
@@ -169,7 +169,7 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
     }
     else if(reading_seq == 1) {
       if(strstr(line, "Expand") != NULL && strstr(line, "gap") != NULL) {
-        sscanf(strstr(line, "gap")+4, "%d", &gapsize); 
+        sscanf(strstr(line, "gap")+4, "%u", &gapsize); 
         if(gapsize < 1 || gapsize > MAX_LINE) {
           fprintf(stderr, "Error: gap size in gbk file can't exceed line");
           fprintf(stderr, " size.\n");
