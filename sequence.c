@@ -346,7 +346,7 @@ int is_start(unsigned char *seq, int n, struct _training *tinf) {
   /* TTG */
   if(is_t(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
     if(tinf->trans_table < 4 || tinf->trans_table == 9 ||
-       tinf->trans_table >= 21) return 0;
+       (tinf->trans_table >= 21 && tinf->trans_table < 25)) return 0;
     return 1;
   }
 

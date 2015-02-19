@@ -27,7 +27,7 @@
 #include "gene.h"
 
 #define VERSION "2.6.2"
-#define DATE "January, 2015"
+#define DATE "February, 2015"
 
 #define MIN_SINGLE_GENOME 20000
 #define IDEAL_SINGLE_GENOME 100000
