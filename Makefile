@@ -21,8 +21,8 @@
 SHELL   = /bin/sh
 CC      = gcc
 
-CFLAGS  = -pedantic -Wall -O3
-LFLAGS = -lm
+CFLAGS  += -pedantic -Wall -O3
+LFLAGS = -lm $(LDFLAGS)
 
 TARGET  = prodigal
 SOURCES = $(shell echo *.c)
