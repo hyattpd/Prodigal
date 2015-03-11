@@ -1,6 +1,6 @@
 /******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2015 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -51,6 +51,7 @@ void record_overlapping_starts(struct _node *, int, double, int);
 
 void score_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
                  struct _training *, int, int);
+void weight_gene_signals(struct _node *, double);
 void calc_coding_score(unsigned char *, unsigned char *, int, struct _node *,
                        int, struct _training *);
 void calc_orf_gc(unsigned char *, struct _node *, int);
@@ -64,10 +65,10 @@ void find_best_nonsd_motif(struct _training *, unsigned char *, unsigned
 
 void codon_type_score(struct _node *, struct _training *);
 void rbs_score(struct _node *, int, struct _training *);
-void dimer_score(struct _node *, int, struct _training *);
-void upstream_score(struct _node *, int, int, int, int, struct _training *);
+void context_score(struct _node *, int, int, int, int, struct _training *);
 
 double intergenic_mod(struct _node *, struct _node *, double);
+double prob_from_score(double);
 
 int get_rbs_value(struct _node *, double *);
 

@@ -1,6 +1,6 @@
 /******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2015 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -1104,16 +1104,6 @@ int assign_stop_value(unsigned char *seq, int n)
   }
 }
 
-/* Assign the appropriate dimer value to this node */
-int assign_dimer_value(unsigned char *seq, int n)
-{
-  if (n < 2)
-  {
-    return -1;
-  }
-  return mer_index(2, seq, n-2);
-}
-
 /* Returns the corresponding frame on the reverse strand */
 int rev_frame(int frame, int seq_len)
 {
@@ -1308,15 +1298,15 @@ void get_word_counts(int len, unsigned char *seq, unsigned char *rseq,
 }
 
 /******************************************************************************
-  For a given start, record the base composition of the -15 to -44
-  positions upstream.
+  For a given start, record the base composition of the -24 to +24
+  positions.  Skip the start codon since we record it elsewhere.
 ******************************************************************************/
-void count_upstream_composition(unsigned char *seq, int seq_length, int strand,
-                                int pos, int *ups)
+void record_sequence_context(unsigned char *seq, int seq_length, int strand,
+                             int pos, int *ups)
 {
   int i = 0;
   int start = 0;              /* Start site position */
-  int counter = 0;            /* Counter */
+  int counter = -1;           /* Counter */
 
   if (strand == 1)
   {
@@ -1326,15 +1316,28 @@ void count_upstream_composition(unsigned char *seq, int seq_length, int strand,
   {
     start = seq_length-1-pos;
   }
-  if (start - 45 < 0)
+  if (start - 24 < 0)
   {
     return;
   }
 
-  for (i = start-44; i < start-14; i++)
+  for (i = start-24; i < start; i++)
   {
-    ups[counter] = mer_index(1, seq, i);
     counter++;
+    if (i < 0)
+    {
+      continue;
+    }
+    ups[counter] = mer_index(1, seq, i);
+  }
+  for (i = start+3; i < start+24; i++)
+  {
+    counter++;
+    if (i >= seq_length)
+    {
+      continue;
+    }
+    ups[counter] = mer_index(1, seq, i);
   }
 }
 

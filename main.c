@@ -1,6 +1,6 @@
 /******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2014 University of Tenum_nodesessee / UT-Battelle
+    Copyright (C) 2007-2015 University of Tenum_nodesessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -113,7 +113,7 @@ int main(int argc, char *argv[])
                   &gap_mode, &force_nonsd, &quiet);
 
   /* Defaults for genetic code and start weight */
-  train_data.start_weight = 3.50;
+  train_data.start_weight = 1.0;
   if (genetic_code == 0)
   {
     train_data.trans_table = 11; /* 11 default genetic code */
@@ -911,12 +911,12 @@ void header(int quiet, int mode)
 
   if (quiet == 0)
   {
-    fprintf(stderr, "-------------------------------------\n");
-    fprintf(stderr, "PRODIGAL v%s [%s]         \n", VERSION, DATE);
-    fprintf(stderr, "Univ of Tenn / Oak Ridge National Lab\n");
-    fprintf(stderr, "Doug Hyatt, Loren Hauser, et al.     \n");
-    fprintf(stderr, "-------------------------------------\n");
-    fprintf(stderr, "Mode: %s, Phase: Training\n", mode_str[mode]);
+    printf("-------------------------------------\n");
+    printf("PRODIGAL v%s [%s]         \n", VERSION, DATE);
+    printf("Univ of Tenn / Oak Ridge National Lab\n");
+    printf("Doug Hyatt, Loren Hauser, et al.     \n");
+    printf("-------------------------------------\n");
+    printf("Mode: %s, Phase: Training\n", mode_str[mode]);
   }
 }
 
@@ -925,7 +925,7 @@ void log_text(int quiet, char *text)
 {
   if (quiet == 0)
   {
-    fprintf(stderr, "%s", text);
+    printf("%s", text);
   }
 }
 
@@ -989,11 +989,7 @@ int copy_standard_input_to_file(char *path, int quiet)
   char line[TEXTSIZE+1] = "";
   FILE *wp = NULL;
 
-  if (quiet == 0)
-  {
-    fprintf(stderr, "Piped input detected, copying stdin to a tmp file...");
-  }
-
+  log_text(quiet, "Piped input detected, copying stdin to a tmp file...");
   wp = fopen(path, "w");
   if (wp == NULL)
   {
@@ -1004,12 +1000,7 @@ int copy_standard_input_to_file(char *path, int quiet)
     fprintf(wp, "%s", line);
   }
   fclose(wp);
-
-  if (quiet == 0)
-  {
-    fprintf(stderr, "done!\n");
-    fprintf(stderr, "-------------------------------------\n");
-  }
+  log_text(quiet, "done.\n-------------------------------------\n");
   return 0;
 }
 

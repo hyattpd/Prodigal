@@ -1,6 +1,6 @@
 /******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2015 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -145,7 +145,7 @@ void adjust_starts(struct _gene *genes, int num_genes, struct _node *nodes,
           nodes[tmp_index].tscore < nodes[index].tscore && max_score[j] -
           nodes[tmp_index].tscore >= score-nodes[index].tscore +
           start_weight && nodes[tmp_index].rscore > nodes[index].rscore &&
-          nodes[tmp_index].uscore > nodes[index].uscore &&
+          nodes[tmp_index].bscore > nodes[index].bscore &&
           nodes[tmp_index].cscore > nodes[index].cscore &&
           abs(nodes[tmp_index].index - nodes[index].index) > 15)
       {
@@ -163,13 +163,9 @@ void adjust_starts(struct _gene *genes, int num_genes, struct _node *nodes,
         {
           max_score[j] += nodes[index].cscore - nodes[tmp_index].cscore;
         }
-        if (nodes[index].dscore > nodes[tmp_index].dscore)
+        if (nodes[index].bscore > nodes[tmp_index].bscore)
         {
-          max_score[j] += nodes[index].dscore - nodes[tmp_index].dscore;
-        }
-        if (nodes[index].uscore > nodes[tmp_index].uscore)
-        {
-          max_score[j] += nodes[index].uscore - nodes[tmp_index].uscore;
+          max_score[j] += nodes[index].bscore - nodes[tmp_index].bscore;
         }
       }
       else
@@ -525,11 +521,11 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
                                       nodes[beg_node].sscore,
                                       train_data->start_weight);
     sprintf(gene_data[i].score_data,
-      "conf=%.2f;score=%.2f;cscore=%.2f;sscore=%.2f;rscore=%.2f;uscore=%.2f;",
+      "conf=%.2f;score=%.2f;cscore=%.2f;sscore=%.2f;rscore=%.2f;bscore=%.2f;",
       confidence, nodes[beg_node].cscore+nodes[beg_node].sscore,
       nodes[beg_node].cscore, nodes[beg_node].sscore, nodes[beg_node].rscore,
-      nodes[beg_node].uscore);
-    sprintf(gene_data[i].score_data, "%stscore=%.2f;", gene_data[i].score_data,
+      nodes[beg_node].bscore);
+    sprintf(gene_data[i].score_data, "%stscore=%.2f", gene_data[i].score_data,
             nodes[beg_node].tscore);
   }
 }
@@ -981,7 +977,7 @@ void write_start_file(FILE *fh, struct _node *nodes, int num_nodes,
   fprintf(fh, "# Run Data: %s\n\n", run_data);
 
   fprintf(fh, "Beg\tEnd\tStd\tTotal\tCodPot\tStrtSc\tCodon\tRBSMot\t");
-  fprintf(fh, "Spacer\tRBSScr\tUpsScr\tTypeScr\tGCCont\n");
+  fprintf(fh, "Spacer\tRBSScr\tUpsScr\tTypeScr\tStpScr\tGCCont\n");
   for (i = 0; i < num_nodes; i++)
   {
     if (nodes[i].type == STOP)
@@ -1050,7 +1046,7 @@ void write_start_file(FILE *fh, struct _node *nodes, int num_nodes,
         }
       }
     }
-    fprintf(fh, "%.2f\t%.2f\t%.3f\n", nodes[i].uscore, nodes[i].tscore,
+    fprintf(fh, "%.2f\t%.2f\t%.3f\n", nodes[i].bscore, nodes[i].tscore,
             nodes[i].gc_cont);
   }
   fprintf(fh, "\n");
@@ -1069,7 +1065,7 @@ double calculate_confidence(double score, double start_weight)
   }
   else
   {
-    conf = 99.99;
+    conf = 100.00;
   }
   if (conf <= 50.00)
   {

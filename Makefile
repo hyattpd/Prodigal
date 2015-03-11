@@ -1,6 +1,6 @@
 ##############################################################################
 #   PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-#   Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
+#   Copyright (C) 2007-2015 University of Tennessee / UT-Battelle
 #
 #   Code Author:  Doug Hyatt
 #
@@ -21,8 +21,8 @@
 SHELL   = /bin/sh
 CC      = gcc
 
-CFLAGS  = -pedantic -Wall -O2
-LFLAGS = -lm
+CFLAGS  += -pedantic -Wall -O2
+LFLAGS = -lm $(LDFLAGS)
 
 TARGET  = prodigal
 SOURCES = $(shell echo *.c)

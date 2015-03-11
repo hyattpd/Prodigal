@@ -1,6 +1,6 @@
 /******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2014 University of Tenum_nodesessee / UT-Battelle
+    Copyright (C) 2007-2015 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -75,7 +75,7 @@ void build_training_set_full(struct _node *nodes, struct _training *train_data,
   log_text(quiet, text);
   build_training_set(nodes, train_data, statistics, seq, rseq, useq,
                      seq_length, num_nodes, num_seq);
-  log_text(quiet, "done!\n");
+  log_text(quiet, "done.\n");
 
   /***********************************************************************
     Check average gene length to see if translation table looks good or
@@ -172,7 +172,7 @@ void build_training_set(struct _node *nodes, struct _training *train_data,
     Gather dicodon statistics for the training set.  Score the entire set
     of nodes.
   ***********************************************************************/
-  calc_dicodon_gene(train_data, seq, rseq, seq_length, nodes, last_node);
+  create_coding_weights(train_data, seq, rseq, seq_length, nodes, last_node);
   calc_coding_score(seq, rseq, seq_length, nodes, *num_nodes, train_data);
 
   /***********************************************************************
@@ -328,13 +328,13 @@ void frame_plot_score(unsigned char *seq, int seq_length, struct _node *nodes,
 }
 
 /******************************************************************************
-  Simple routine that calculates the dicodon frequency in genes and in the
+  This routine calculates the dicodon frequency in genes and in the
   background, and then stores the log likelihood of each 6-mer relative to the
-  background.
+  background.  Also calculates statistics on stop codon usage in real genes.
 ******************************************************************************/
-void calc_dicodon_gene(struct _training *train_data, unsigned char *seq,
-                       unsigned char *rseq, int seq_length,
-                       struct _node *nodes, int initial_node)
+void create_coding_weights(struct _training *train_data, unsigned char *seq,
+                           unsigned char *rseq, int seq_length,
+                           struct _node *nodes, int initial_node)
 {
   int i = 0;
   int j = 0;
@@ -350,7 +350,6 @@ void calc_dicodon_gene(struct _training *train_data, unsigned char *seq,
   double background[4096] = {0};   /* Counts over the whole sequence */
   double stop_bg[4] = {0};         /* Background for stop codons */
   double stop_real[4] = {0};       /* Stop codon counts in real genes */
- char qt[10];
  
   /* Count words across whole sequence */
   get_word_counts(6, seq, rseq, seq_length, background);
@@ -398,25 +397,10 @@ void calc_dicodon_gene(struct _training *train_data, unsigned char *seq,
     }
     path = nodes[path].trace_back;
   }
-  /* Convert counts to normalized frequency */
-/*
-  for (i = 0; i < 4096; i++)
-  {
-    sum_real += counts[i];
-    sum_bg += background[i];
-  }
-  for (i = 0; i < 4096; i++)
-  {
-    counts[i] /= sum_real;
-    background[i] /= sum_bg;
-    train_data->gene_dc[i] = log(counts[i]/background[i]);
-  }
-*/
-printf("stop weights: %.4f\t%.4f\t%.4f\t%.4f\n", stop_bg[0], stop_bg[1], stop_bg[2], stop_bg[3]);
+
+  /* Convert counts to normalized frequency and create log weights */
   normalize_array(stop_real, 4);
-printf("stop weights: %.4f\t%.4f\t%.4f\t%.4f\n", stop_real[0], stop_real[1], stop_real[2], stop_real[3]);
   create_log_score(train_data->stop_wt, stop_real, stop_bg, 4);
-printf("stop weights: %.4f\t%.4f\t%.4f\t%.4f\n", train_data->stop_wt[0], train_data->stop_wt[1], train_data->stop_wt[2], train_data->stop_wt[3]);
   for (i = 0; i < 64; i++)
   {
     sum_real = 0.0;
@@ -498,37 +482,31 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
                      struct _node *nodes, int num_nodes,
                      struct _training *train_data)
 {
-  int i = 0;               /* Loop variables */
+  int i = 0;                   /* Loop variables */
   int j = 0;
   int k = 0;
-  int num_genes = 0;       /* Track the number of genes used */
-  int frame = 0;           /* Reading frame */
-  int rbs_value = 0;       /* Best motif between exact and mismatch */
-  int best_rbs[3] = {0};   /* RBS of the best gene in each frame */
-  int best_type[3] = {0};  /* Type of the best gene in each frame */
-  int best_index[3] = {0}; /* Index of best gene in each frame */
+  int num_genes = 0;           /* Track the number of genes used */
+  int frame = 0;               /* Reading frame */
+  int rbs_value = 0;           /* Best motif between exact and mismatch */
+  int best_rbs[3] = {0};       /* RBS of the best gene in each frame */
+  int best_type[3] = {0};      /* Type of the best gene in each frame */
+  int best_index[3] = {0};     /* Index of best gene in each frame */
   double best_score[3] = {0};  /* Best scoring node in each frame */
-  double wt = 0.0;         /* Shorthand for start weight to save space */
-  double rbg[28] = {0};    /* RBS background - i.e. all nodes */
-  double tbg[4] = {0};     /* Type background - i.e. all nodes */
-  double dbg[16] = {0};    /* Dimer background - i.e. all nodes */
-  double ubg[30][4] = {{0}};    /* Pair composition background */
-  double rreal[28] = {0};  /* RBS foreground - i.e. only real genes */
-  double treal[4] = {0};   /* Type foreground - i.e. only real genes */
-  double dreal[16] = {0};  /* Dimer foreground - i.e. only real genes */
-  double ureal[30][4] = {{0}};  /* Pair comp foreground - i.e. only real genes */
-  double node_score = 0.0; /* Score for current node */
+  double wt = 0.0;             /* Shorthand for start weight to save space */
+  double rbg[28] = {0};        /* RBS background - i.e. all nodes */
+  double tbg[4] = {0};         /* Type background - i.e. all nodes */
+  double bbg[45][4] = {{0}};   /* Base composition background */
+  double rreal[28] = {0};      /* RBS foreground - i.e. only real genes */
+  double treal[4] = {0};       /* Type foreground - i.e. only real genes */
+  double breal[45][4] = {{0}}; /* Base comp foreg. - i.e. only real genes */
+  double node_score = 0.0;     /* Score for current node */
   double score_thresh = MIN_TRAIN_GENE_SCORE;
-                           /* Minimum score for genes to be "real" */
+                               /* Minimum score for genes to be "real" */
 
   wt = train_data->start_weight;
   zero_start_weights(train_data, 0);
 
   /* Calculate the backgrounds that don't change */
-  calc_start_background(seq, rseq, seq_length, train_data->trans_table, tbg);
-  get_word_counts(2, seq, rseq, seq_length, dbg);
-  normalize_array(dbg, 16);
-  calc_upstream_background(nodes, num_nodes, ubg);
 
   /* Iterate SD_ITER times through the list of nodes                    */
   /* Converge upon optimal weights for ATG vs GTG vs TTG and RBS motifs */
@@ -538,7 +516,9 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
   {
     num_genes = 0;
 
-    /* Recalculate the RBS motif background, since rbs weights change. */
+    /* Calculate the background statistics for RBS, type, context. */
+    calc_start_background(seq, rseq, seq_length, train_data->trans_table, tbg);
+    calc_context_background(nodes, num_nodes, bbg);
     calc_sd_rbs_background(nodes, num_nodes, train_data->rbs_wt, rbg);
 
     /* Set real values to 0 since we're recounting */
@@ -567,16 +547,15 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
         {
           num_genes++;
           rreal[best_rbs[frame]] += 1.0;
+          rbg[best_rbs[frame]] -= 1.0;
           treal[best_type[frame]] += 1.0;
+          tbg[best_type[frame]] -= 1.0;
           if (i == SD_ITER-1)
           {
-            if (nodes[best_index[frame]].dimer >= 0)
+            for (k = 0; k < 45; k++)
             {
-              dreal[nodes[best_index[frame]].dimer] += 1.0;
-            }
-            for (k = 0; k < 30; k++)
-            {
-              ureal[k][nodes[best_index[frame]].ups[k]] += 1.0;
+              breal[k][nodes[best_index[frame]].context[k]] += 1.0;
+              bbg[k][nodes[best_index[frame]].context[k]] -= 1.0;
             }
           }
         }
@@ -622,16 +601,15 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
         {
           num_genes++;
           rreal[best_rbs[frame]] += 1.0;
+          rbg[best_rbs[frame]] -= 1.0;
           treal[best_type[frame]] += 1.0;
+          tbg[best_type[frame]] -= 1.0;
           if (i == SD_ITER-1)
           {
-            if (nodes[j].dimer >= 0)
+            for (k = 0; k < 45; k++)
             {
-              dreal[nodes[best_index[frame]].dimer] += 1.0;
-            }
-            for (k = 0; k < 30; k++)
-            {
-              ureal[k][nodes[best_index[frame]].ups[k]] += 1.0;
+              breal[k][nodes[best_index[frame]].context[k]] += 1.0;
+              bbg[k][nodes[best_index[frame]].context[k]] -= 1.0;
             }
           }
         }
@@ -655,9 +633,11 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
       }
     }
 
-    /* Log score conversions */
+    /* Normalize arrays and convert to log weights */
+    normalize_array(rbg, 28);
     normalize_array(rreal, 28);
     create_log_score(train_data->rbs_wt, rreal, rbg, 28);
+    normalize_array(tbg, 4);
     normalize_array(treal, 4);
     create_log_score(train_data->type_wt, treal, tbg, 4);
     if (num_genes <= (double)num_nodes/SMALL_TRAIN_SET_NODES)
@@ -665,18 +645,12 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
       score_thresh /= 2.0;
     }
   }
-  normalize_array(dreal, 16);
-  create_log_score(train_data->dimer_wt, dreal, dbg, 16);
-  for (i = 0; i < 30; i++)
+  for (i = 0; i < 45; i++)
   {
-    normalize_array(ureal[i], 4);
-    create_log_score(train_data->ups_wt[i], ureal[i], ubg[i], 4);
+    normalize_array(bbg[i], 4);
+    normalize_array(breal[i], 4);
+    create_log_score(train_data->context_wt[i], breal[i], bbg[i], 4);
   }
-/*
-printf("base/real/bg/log\t%d\n", i);
-for(j = 0; j < 4; j++) { printf("\t%d\t%.4f\t%.4f\t%.4f\n", j, ureal[i][j], ubg[i][j], train_data->ups_wt[i][j]); }
-exit(0);
-*/
 }
 
 /******************************************************************************
@@ -1276,15 +1250,11 @@ void zero_start_weights(struct _training *train_data, int which)
     train_data->type_wt[i] = 0.0;
     train_data->stop_wt[i] = 0.0;
   }
-  for (i = 0; i < 16; i++)
-  {
-    train_data->dimer_wt[i] = 0.0;
-  }
-  for (i = 0; i < 30; i++)
+  for (i = 0; i < 45; i++)
   {
     for (j = 0; j < 4; j++)
     {
-      train_data->ups_wt[i][j] = 0.0;
+      train_data->context_wt[i][j] = 0.0;
     }
   }
 
@@ -1349,7 +1319,6 @@ void calc_start_background(unsigned char *seq, unsigned char *rseq,
       sbg[type] += 1.0;
     }
   }
-  normalize_array(sbg, 4);
 }
 
 /* Calculate TAA/TGA/TAG background across whole sequence */
@@ -1406,21 +1375,20 @@ void calc_sd_rbs_background(struct _node *nodes, int num_nodes, double *rbs_wt,
     }
     rbg[rbs_switch] += 1.0;
   }
-  normalize_array(rbg, 28);
 }
 
-/* Calculate the upstream background */
-void calc_upstream_background(struct _node *nodes, int num_nodes, double ubg[30][4])
+/* Calculate the start context background */
+void calc_context_background(struct _node *nodes, int num_nodes, double bbg[45][4])
 {
   int i = 0;
   int j = 0;
 
   /* Build the background of pair composition */
-  for (i = 0; i < 30; i++)
+  for (i = 0; i < 45; i++)
   {
     for (j = 0; j < 4; j++)
     {
-      ubg[i][j] = 0.0;
+      bbg[i][j] = 0.0;
     }
   }
 
@@ -1430,14 +1398,10 @@ void calc_upstream_background(struct _node *nodes, int num_nodes, double ubg[30]
     {
       continue;
     }
-    for (j = 0; j < 30; j++)
+    for (j = 0; j < 45; j++)
     {
-      ubg[j][nodes[i].ups[j]] += 1.0;
+      bbg[j][nodes[i].context[j]] += 1.0;
     }
-  }
-  for (i = 0; i < 30; i++)
-  {
-    normalize_array(ubg[i], 4);
   }
 }
 

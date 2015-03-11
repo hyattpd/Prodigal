@@ -1,6 +1,6 @@
 /******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2015 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -82,7 +82,6 @@ char amino_letter(int);
 
 int assign_start_value(unsigned char *seq, int);
 int assign_stop_value(unsigned char *seq, int);
-int assign_dimer_value(unsigned char *seq, int);
 
 int rframe(int, int);
 int max_frame(int, int, int);
@@ -92,7 +91,7 @@ int mer_index(int, unsigned char *, int);
 void mer_text(char *, int, int);
 void get_word_counts(int, unsigned char *, unsigned char *, int, double *);
 
-void count_upstream_composition(unsigned char *, int, int, int, int *);
+void record_sequence_context(unsigned char *, int, int, int, int *);
 
 int shine_dalgarno_exact(unsigned char *, int, int, double *);
 int shine_dalgarno_mismatch(unsigned char *, int, int, double *);

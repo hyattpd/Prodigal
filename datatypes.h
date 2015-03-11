@@ -43,11 +43,10 @@ struct _node
   int stop_val;        /* For a stop, record previous stop; for a start, record
                           its stop */
   int stop_type;       /* For starts: record subtype of matching stop node */
-  int dimer;           /* -1 for edge, 0-15 for dimer in front of start */
   int start_ptr[3];    /* Array of starts w/in MAX_SAM_OVLP bases of stop in 3
                           frames */
-  int ups[30];         /* Upstream base composition */
-  double cscore;       /* Coding score for this node (based on dicodons) */
+  int context[45];     /* Base composition around start */
+  double cscore;       /* Coding score for this node */
   double lscore;       /* Length factor to the score */
   double gc_cont;      /* GC Content for the node */
   int gc_frame[3];     /* Counter for best GC frames throughout the node */
@@ -55,10 +54,8 @@ struct _node
                           rbs[0] = best motif with exact match, rbs[1] = with
                           mismatches */
   struct _motif mot;   /* Upstream motif information for this node */
-  double uscore;       /* Score for the upstream -1/-2, -15to-45 region */
-  double dscore;       /* Score for the -1/-2 dimer preceding start */
+  double bscore;       /* Score for the sequence context around start */
   double tscore;       /* Score for the ATG/GTG/TTG value */
-  double xscore;       /* Score for the stop codon TAA/TGA/TAG value */
   double rscore;       /* Score for the RBS motif */
   double sscore;       /* Score for the strength of the start codon */
   int trace_back;      /* Traceback to connecting node */
@@ -81,8 +78,7 @@ struct _training
   double type_wt[4];           /* Weights for ATG vs GTG vs TTG */
   double stop_wt[4];           /* Weights for TAA vs TGA vs TAG */
   double rbs_wt[28];           /* Set of weights for RBS scores */
-  double dimer_wt[16];         /* Weights for the dimer preceding the start */
-  double ups_wt[30][4];        /* Base composition weights for non-RBS-distance
+  double context_wt[45][4];    /* Base composition weights for non-RBS-distance
                                   motifs.  0-1 are the -1/-2 position, 2-31 are
                                   the -15 to -44 positions.  Second array is
                                   the base A,C,T,G,etc. */

@@ -1,6 +1,6 @@
 /******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2014 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2015 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -51,8 +51,8 @@ void build_training_set(struct _node *, struct _training *, struct _summary *,
                         int *, int);
 void frame_plot_score(unsigned char *, int, struct _node *, int,
                       struct _training *);
-void calc_dicodon_gene(struct _training *, unsigned char *, unsigned char *,
-                       int, struct _node *, int);
+void create_coding_weights(struct _training *, unsigned char *, unsigned char *,
+                           int, struct _node *, int);
 int training_set_quality(struct _summary *);
 void low_gene_len_warning(int, struct _summary *);
 
@@ -74,7 +74,7 @@ void calc_start_background(unsigned char *, unsigned char *, int, int,
                           double *);
 void calc_stop_background(unsigned char *, unsigned char *, int, int,
                           double *);
-void calc_upstream_background(struct _node *, int, double [32][4]);
+void calc_context_background(struct _node *, int, double [32][4]);
 void calc_sd_rbs_background(struct _node *, int, double *, double *);
 
 void normalize_array(double *, int);
