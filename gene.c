@@ -525,8 +525,8 @@ void record_gene_data(struct _gene *genes, struct _gene_data *gene_data,
       confidence, nodes[beg_node].cscore+nodes[beg_node].sscore,
       nodes[beg_node].cscore, nodes[beg_node].sscore, nodes[beg_node].rscore,
       nodes[beg_node].bscore);
-    sprintf(gene_data[i].score_data, "%stscore=%.2f", gene_data[i].score_data,
-            nodes[beg_node].tscore);
+    sprintf(gene_data[i].score_data, "%stscore=%.2f",
+            gene_data[i].score_data, nodes[beg_node].tscore);
   }
 }
 
@@ -976,7 +976,7 @@ void write_start_file(FILE *fh, struct _node *nodes, int num_nodes,
   fprintf(fh, "# Sequence Data: %s\n", seq_data);
   fprintf(fh, "# Run Data: %s\n\n", run_data);
 
-  fprintf(fh, "Beg\tEnd\tStd\tTotal\tCodPot\tStrtSc\tCodon\tRBSMot\t");
+  fprintf(fh, "Beg\tEnd\tStd\tTotal\tCodPot\tLenSc\tStrtSc\tCodon\tRBSMot\t");
   fprintf(fh, "Spacer\tRBSScr\tUpsScr\tTypeScr\tStpScr\tGCCont\n");
   for (i = 0; i < num_nodes; i++)
   {
@@ -993,15 +993,17 @@ void write_start_file(FILE *fh, struct _node *nodes, int num_nodes,
     }
     if (nodes[i].strand == 1)
     {
-      fprintf(fh, "%d\t%d\t+\t%.2f\t%.2f\t%.2f\t%s\t", nodes[i].index+1,
+      fprintf(fh, "%d\t%d\t+\t%.2f\t%.2f\t%.2f\t%.2f\t%s\t", nodes[i].index+1,
               nodes[i].stop_val+3, nodes[i].cscore+nodes[i].sscore,
-              nodes[i].cscore, nodes[i].sscore, start_string[start_type]);
+              nodes[i].pscore, nodes[i].lscore, nodes[i].sscore,
+              start_string[start_type]);
     }
     if (nodes[i].strand == -1)
     {
-      fprintf(fh, "%d\t%d\t-\t%.2f\t%.2f\t%.2f\t%s\t", nodes[i].stop_val-1,
-              nodes[i].index+1, nodes[i].cscore+nodes[i].sscore,
-              nodes[i].cscore, nodes[i].sscore, start_string[start_type]);
+      fprintf(fh, "%d\t%d\t-\t%.2f\t%.2f\t%.2f\t%.2f\t%s\t",
+              nodes[i].stop_val-1, nodes[i].index+1,
+              nodes[i].cscore+nodes[i].sscore, nodes[i].pscore,
+              nodes[i].lscore, nodes[i].sscore, start_string[start_type]);
     }
     rbs1 = train_data->rbs_wt[nodes[i].rbs[0]]*train_data->start_weight;
     rbs2 = train_data->rbs_wt[nodes[i].rbs[1]]*train_data->start_weight;

@@ -318,6 +318,7 @@ void reset_node_scores(struct _node *nodes, int num_nodes)
     }
     nodes[i].score = 0.0;
     nodes[i].cscore = 0.0;
+    nodes[i].pscore = 0.0;
     nodes[i].lscore = 0.0;
     nodes[i].sscore = 0.0;
     nodes[i].rscore = 0.0;
@@ -461,7 +462,8 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
     weight_gene_signals(&nodes[i], train_data->start_weight);
      
     /* Base Start Score */
-    nodes[i].sscore = nodes[i].tscore + nodes[i].rscore + nodes[i].bscore;
+    nodes[i].sscore = nodes[i].tscore + nodes[i].rscore +
+                      nodes[i].bscore;
 
     /**************************************************************/
     /* Coding Penalization in Anonymous Fragments:    Internal    */
@@ -520,6 +522,10 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
     }
 */
   }
+
+  /* Step 4: Penalize non-peak start nodes to avoid them */
+  /* being chosen in the dynamic programming. */
+  penalize_nonpeak_nodes(nodes, num_nodes);
 }
 
 /******************************************************************************
@@ -531,29 +537,115 @@ void weight_gene_signals(struct _node *node, double start_weight)
 {
   double prob = 0.0;      /* Probability of gene being real */
 
-  /* Decision #1: Handle "unreliable" coding, when everything else */
-  /* points to the gene being real. */
-  if (node->cscore < 0.0 && node->lscore > 0.0)
+  /* Decision #1: Amplify negative signals in short genes. */
+  prob = prob_from_score(node->lscore/start_weight);
+  node->rscore *= (node->rscore < 0.0?(1.0/prob):1.0);
+  node->tscore *= (node->tscore < 0.0?(1.0/prob):1.0);
+  node->bscore *= (node->bscore < 0.0?(1.0/prob):1.0);
+
+  /* Decision #2: Amplify negative coding in short genes and reduce */
+  /* it in long genes. */
+  node->pscore *= (node->pscore < 0.0?(1.0-prob)*2.0:1.0);
+
+  /* Decision #3: Context score can be somewhat unreliable, so */
+  /* we penalize positive context score in proportion to the */
+  /* other gene signals. */
+  prob = node->pscore + node->lscore + node->rscore + node->tscore;
+  prob = prob_from_score(prob/start_weight);
+  node->bscore *= (node->bscore > 0.0?prob:1.0);
+
+  /* Since we may have modified pscore, recalculate cscore. */
+  node->cscore = node->pscore + node->lscore;
+}
+
+/* Penalize the nonpeak nodes to reduce the chance they get */
+/* chosen in the dynamic programming. */
+void penalize_nonpeak_nodes(struct _node *nodes, int num_nodes)
+{
+  int i = 0;
+  int j = 0;
+  double score = 0.0;
+
+  /* Forward Strand Nodes */
+  for (i = 0; i < num_nodes; i++)
   {
-    prob = node->lscore + node->rscore + node->tscore;
-    if (node->bscore < 0)
+    if (nodes[i].strand == -1 || nodes[i].type != STOP)
     {
-      prob += node->bscore;
+      continue;
     }
-    prob = prob_from_score(prob/start_weight);
-    if (prob > 0.5)
+    score = -10000.0;
+    for (j = i-1; j > 0; j--)
     {
-      node->cscore = prob*(node->lscore) + (1.0-prob)*(node->cscore);
+      if (nodes[j].strand == -1 || (nodes[i].index - nodes[j].index)%3 != 0)
+      {
+        continue;
+      }
+      if (nodes[j].type == STOP)
+      {
+        break;
+      }
+      if (nodes[j].cscore + nodes[j].sscore > score)
+      {
+        score = nodes[j].cscore + nodes[j].sscore;
+      }
+    }
+    for (j = i-1; j > 0; j--)
+    {
+      if (nodes[j].strand == -1 || (nodes[i].index - nodes[j].index)%3 != 0)
+      {
+        continue;
+      }
+      if (nodes[j].type == STOP)
+      {
+        break;
+      }
+      if (nodes[j].cscore + nodes[j].sscore < score)
+      {
+        nodes[j].cscore += (nodes[j].cscore + nodes[j].sscore - score);
+        nodes[j].pscore += (nodes[j].cscore + nodes[j].sscore - score);
+      }
     }
   }
 
-  /* Decision #2: Handle "unreliable" upstream score, when everything */
-  /* else points to the gene being false. */
-  if (node->bscore > 0.0)
+  /* Reverse Strand Nodes */
+  for (i = 0; i < num_nodes; i++)
   {
-    prob = node->cscore + node->rscore + node->tscore;
-    prob = prob_from_score(prob/start_weight);
-    node->bscore *= prob;
+    if (nodes[i].strand == 1 || nodes[i].type != STOP)
+    {
+      continue;
+    }
+    score = -10000.0;
+    for (j = i+1; j < num_nodes; j++)
+    {
+      if (nodes[j].strand == -1 || (nodes[j].index - nodes[i].index)%3 != 0)
+      {
+        continue;
+      }
+      if (nodes[j].type == STOP)
+      {
+        break;
+      }
+      if (nodes[j].cscore + nodes[j].sscore > score)
+      {
+        score = nodes[j].cscore + nodes[j].sscore;
+      }
+    }
+    for (j = i+1; j < num_nodes; j++)
+    {
+      if (nodes[j].strand == -1 || (nodes[j].index - nodes[i].index)%3 != 0)
+      {
+        continue;
+      }
+      if (nodes[j].type == STOP)
+      {
+        break;
+      }
+      if (nodes[j].cscore + nodes[j].sscore < score)
+      {
+        nodes[j].cscore += (nodes[j].cscore + nodes[j].sscore - score);
+        nodes[j].pscore += (nodes[j].cscore + nodes[j].sscore - score);
+      }
+    }
   }
 }
 
@@ -664,7 +756,7 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
       {
         score[frame] += train_data->gene_dc[mer_index(6, seq, j)];
       }
-      nodes[i].cscore = score[frame];
+      nodes[i].pscore = score[frame];
       last[frame] = nodes[i].index;
     }
   }
@@ -694,7 +786,7 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
         score[frame] += 
           train_data->gene_dc[mer_index(6, rseq, seq_length - j - 1)];
       }
-      nodes[i].cscore = score[frame];
+      nodes[i].pscore = score[frame];
       last[frame] = nodes[i].index;
     }
   }
@@ -707,7 +799,7 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
       gene_size = ((double)(abs(nodes[i].stop_val-nodes[i].index) - 3.0))/3.0;
       nodes[i].lscore = train_data->start_weight * (base_log + gene_size *
                         log(1.0/(1.0-train_data->prob_stop)));
-      nodes[i].cscore += nodes[i].lscore;
+      nodes[i].cscore = nodes[i].pscore + nodes[i].lscore;
     }
   }
 }
@@ -971,7 +1063,7 @@ void rbs_score(struct _node *node, int seq_length,
 
 /* Score sequence context around the start for a given node */
 void context_score(struct _node *nodes, int num_nodes, int which, int closed,
-                   int seq_length, struct _training *train_data)
+                   int seq_length, struct _training *train)
 {
   int i = 0;
 
@@ -983,10 +1075,10 @@ void context_score(struct _node *nodes, int num_nodes, int which, int closed,
   }
   else
   {
-    for (i = 0; i < 30; i++)
+    for (i = 0; i < 45; i++)
     {
-      nodes[which].bscore = nodes[which].bscore + train_data->start_weight *
-                            train_data->context_wt[i][nodes[which].context[i]];
+      nodes[which].bscore += train->start_weight *
+                             train->context_wt[i][nodes[which].context[i]];
     }
   }
 
@@ -996,12 +1088,12 @@ void context_score(struct _node *nodes, int num_nodes, int which, int closed,
   ****************************************************************/
   if (closed == 0 && nodes[which].index <= 2 && nodes[which].strand == 1)
   {
-    nodes[which].bscore += EDGE_UPS*train_data->start_weight;
+    nodes[which].bscore += EDGE_UPS*train->start_weight;
   }
   else if (closed == 0 && nodes[which].index >= seq_length-3 &&
            nodes[which].strand == -1)
   {
-    nodes[which].bscore += EDGE_UPS*train_data->start_weight;
+    nodes[which].bscore += EDGE_UPS*train->start_weight;
   }
   else if (which < 500 && nodes[which].strand == 1)
   {
@@ -1009,7 +1101,7 @@ void context_score(struct _node *nodes, int num_nodes, int which, int closed,
     {
       if (nodes[i].edge == 1 && nodes[which].stop_val == nodes[i].stop_val)
       {
-        nodes[which].bscore += EDGE_UPS*train_data->start_weight;
+        nodes[which].bscore += EDGE_UPS*train->start_weight;
         break;
       }
     }
@@ -1020,7 +1112,7 @@ void context_score(struct _node *nodes, int num_nodes, int which, int closed,
     {
       if (nodes[i].edge == 1 && nodes[which].stop_val == nodes[i].stop_val)
       {
-        nodes[which].bscore += EDGE_UPS*train_data->start_weight;
+        nodes[which].bscore += EDGE_UPS*train->start_weight;
         break;
       }
     }
@@ -1071,13 +1163,17 @@ double intergenic_mod(struct _node *n1, struct _node *n2, double start_weight)
   {
     overlap = 1;
   }
-  if (dist > 3*OPER_DIST || n1->strand != n2->strand)
+  if (n1->strand != n2->strand)
+  {
+    ret_val -= 0.40 * start_weight + 0.10 * overlap * start_weight;
+  }
+  if (dist > 3*OPER_DIST)
   {
     ret_val -= 0.15 * start_weight;
   }
-  else if ((dist <= OPER_DIST && overlap == 0) || dist < 0.25*OPER_DIST)
+  else if ((dist <= OPER_DIST && overlap == 0) || dist < OPER_DIST)
   {
-    ret_val += (2.0 - (double)(dist)/OPER_DIST) * 0.15 * start_weight;
+    ret_val += (2.0 - (double)(dist)/OPER_DIST) * 0.20 * start_weight;
   }
   return ret_val;
 }
@@ -1087,8 +1183,12 @@ double prob_from_score(double score)
 {
   double prob = 0.0;
 
+  score = (score > 10.0?10.0:score);
+  score = (score < -10.0?-10.0:score);
   prob = exp(score);
   prob /= (prob+1);
+  prob = (prob > 0.99?0.99:prob);
+  prob = (prob < 0.01?0.01:prob);
   return prob; 
 }
 

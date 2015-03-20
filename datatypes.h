@@ -46,7 +46,8 @@ struct _node
   int start_ptr[3];    /* Array of starts w/in MAX_SAM_OVLP bases of stop in 3
                           frames */
   int context[45];     /* Base composition around start */
-  double cscore;       /* Coding score for this node */
+  double cscore;       /* Total coding score (pscore + lscore) for this node */
+  double pscore;       /* Coding potential for this node */
   double lscore;       /* Length factor to the score */
   double gc_cont;      /* GC Content for the node */
   int gc_frame[3];     /* Counter for best GC frames throughout the node */
@@ -54,7 +55,7 @@ struct _node
                           rbs[0] = best motif with exact match, rbs[1] = with
                           mismatches */
   struct _motif mot;   /* Upstream motif information for this node */
-  double bscore;       /* Score for the sequence context around start */
+  double bscore;       /* Score for the sequence context upstream from start */
   double tscore;       /* Score for the ATG/GTG/TTG value */
   double rscore;       /* Score for the RBS motif */
   double sscore;       /* Score for the strength of the start codon */

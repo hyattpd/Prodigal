@@ -52,6 +52,7 @@ void record_overlapping_starts(struct _node *, int, double, int);
 void score_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
                  struct _training *, int, int);
 void weight_gene_signals(struct _node *, double);
+void penalize_nonpeak_nodes(struct _node *, int);
 void calc_coding_score(unsigned char *, unsigned char *, int, struct _node *,
                        int, struct _training *);
 void calc_orf_gc(unsigned char *, struct _node *, int);
@@ -69,6 +70,7 @@ void context_score(struct _node *, int, int, int, int, struct _training *);
 
 double intergenic_mod(struct _node *, struct _node *, double);
 double prob_from_score(double);
+double scale_signal(double, double);
 
 int get_rbs_value(struct _node *, double *);
 
