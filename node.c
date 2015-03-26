@@ -539,20 +539,27 @@ void weight_gene_signals(struct _node *node, double start_weight)
 
   /* Decision #1: Amplify negative signals in short genes. */
   prob = prob_from_score(node->lscore/start_weight);
-  node->rscore *= (node->rscore < 0.0?(1.0/prob):1.0);
-  node->tscore *= (node->tscore < 0.0?(1.0/prob):1.0);
-  node->bscore *= (node->bscore < 0.0?(1.0/prob):1.0);
+  if (prob < 0.8)
+  {
+    node->rscore *= (node->rscore < 0.0?(0.8/prob):1.0);
+    node->tscore *= (node->tscore < 0.0?(0.8/prob):1.0);
+    node->bscore *= (node->bscore < 0.0?(0.8/prob):1.0);
+  }
 
   /* Decision #2: Amplify negative coding in short genes and reduce */
   /* it in long genes. */
   node->pscore *= (node->pscore < 0.0?(1.0-prob)*2.0:1.0);
+  node->pscore = (node->pscore < -50.0?-50.0:node->pscore);
 
   /* Decision #3: Context score can be somewhat unreliable, so */
   /* we penalize positive context score in proportion to the */
   /* other gene signals. */
   prob = node->pscore + node->lscore + node->rscore + node->tscore;
   prob = prob_from_score(prob/start_weight);
-  node->bscore *= (node->bscore > 0.0?prob:1.0);
+  if (prob < 0.8 && node->bscore > 0.0)
+  {
+    node->bscore *= prob/0.8;
+  }
 
   /* Since we may have modified pscore, recalculate cscore. */
   node->cscore = node->pscore + node->lscore;
@@ -904,7 +911,7 @@ void find_best_sd_rbs(unsigned char *seq, unsigned char *rseq, int seq_length,
 ******************************************************************************/
 void find_best_nonsd_motif(struct _training *train_data, unsigned char *seq,
                            unsigned char *rseq, int seq_length,
-                           struct _node *nodes, int stage)
+                           struct _node *node, int stage)
 {
   int i = 0;
   int j = 0;
@@ -920,19 +927,19 @@ void find_best_nonsd_motif(struct _training *train_data, unsigned char *seq,
   double score = 0.0;          /* Current motif score */
   unsigned char *wseq = NULL;  /* Working sequence - seq or rseq */
 
-  if (nodes->type == STOP || nodes->edge == 1)
+  if (node->type == STOP || node->edge == 1)
   {
     return;
   }
-  if (nodes->strand == 1)
+  if (node->strand == 1)
   {
     wseq = seq;
-    start = nodes->index;
+    start = node->index;
   }
   else
   {
     wseq = rseq;
-    start = seq_length-1-nodes->index;
+    start = seq_length-1-node->index;
   }
 
   /* Work backwards from 6 base motifs down to 3 */
@@ -979,19 +986,19 @@ void find_best_nonsd_motif(struct _training *train_data, unsigned char *seq,
   /* at least a factor of 2 (0.69 log) better than not having any motif. */
   if (stage == 2 && (max_score == -4.0 || max_score < train_data->no_mot+0.69))
   {
-    nodes->mot.index = 0;
-    nodes->mot.len = 0;
-    nodes->mot.spacer_index = 0;
-    nodes->mot.spacer = 0;
-    nodes->mot.score = train_data->no_mot;
+    node->mot.index = 0;
+    node->mot.len = 0;
+    node->mot.spacer_index = 0;
+    node->mot.spacer = 0;
+    node->mot.score = train_data->no_mot;
   }
   else
   {
-    nodes->mot.index = max_index;
-    nodes->mot.len = max_len;
-    nodes->mot.spacer_index = max_spacer_index;
-    nodes->mot.spacer = max_spacer;
-    nodes->mot.score = max_score;
+    node->mot.index = max_index;
+    node->mot.len = max_len;
+    node->mot.spacer_index = max_spacer_index;
+    node->mot.spacer = max_spacer;
+    node->mot.score = max_score;
   }
 }
 

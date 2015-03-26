@@ -401,6 +401,12 @@ void create_coding_weights(struct _training *train_data, unsigned char *seq,
   /* Convert counts to normalized frequency and create log weights */
   normalize_array(stop_real, 4);
   create_log_score(train_data->stop_wt, stop_real, stop_bg, 4);
+/*
+sum_real=0.0; sum_bg = 0.0;
+for(i = 0; i < 4096; i++) { sum_real+=counts[i]; sum_bg+=background[i]; }
+for(i = 0; i < 4096; i++) { if(counts[i]>0&&background[i]>0) { counts[i] /= sum_real; background[i] /= sum_bg; train_data->gene_dc[i] = log(counts[i]/background[i]); } else { train_data->gene_dc[i] = -4.0; } }
+return;
+*/
   for (i = 0; i < 64; i++)
   {
     sum_real = 0.0;
@@ -505,8 +511,6 @@ void train_starts_sd(unsigned char *seq, unsigned char *rseq, int seq_length,
 
   wt = train_data->start_weight;
   zero_start_weights(train_data, 0);
-
-  /* Calculate the backgrounds that don't change */
 
   /* Iterate SD_ITER times through the list of nodes                    */
   /* Converge upon optimal weights for ATG vs GTG vs TTG and RBS motifs */
@@ -665,24 +669,27 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
 {
   int i = 0;
   int j = 0;
-  int k = 0;
-  int l = 0;
-  int fr = 0;              /* Reading frame */
-  int stage = 0;           /* Motifs go through 3 stages of counting */
-  int best_index[3] = {0}; /* Index of best gene in each frame */
+  int k = 0;                   /* Loop variables */
+  int num_genes = 0;           /* Track the number of genes used */
+  int frame = 0;               /* Reading frame */
+  int stage = 0;               /* Motifs counted in 3 stages */
+  int best_type[3] = {0};      /* Type of best gene in each frame */
+  int best_index[3] = {0};     /* Index of best gene in each frame */
   int good_motif[4][4][4096] = {{{0}}};  /* RBS post-coverage-check */
-  double denom = 0.0;      /* Denominator variable */
-  double wt = 0.0;         /* Shorthand for start weight to save space */
-  double mbg[4][4][4096] = {{{0}}};    /* RBS background - i.e. all nodes */
-  double mreal[4][4][4096] = {{{0}}};  /* RBS foreground - i.e. real genes */
-  double best_score[3] = {0};    /* Best scoring node in each frame */
-  double tbg[3] = {0};     /* Type background - i.e. all nodes */
-  double treal[3] = {0};   /* Type foreground - i.e. only real genes */
-  double zbg = 0.0;        /* Background for zero motif */
-  double zreal = 0.0;      /* Zero motif weight for real genes */
-  double ngenes = 0.0;     /* Gene counter, double in case of weighting */
+  double wt = 0.0;             /* Shorthand for start weight */
+  double mbg[4][4][4096] = {{{0}}};  /* RBS background - i.e. all nodes */
+  double mreal[4][4][4096] = {{{0}}};/* RBS foreground - i.e. real genes */
+  double best_score[3] = {0};  /* Best scoring node in each frame */
+  double tbg[4] = {0};         /* Type background - i.e. all nodes */
+  double treal[4] = {0};       /* Type foreground - only real genes */
+  double zbg = 0.0;            /* Background for zero motif */
+  double zreal = 0.0;          /* Zero motif weight for real genes */
+  double bbg[45][4] = {{0}};   /* Base composition background */
+  double breal[45][4] = {{0}}; /* Base comp foreg. - i.e. only real genes */
+  double node_score = 0.0;     /* Score for current node */
   double score_thresh = MIN_TRAIN_GENE_SCORE;
-                           /* Minimum score for genes to be "real" */
+                                     /* Minimum score for genes to be real */
+/* char qt[6]; */
 
   wt = train_data->start_weight;
   zero_start_weights(train_data, 1);
@@ -694,6 +701,11 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
   /* extra to be safe)                                                  */
   for (i = 0; i < NONSD_ITER; i++)
   {
+    num_genes = 0.0;
+
+    /* Calculate background statistics for type, context */
+    calc_start_background(seq, rseq, seq_length, train_data->trans_table, tbg);
+    calc_context_background(nodes, num_nodes, bbg);
 
     /* Determine which stage of motif finding we're in */
     if (i < 4)
@@ -710,75 +722,21 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
     }
 
     /* Recalculate the upstream motif background and set 'real' counts to 0 */
-    for (j = 0; j < 4; j++)
-    {
-      for (k = 0; k < 4; k++)
-      {
-        for (l = 0; l < 4096; l++)
-        {
-          mbg[j][k][l] = 0.0;
-        }
-      }
-    }
-    zbg = 0.0;
-    for (j = 0; j < num_nodes; j++)
-    {
-      if (nodes[j].type == STOP || nodes[j].edge == 1)
-      {
-        continue;
-      }
-      find_best_nonsd_motif(train_data, seq, rseq, seq_length, &nodes[j],
-                            stage);
-      update_nonsd_motif_counts(mbg, &zbg, seq, rseq, seq_length, &(nodes[j]),
-                                stage);
-    }
-    denom = 0.0;
-    for (j = 0; j < 4; j++)
-    {
-      for (k = 0; k < 4; k++)
-      {
-        for (l = 0; l < 4096; l++)
-        {
-          denom += mbg[j][k][l];
-        }
-      }
-    }
-    denom += zbg;
-    for (j = 0; j < 4; j++)
-    {
-      for (k = 0; k < 4; k++)
-      {
-        for (l = 0; l < 4096; l++)
-        {
-          mbg[j][k][l] /= denom;
-        }
-      }
-    }
-    zbg /= denom;
+    calc_nonsd_rbs_background(nodes, num_nodes, train_data, seq, rseq,
+                              seq_length, mbg, &zbg, stage);
 
     /* Reset counts of 'real' motifs/types to 0 */
-    for (j = 0; j < 4; j++)
-    {
-      for (k = 0; k < 4; k++)
-      {
-        for (l = 0; l < 4096; l++)
-        {
-          mreal[j][k][l] = 0.0;
-        }
-      }
-    }
+    zero_motifs(mreal);
     zreal = 0.0;
-    for (j = 0; j < 3; j++)
-    {
-      treal[j] = 0.0;
-    }
-    ngenes = 0.0;
+    memset(treal, 0, 3*sizeof(double));
+
 
     /* Forward strand pass */
     for (j = 0; j < 3; j++)
     {
       best_score[j] = 0.0;
       best_index[j] = -1;
+      best_type[j] = 0;
     }
     for (j = 0; j < num_nodes; j++)
     {
@@ -786,31 +744,39 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
       {
         continue;
       }
-      fr = (nodes[j].index)%3;
+      frame = (nodes[j].index)%3;
       if (nodes[j].type == STOP && nodes[j].strand == 1)
       {
-        if (best_score[fr] >= score_thresh)
+        if (best_score[frame] >= score_thresh &&
+            nodes[best_index[frame]].index%3 == frame)
         {
-          ngenes += 1.0;
-          treal[nodes[best_index[fr]].subtype] += 1.0;
+          num_genes++;
+          treal[best_type[frame]] += 1.0;
+          tbg[best_type[frame]] -= 1.0;
           update_nonsd_motif_counts(mreal, &zreal, seq, rseq, seq_length,
-                                    &(nodes[best_index[fr]]), stage);
+                                    &(nodes[best_index[frame]]), stage);
           if (i == NONSD_ITER-1)
           {
+            for (k = 0; k < 45; k++)
+            {
+              breal[k][nodes[best_index[frame]].context[k]] += 1.0;
+              bbg[k][nodes[best_index[frame]].context[k]] -= 1.0;
+            }
           }
         }
-        best_score[fr] = 0.0;
-        best_index[fr] = -1;
+        best_score[frame] = 0.0;
+        best_index[frame] = -1;
+        best_type[frame] = 0;
       }
       else if (nodes[j].strand == 1)
       {
-        if (nodes[j].cscore + wt*nodes[j].mot.score +
-            wt*train_data->type_wt[nodes[j].subtype]
-            >= best_score[fr])
+        node_score = nodes[j].cscore + wt*nodes[j].mot.score +
+                     wt*train_data->type_wt[nodes[j].subtype];
+        if (node_score >= best_score[frame])
         {
-          best_score[fr] = nodes[j].cscore + wt*nodes[j].mot.score;
-          best_score[fr] += wt*train_data->type_wt[nodes[j].subtype];
-          best_index[fr] = j;
+          best_score[frame] = node_score;
+          best_index[frame] = j;
+          best_type[frame] = nodes[j].subtype;
         }
       }
     }
@@ -820,6 +786,7 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
     {
       best_score[j] = 0.0;
       best_index[j] = -1;
+      best_type[j] = 0;
     }
     for (j = num_nodes-1; j >= 0; j--)
     {
@@ -827,31 +794,38 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
       {
         continue;
       }
-      fr = (nodes[j].index)%3;
+      frame = (nodes[j].index)%3;
       if (nodes[j].type == STOP && nodes[j].strand == -1)
       {
-        if (best_score[fr] >= score_thresh)
+        if (best_score[frame] >= score_thresh &&
+            nodes[best_index[frame]].index%3 == frame)
         {
-          ngenes += 1.0;
-          treal[nodes[best_index[fr]].subtype] += 1.0;
+          num_genes++;
+          treal[best_type[frame]] += 1.0;
+          tbg[best_type[frame]] -= 1.0;
           update_nonsd_motif_counts(mreal, &zreal, seq, rseq, seq_length,
-                                    &(nodes[best_index[fr]]), stage);
+                                    &(nodes[best_index[frame]]), stage);
           if (i == NONSD_ITER-1)
           {
+            for (k = 0; k < 45; k++)
+            {
+              breal[k][nodes[best_index[frame]].context[k]] += 1.0;
+              bbg[k][nodes[best_index[frame]].context[k]] -= 1.0;
+            }
           }
         }
-        best_score[fr] = 0.0;
-        best_index[fr] = -1;
+        best_score[frame] = 0.0;
+        best_index[frame] = -1;
       }
       else if (nodes[j].strand == -1)
       {
-        if (nodes[j].cscore + wt*nodes[j].mot.score +
-            wt*train_data->type_wt[nodes[j].subtype]
-            >= best_score[fr])
+        node_score = nodes[j].cscore + wt*nodes[j].mot.score +
+                     wt*train_data->type_wt[nodes[j].subtype];
+        if (node_score >= best_score[frame])
         {
-          best_score[fr] = nodes[j].cscore + wt*nodes[j].mot.score;
-          best_score[fr] += wt*train_data->type_wt[nodes[j].subtype];
-          best_index[fr] = j;
+          best_score[frame] = node_score;
+          best_index[frame] = j;
+          best_type[frame] = nodes[j].subtype;
         }
       }
     }
@@ -859,126 +833,32 @@ void train_starts_nonsd(unsigned char *seq, unsigned char *rseq,
     /* Update the log likelihood weights for type and RBS motifs */
     if (stage < 2)
     {
-      label_good_nonsd_motifs(mreal, good_motif, ngenes);
+      label_good_nonsd_motifs(mreal, mbg, &zreal, &zbg, good_motif, num_genes);
     }
-    denom = 0.0;
-    for (j = 0; j < 4; j++)
-    {
-      for (k = 0; k < 4; k++)
-      {
-        for (l = 0; l < 4096; l++)
-        {
-          denom += mreal[j][k][l];
-        }
-      }
-    }
-    denom += zreal;
-    if (denom == 0.0)
-    {
-      for (j = 0; j < 4; j++)
-      {
-        for (k = 0; k < 4; k++)
-        {
-          for (l = 0; l < 4096; l++)
-          {
-            train_data->mot_wt[j][k][l] = 0.0;
-          }
-        }
-      }
-      train_data->no_mot = 0.0;
-    }
-    else
-    {
-      for (j = 0; j < 4; j++)
-      {
-        for (k = 0; k < 4; k++)
-        {
-          for (l = 0; l < 4096; l++)
-          {
-            if (good_motif[j][k][l] == 0)
-            {
-              zreal += mreal[j][k][l];
-              zbg += mreal[j][k][l];
-              mreal[j][k][l] = 0.0;
-              mbg[j][k][l] = 0.0;
-            }
-            mreal[j][k][l] /= denom;
-            if (mbg[j][k][l] != 0)
-            {
-              train_data->mot_wt[j][k][l] = log(mreal[j][k][l]/mbg[j][k][l]);
-            }
-            else
-            {
-              train_data->mot_wt[j][k][l] = -4.0;
-            }
-            if (train_data->mot_wt[j][k][l] > 4.0)
-            {
-              train_data->mot_wt[j][k][l] = 4.0;
-            }
-            if (train_data->mot_wt[j][k][l] < -4.0)
-            {
-              train_data->mot_wt[j][k][l] = -4.0;
-            }
-          }
-        }
-      }
-    }
-    zreal /= denom;
-    if (zbg != 0)
-    {
-      train_data->no_mot = log(zreal/zbg);
-    }
-    else
-    {
-      train_data->no_mot = -4.0;
-    }
-    if (train_data->no_mot > 4.0)
-    {
-      train_data->no_mot = 4.0;
-    }
-    if (train_data->no_mot < -4.0)
-    {
-      train_data->no_mot = -4.0;
-    }
-    denom = 0.0;
-    for (j = 0; j < 3; j++)
-    {
-      denom += treal[j];
-    }
-    if (denom == 0.0)
-    {
-      for (j = 0; j < 3; j++)
-      {
-        train_data->type_wt[j] = 0.0;
-      }
-    }
-    else
-    {
-      for (j = 0; j < 3; j++)
-      {
-        treal[j] /= denom;
-        if (tbg[j] != 0)
-        {
-          train_data->type_wt[j] = log(treal[j]/tbg[j]);
-        }
-        else
-        {
-          train_data->type_wt[j] = -4.0;
-        }
-        if (train_data->type_wt[j] > 4.0)
-        {
-          train_data->type_wt[j] = 4.0;
-        }
-        if (train_data->type_wt[j] < -4.0)
-        {
-          train_data->type_wt[j] = -4.0;
-        }
-      }
-    }
-    if (denom <= (double)num_nodes/SMALL_TRAIN_SET_NODES)
+    normalize_array(tbg, 4);
+    normalize_array(treal, 4);
+    create_log_score(train_data->type_wt, treal, tbg, 4);
+    normalize_motif_array(mbg, &zbg, good_motif);
+    normalize_motif_array(mreal, &zreal, good_motif);
+    create_motif_log_score(train_data->mot_wt, mreal, mbg,
+                           &(train_data->no_mot), zreal, zbg);
+    if (num_genes <= (double)num_nodes/SMALL_TRAIN_SET_NODES)
     {
       score_thresh /= 2.0;
     }
+/*
+for(k = 0; k < 64; k++) {
+mer_text(qt, 3, k);
+  printf("%d motif %d %s %f\n", i, k, qt, train_data->mot_wt[0][0][k] );
+}
+exit(0);
+*/
+  }
+  for (i = 0; i < 45; i++)
+  {
+    normalize_array(bbg[i], 4);
+    normalize_array(breal[i], 4);
+    create_log_score(train_data->context_wt[i], breal[i], bbg[i], 4);
   }
 }
 
@@ -1110,7 +990,8 @@ void update_nonsd_motif_counts(double motifs[4][4][4096], double *zero,
   training, all motifs are labeled good.  0 = bad, 1 = good, 2 = good
   w/mismatch.
 ******************************************************************************/
-void label_good_nonsd_motifs(double real[4][4][4096], int good[4][4][4096],
+void label_good_nonsd_motifs(double real[4][4][4096], double bg[4][4][4096],
+                             double *zreal, double *zbg, int good[4][4][4096],
                              double num_genes)
 {
   int i = 0;                /* Loop variables */
@@ -1120,6 +1001,7 @@ void label_good_nonsd_motifs(double real[4][4][4096], int good[4][4][4096],
   int tmp = 0;              /* Temporary variable to hold indices */
   int decomp[3] = {0};      /* Used to extract bits from the motif */
   double cvg_thresh = 0.2;  /* Coverage threshold */
+/* char qt[6]; */
 
   for (i = 0; i < 4; i++)
   {
@@ -1133,10 +1015,12 @@ void label_good_nonsd_motifs(double real[4][4][4096], int good[4][4][4096],
   }
 
   /* 3-base motifs */
+/* printf("=====================\n"); */
   for (i = 0; i < 4; i++)
   {
     for (j = 0; j < 64; j++)
     {
+/* mer_text(qt, 3, j); printf("good motif %s %f %f\n", qt, real[0][i][j], num_genes); */
       if (real[0][i][j]/num_genes >= cvg_thresh)
       {
         for (k = 0; k < 4; k++)
@@ -1211,6 +1095,24 @@ void label_good_nonsd_motifs(double real[4][4][4096], int good[4][4][4096],
       else
       {
         good[3][i][j] = 2;
+      }
+    }
+  }
+
+  /* Change all bad motifs to the zero motif */
+  for (i = 0; i < 4; i++)
+  {
+    for (j = 0; j < 4; j++)
+    {
+      for (k = 0; k < 4096; k++)
+      {
+        if (good[i][j][k] == 0)
+        {
+          *zreal += real[i][j][k];
+          *zbg += bg[i][j][k];
+          real[i][j][k] = 0.0;
+          bg[i][j][k] = 0.0;
+        }
       }
     }
   }
@@ -1377,6 +1279,64 @@ void calc_sd_rbs_background(struct _node *nodes, int num_nodes, double *rbs_wt,
   }
 }
 
+/* Calculate the non-SD RBS background */
+void calc_nonsd_rbs_background(struct _node *nodes, int num_nodes,
+                               struct _training *train_data,
+                               unsigned char *seq, unsigned char *rseq,
+                               int seq_length, double motifs[4][4][4096],
+                               double *zero, int stage)
+{
+  int i = 0;
+
+  /* Set counts to zero */
+  zero_motifs(motifs);
+  *zero = 0.0;
+
+  /* Loop through nodes and count all motifs */
+  for (i = 0; i < num_nodes; i++)
+  {
+    if (nodes[i].type == STOP || nodes[i].edge == 1)
+    {
+      continue;
+    }
+    find_best_nonsd_motif(train_data, seq, rseq, seq_length, &(nodes[i]),
+                          stage);
+    update_nonsd_motif_counts(motifs, zero, seq, rseq, seq_length, &(nodes[i]),
+                              stage);
+  }
+}
+
+/* Random context background based on GC content */
+void calc_random_context_background(double bbg[45][4], double gc)
+{
+  int i = 0;
+
+  for (i = 0; i < 45; i++)
+  {
+    if (gc > 0.1 && gc < 0.9)
+    {
+      bbg[i][0] = 1.0-gc;
+      bbg[i][1] = gc;
+      bbg[i][2] = gc;
+      bbg[i][3] = 1.0-gc;
+    }
+    else if (gc <= 0.1)
+    {
+      bbg[i][0] = 0.9;
+      bbg[i][1] = 0.1;
+      bbg[i][2] = 0.1;
+      bbg[i][3] = 0.9;
+    }
+    else if (gc >= 0.9)
+    {
+      bbg[i][0] = 0.1;
+      bbg[i][1] = 0.9;
+      bbg[i][2] = 0.9;
+      bbg[i][3] = 0.1;
+    }
+  }
+}
+
 /* Calculate the start context background */
 void calc_context_background(struct _node *nodes, int num_nodes, double bbg[45][4])
 {
@@ -1402,6 +1362,67 @@ void calc_context_background(struct _node *nodes, int num_nodes, double bbg[45][
     {
       bbg[j][nodes[i].context[j]] += 1.0;
     }
+  }
+}
+
+/* Zero out the 3d motif array */
+void zero_motifs(double motifs[4][4][4096])
+{
+  int i = 0;
+  int j = 0;
+  int k = 0;
+
+  for (i = 0; i < 4; i++)
+  {
+    for (j = 0; j < 4; j++)
+    {
+      for (k = 0; k < 4096; k++)
+      {
+        motifs[i][j][k] = 0.0;
+      }
+    }
+  }
+}
+
+/* Normalize motif array, which has an additional value */
+/* outside the array for the "zero motif". */
+void normalize_motif_array(double motifs[4][4][4096], double *zero,
+                           int good[4][4][4096])
+{
+  int i = 0;
+  int j = 0;
+  int k = 0;
+  double denom = 0.0;     /* Denominator for normalization */
+
+  for (i = 0; i < 4; i++)
+  {
+    for (j = 0; j < 4; j++)
+    {
+      for (k = 0; k < 4096; k++)
+      {
+        denom += motifs[i][j][k];
+      }
+    }
+  }
+  denom += *zero;
+  if (denom > 0.0)
+  {
+    for (i = 0; i < 4; i++)
+    {
+      for (j = 0; j < 4; j++)
+      {
+        for (k = 0; k < 4096; k++)
+        {
+          if (good[i][j][k] == 0)
+          {
+            *zero += motifs[i][j][k];
+            motifs[i][j][k] = 0.0;
+          }
+          motifs[i][j][k] /= denom;
+        }
+      }
+    }
+    *zero /= denom;
   }
 }
 
@@ -1468,6 +1489,60 @@ void create_log_score(double *arr3, double *arr1, double *arr2, int size)
     if (arr3[i] < min)
     {
       arr3[i] = min;
+    }
+  }
+}
+
+/* Calculate a log-likelihood score for the motif arrays */
+void create_motif_log_score(double arr3[4][4][4096], double arr1[4][4][4096],
+                            double arr2[4][4][4096], double *zero,
+                            double zreal, double zbg)
+{
+  int i = 0;
+  int j = 0;
+  int k = 0;
+  double max = 4.0;
+  double min = -4.0;
+
+  for (i = 0; i < 4; i++)
+  {
+    for (j = 0; j < 4; j++)
+    {
+      for (k = 0; k < 4096; k++)
+      {
+        if (arr1[i][j][k] == 0.0 || arr2[i][j][k] == 0.0)
+        {
+          arr3[i][j][k] = min;
+        }
+        else
+        {
+          arr3[i][j][k] = log(arr1[i][j][k]/arr2[i][j][k]);
+          if (arr3[i][j][k] > max)
+          {
+            arr3[i][j][k] = max;
+          }
+          if (arr3[i][j][k] < min)
+          {
+            arr3[i][j][k] = min;
+          }
+        }
+      }
+    }
+  }
+  if (zbg == 0 || zreal == 0)
+  {
+    *zero = min; 
+  }
+  else
+  {
+    *zero = log(zreal/zbg);
+    if (*zero > max)
+    {
+      *zero = max;
+    }
+    if (*zero < min)
+    {
+      *zero = min;
     }
   }
 }

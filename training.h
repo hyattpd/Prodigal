@@ -60,7 +60,8 @@ void train_starts_sd(unsigned char *, unsigned char *, int, struct _node *,
                         int, struct _training *);
 void train_starts_nonsd(unsigned char *, unsigned char *, int, struct _node *,
                         int, struct _training *);
-void label_good_nonsd_motifs(double [4][4][4096], int [4][4][4096], double);
+void label_good_nonsd_motifs(double [4][4][4096], double [4][4][4096],
+                             double *, double *, int [4][4][4096], double);
 void update_nonsd_motif_counts(double [4][4][4096], double *, unsigned char *,
                                unsigned char *, int, struct _node *, int);
 
@@ -74,10 +75,18 @@ void calc_start_background(unsigned char *, unsigned char *, int, int,
                           double *);
 void calc_stop_background(unsigned char *, unsigned char *, int, int,
                           double *);
-void calc_context_background(struct _node *, int, double [32][4]);
+void calc_random_context_background(double [45][4], double);
+void calc_context_background(struct _node *, int, double [45][4]);
 void calc_sd_rbs_background(struct _node *, int, double *, double *);
+void calc_nonsd_rbs_background(struct _node *, int, struct _training *,
+                               unsigned char *, unsigned char *, int,
+                               double [4][4][4096], double *, int);
 
+void zero_motifs(double [4][4][4096]);
+
+void normalize_motif_array(double [4][4][4096], double *, int [4][4][4096]);
 void normalize_array(double *, int);
 void create_log_score(double *, double *, double *, int);
-
+void create_motif_log_score(double [4][4][4096], double [4][4][4096],
+                            double [4][4][4096], double *, double, double);
 #endif
