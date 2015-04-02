@@ -59,6 +59,7 @@ struct _node
   double tscore;       /* Score for the ATG/GTG/TTG value */
   double rscore;       /* Score for the RBS motif */
   double sscore;       /* Score for the strength of the start codon */
+  double peak_diff;    /* Difference between the peak start this one */
   int trace_back;      /* Traceback to connecting node */
   int trace_forward;   /* Forward trace */
   int overlap_frame;   /* Points to best frame containing overlapping gene */

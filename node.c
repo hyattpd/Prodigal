@@ -324,6 +324,7 @@ void reset_node_scores(struct _node *nodes, int num_nodes)
     nodes[i].rscore = 0.0;
     nodes[i].tscore = 0.0;
     nodes[i].bscore = 0.0;
+    nodes[i].peak_diff = 0.0;
     nodes[i].trace_back = -1;
     nodes[i].trace_forward = -1;
     nodes[i].overlap_frame = -1;
@@ -460,7 +461,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int seq_length,
 
     /* Modify individual scores based on various decision trees */
     weight_gene_signals(&nodes[i], train_data->start_weight);
-     
+
     /* Base Start Score */
     nodes[i].sscore = nodes[i].tscore + nodes[i].rscore +
                       nodes[i].bscore;
@@ -539,27 +540,31 @@ void weight_gene_signals(struct _node *node, double start_weight)
 
   /* Decision #1: Amplify negative signals in short genes. */
   prob = prob_from_score(node->lscore/start_weight);
+/*
   if (prob < 0.8)
   {
     node->rscore *= (node->rscore < 0.0?(0.8/prob):1.0);
     node->tscore *= (node->tscore < 0.0?(0.8/prob):1.0);
     node->bscore *= (node->bscore < 0.0?(0.8/prob):1.0);
   }
+*/
 
   /* Decision #2: Amplify negative coding in short genes and reduce */
   /* it in long genes. */
-  node->pscore *= (node->pscore < 0.0?(1.0-prob)*2.0:1.0);
+  node->pscore *= (node->pscore < 0.0&&prob>0.5?(1.0-prob)*2.0:1.0);
   node->pscore = (node->pscore < -50.0?-50.0:node->pscore);
 
   /* Decision #3: Context score can be somewhat unreliable, so */
   /* we penalize positive context score in proportion to the */
   /* other gene signals. */
+/*
   prob = node->pscore + node->lscore + node->rscore + node->tscore;
   prob = prob_from_score(prob/start_weight);
   if (prob < 0.8 && node->bscore > 0.0)
   {
     node->bscore *= prob/0.8;
   }
+*/
 
   /* Since we may have modified pscore, recalculate cscore. */
   node->cscore = node->pscore + node->lscore;
@@ -608,8 +613,7 @@ void penalize_nonpeak_nodes(struct _node *nodes, int num_nodes)
       }
       if (nodes[j].cscore + nodes[j].sscore < score)
       {
-        nodes[j].cscore += (nodes[j].cscore + nodes[j].sscore - score);
-        nodes[j].pscore += (nodes[j].cscore + nodes[j].sscore - score);
+        nodes[j].peak_diff = nodes[j].cscore + nodes[j].sscore - score;
       }
     }
   }
@@ -649,8 +653,7 @@ void penalize_nonpeak_nodes(struct _node *nodes, int num_nodes)
       }
       if (nodes[j].cscore + nodes[j].sscore < score)
       {
-        nodes[j].cscore += (nodes[j].cscore + nodes[j].sscore - score);
-        nodes[j].pscore += (nodes[j].cscore + nodes[j].sscore - score);
+        nodes[j].peak_diff = nodes[j].cscore + nodes[j].sscore - score;
       }
     }
   }
@@ -730,12 +733,12 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
   int frame = 0;               /* Frame of current node */
   double score[3] = {0};       /* Running coding score in each frame */
   double gene_size = 0.0;      /* Size of current gene */
-  double base_log = 0.0;
+  double base_prob = 0.0;
 
   /* Base probability a node is a gene.  In the naive Bayes classifier, */
   /* this corresponds to the initial probs ln(P(gene)) - ln(P(not a gene)). */
-  base_log -= log(1100 * (train_data->prob_stop) * 6.0 - 1);
-  base_log -= log(train_data->prob_start);
+  base_prob -= log(1100 * (train_data->prob_stop) * 6.0 - 1);
+/*  base_prob -= log(train_data->prob_start); */
  
   /* Initial Pass: Score coding potential (start->stop) */
   for (i = 0; i < 3; i++)
@@ -804,7 +807,7 @@ void calc_coding_score(unsigned char *seq, unsigned char *rseq, int seq_length,
     if (nodes[i].type == START)
     {
       gene_size = ((double)(abs(nodes[i].stop_val-nodes[i].index) - 3.0))/3.0;
-      nodes[i].lscore = train_data->start_weight * (base_log + gene_size *
+      nodes[i].lscore = train_data->start_weight * (base_prob + gene_size *
                         log(1.0/(1.0-train_data->prob_stop)));
       nodes[i].cscore = nodes[i].pscore + nodes[i].lscore;
     }
