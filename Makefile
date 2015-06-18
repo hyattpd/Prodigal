@@ -53,9 +53,9 @@ $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 install: $(TARGET)
-	install -d -m 0756 $(INSTALLDIR)
+	install -d -m 0755 $(INSTALLDIR)
 	install -m 0755 $(TARGET) $(INSTALLDIR)
-	install -d -m 756 $(INSTALLMANDIR)
+	install -d -m 755 $(INSTALLMANDIR)
 	install $(TARGET).1 $(INSTALLMANDIR)
  
 uninstall:
