@@ -24,17 +24,21 @@ CC      = gcc
 CFLAGS  += -pedantic -Wall -O3
 LFLAGS = -lm $(LDFLAGS)
 
-TARGET  = prodigal
+TARGET  = prodigal 
+STARGET = prodigal.static
 SOURCES = $(shell echo *.c)
 HEADERS = $(shell echo *.h)
 OBJECTS = $(SOURCES:.c=.o)
 
 INSTALLDIR  = /usr/local/bin
 
-all: $(TARGET)
+all: $(TARGET)  $(STARGET)
 
 $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS)
+
+$(STARGET): $(OBJECTS)
+	$(CC) -static $(CFLAGS) -o $@ $^ $(LFLAGS)
 
 %.o: %.c $(HEADERS)
 	$(CC) $(CFLAGS) -c -o $@ $<
