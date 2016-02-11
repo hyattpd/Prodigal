@@ -8,10 +8,9 @@ prodigal -i my.metagenome.fna -o my.genes -a my.proteins.faa -p meta
 prodigal -h
 ```
 
-### New in 2.6.2
-  * Added support for translation table 25.
-  * Fixed another bug affecting the Mac version.
-  * Fixed an error in the 'uninstall' portion of the Makefile.
+### New in 2.6.3 (February 2016)
+  * Fixed a bug in protein translation output of partial genes where TTG/GTG
+codons were being incorrectly translated to methionine.
 
 ### Getting Started
 

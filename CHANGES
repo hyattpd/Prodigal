@@ -1,3 +1,7 @@
+VERSION 2.6.3
+* Fixed a bug in protein translation output of partial genes where TTG/GTG
+codons were being incorrectly translated to methionine.
+
 VERSION 2.6.2
 
 * Added support for translation table 25.

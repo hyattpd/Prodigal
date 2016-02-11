@@ -1,6 +1,6 @@
 /*******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2015 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2016 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -26,8 +26,8 @@
 #include "dprog.h"
 #include "gene.h"
 
-#define VERSION "2.6.2"
-#define DATE "February, 2015"
+#define VERSION "2.6.3"
+#define DATE "February, 2016"
 
 #define MIN_SINGLE_GENOME 20000
 #define IDEAL_SINGLE_GENOME 100000
