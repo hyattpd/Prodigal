@@ -1,6 +1,6 @@
 /******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2015 University of Tenum_nodesessee / UT-Battelle
+    Copyright (C) 2007-2016 University of Tenum_nodesessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 

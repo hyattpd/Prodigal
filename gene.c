@@ -1,6 +1,6 @@
 /******************************************************************************
     PRODIGAL (PROkaryotic DynamIc Programming Genefinding ALgorithm)
-    Copyright (C) 2007-2015 University of Tennessee / UT-Battelle
+    Copyright (C) 2007-2016 University of Tennessee / UT-Battelle
 
     Code Author:  Doug Hyatt
 
@@ -733,7 +733,7 @@ void write_translations(FILE *fh, struct _gene *genes,
         else
         {
           fprintf(fh, "%c", amino(seq, j-1, trans_table,
-                  j==genes[i].begin?1:0 &&
+                  (j==genes[i].begin?1:0) &&
                   (1 - nodes[genes[i].start_index].edge)));
         }
         if ((j - genes[i].begin) % 180 == 177)
@@ -761,7 +761,7 @@ void write_translations(FILE *fh, struct _gene *genes,
         else
         {
           fprintf(fh, "%c", amino(rseq, j-1, trans_table,
-                  j==seq_length + 1 - genes[i].end?1:0 &&
+                  (j==seq_length + 1 - genes[i].end?1:0) &&
                   (1 - nodes[genes[i].start_index].edge)));
         }
         if ((j - seq_length - 1 + genes[i].end) % 180 == 177)

@@ -1,9 +1,16 @@
+VERSION 2.6.3
+
+* Fixed a bug in protein translation output of partial genes where TTG/GTG
+codons were being incorrectly translated to methionine.
+
 VERSION 2.6.2
+
 * Added support for translation table 25.
 * Corrected another bug affecting MacOS.
 * Fixed a line in the 'uninstall' directive in the Makefile.
 
 VERSION 2.6.1
+
 * Fixed a bug that mainly affected Mac compiles 7/2013 and
 posted to Google Code and Github as 2.60 (bad, as we already
 had a 2.60). Re-releasing this version 8/2014 as 2.6.1,
