@@ -445,7 +445,7 @@ void write_translations(FILE *fh, struct _gene *genes, int ng, struct
       for(j = genes[i].begin; j < genes[i].end; j+=3) {
         if(is_n(useq, j-1) == 1 || is_n(useq, j) == 1 || is_n(useq, j+1) == 1) 
           fprintf(fh, "X");
-        else fprintf(fh, "%c", amino(seq, j-1, tinf, j==genes[i].begin?1:0 &&
+        else fprintf(fh, "%c", amino(seq, j-1, tinf, (j==genes[i].begin?1:0) &&
                      (1-nod[genes[i].start_ndx].edge)));
         if((j-genes[i].begin)%180 == 177) fprintf(fh, "\n");
       }
@@ -458,7 +458,7 @@ void write_translations(FILE *fh, struct _gene *genes, int ng, struct
         if(is_n(useq, slen-j) == 1 || is_n(useq, slen-1-j) == 1 ||
            is_n(useq, slen-2-j) == 1)
           fprintf(fh, "X");
-        else fprintf(fh, "%c", amino(rseq, j-1, tinf, j==slen+1-genes[i].end?1:0
+        else fprintf(fh, "%c", amino(rseq, j-1, tinf, (j==slen+1-genes[i].end?1:0)
                      && (1-nod[genes[i].start_ndx].edge)));
         if((j-slen-1+genes[i].end)%180 == 177) fprintf(fh, "\n");
       }
