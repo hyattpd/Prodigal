@@ -259,6 +259,8 @@ void record_gene_data(struct _gene *genes, int ng, struct _node *nod,
   strcpy(sd_string[27], "AGGAGG");
   strcpy(sd_spacer[27], "5-10bp");
 
+  char buffer[500] = {0};
+
   for(i = 0; i < ng; i++) {
     ndx = genes[i].start_ndx;
     sndx = genes[i].stop_ndx;
@@ -282,35 +284,42 @@ void record_gene_data(struct _gene *genes, int ng, struct _node *nod,
     rbs1 = tinf->rbs_wt[nod[ndx].rbs[0]]*tinf->st_wt;
     rbs2 = tinf->rbs_wt[nod[ndx].rbs[1]]*tinf->st_wt;
     if(tinf->uses_sd == 1) {
-      if(rbs1 > rbs2)
-        sprintf(genes[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s", 
-                genes[i].gene_data, sd_string[nod[ndx].rbs[0]], 
+      if(rbs1 > rbs2) {
+        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%s",
+                sd_string[nod[ndx].rbs[0]],
                 sd_spacer[nod[ndx].rbs[0]]);
-      else
-        sprintf(genes[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s", 
-                genes[i].gene_data, sd_string[nod[ndx].rbs[1]], 
+        strcat(genes[i].gene_data, buffer);
+      } else {
+        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%s",
+                sd_string[nod[ndx].rbs[1]],
                 sd_spacer[nod[ndx].rbs[1]]);
+        strcat(genes[i].gene_data, buffer);
+      }
     }
     else {
       mer_text(qt, nod[ndx].mot.len, nod[ndx].mot.ndx);
       if(tinf->no_mot > -0.5 && rbs1 > rbs2 && rbs1 > nod[ndx].mot.score *
-         tinf->st_wt)
-        sprintf(genes[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s", 
-                genes[i].gene_data, sd_string[nod[ndx].rbs[0]], 
+         tinf->st_wt) {
+        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%s",
+                sd_string[nod[ndx].rbs[0]],
                 sd_spacer[nod[ndx].rbs[0]]);
-      else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && rbs2 > nod[ndx].mot.score *
-              tinf->st_wt)
-        sprintf(genes[i].gene_data, "%srbs_motif=%s;rbs_spacer=%s", 
-                genes[i].gene_data, sd_string[nod[ndx].rbs[1]], 
+        strcat(genes[i].gene_data, buffer);
+      } else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && rbs2 > nod[ndx].mot.score *
+              tinf->st_wt) {
+        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%s",
+                sd_string[nod[ndx].rbs[1]],
                 sd_spacer[nod[ndx].rbs[1]]);
-      else if(nod[ndx].mot.len == 0) 
-        sprintf(genes[i].gene_data, "%srbs_motif=None;rbs_spacer=None", 
-                genes[i].gene_data);
-      else sprintf(genes[i].gene_data, "%srbs_motif=%s;rbs_spacer=%dbp", 
-                   genes[i].gene_data, qt, nod[ndx].mot.spacer);
+        strcat(genes[i].gene_data, buffer);
+      } else if(nod[ndx].mot.len == 0) {
+        strcat(genes[i].gene_data, "rbs_motif=None;rbs_spacer=None");
+      } else {
+        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%dbp",
+                qt, nod[ndx].mot.spacer);
+        strcat(genes[i].gene_data, buffer);
+      }
     }
-    sprintf(genes[i].gene_data, "%s;gc_cont=%.3f", genes[i].gene_data, 
-            nod[ndx].gc_cont);
+    sprintf(buffer, ";gc_cont=%.3f", nod[ndx].gc_cont);
+    strcat(genes[i].gene_data, buffer);
 
     /* Record score data */
     confidence = calculate_confidence(nod[ndx].cscore + nod[ndx].sscore, 
@@ -319,8 +328,9 @@ void record_gene_data(struct _gene *genes, int ng, struct _node *nod,
      "conf=%.2f;score=%.2f;cscore=%.2f;sscore=%.2f;rscore=%.2f;uscore=%.2f;",
      confidence, nod[ndx].cscore+nod[ndx].sscore,nod[ndx].cscore, 
      nod[ndx].sscore, nod[ndx].rscore, nod[ndx].uscore);
-    sprintf(genes[i].score_data, "%stscore=%.2f;", genes[i].score_data, 
-            nod[ndx].tscore);
+
+    sprintf(buffer, "tscore=%.2f;", nod[ndx].tscore);
+    strcat(genes[i].score_data, buffer);
   }
 
 }
@@ -333,6 +343,7 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
   int i, ndx, sndx;
   char left[50], right[50];
   char seq_data[MAX_LINE*2], run_data[MAX_LINE];
+  char buffer[MAX_LINE] = {0};
 
   /* Initialize sequence data */
   sprintf(seq_data, "seqnum=%d;seqlen=%d;seqhdr=\"%s\"", sctr, slen, header);
@@ -340,14 +351,16 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
   /* Initialize run data string */
   if(is_meta == 0) {
     sprintf(run_data, "version=Prodigal.v%s;run_type=Single;", version);
-    sprintf(run_data, "%smodel=\"Ab initio\";", run_data);
+    strcat(run_data, "model=\"Ab initio\";");
   }
   else {
     sprintf(run_data, "version=Prodigal.v%s;run_type=Metagenomic;", version);
-    sprintf(run_data, "%smodel=\"%s\";", run_data, mdesc);
+    sprintf(buffer, "model=\"%s\";", mdesc);
+    strcat(run_data, buffer);
   }
-  sprintf(run_data, "%sgc_cont=%.2f;transl_table=%d;uses_sd=%d", run_data, 
+  sprintf(buffer, "gc_cont=%.2f;transl_table=%d;uses_sd=%d",
           tinf->gc*100.0, tinf->trans_table, tinf->uses_sd);
+  strcat(run_data, buffer);
 
   strcpy(left, "");
   strcpy(right, "");

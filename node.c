@@ -1412,6 +1412,7 @@ void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
   char sd_string[28][100], sd_spacer[28][20], qt[10];
   char type_string[4][5] = { "ATG", "GTG", "TTG" , "Edge" };
   char seq_data[MAX_LINE*2], run_data[MAX_LINE];
+  char buffer[MAX_LINE] = {0};
 
   /* Initialize sequence data */
   sprintf(seq_data, "seqnum=%d;seqlen=%d;seqhdr=\"%s\"", sctr, slen, header);
@@ -1419,14 +1420,16 @@ void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
   /* Initialize run data string */
   if(is_meta == 0) {
     sprintf(run_data, "version=Prodigal.v%s;run_type=Single;", version);
-    sprintf(run_data, "%smodel=\"Ab initio\";", run_data);
+    strcat(run_data, "model=\"Ab initio\";");
   }
   else {
     sprintf(run_data, "version=Prodigal.v%s;run_type=Metagenomic;", version);
-    sprintf(run_data, "%smodel=\"%s\";", run_data, mdesc);
+    sprintf(buffer, "model=\"%s\";", mdesc);
+    strcat(run_data, buffer);
   }
-  sprintf(run_data, "%sgc_cont=%.2f;transl_table=%d;uses_sd=%d", run_data,
+  sprintf(buffer, "gc_cont=%.2f;transl_table=%d;uses_sd=%d",
           tinf->gc*100.0, tinf->trans_table, tinf->uses_sd);
+  strcat(run_data, buffer);
  
   strcpy(sd_string[0], "None");
   strcpy(sd_spacer[0], "None");
