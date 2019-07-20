@@ -24,12 +24,12 @@
   Read the sequence for training purposes.  If we encounter multiple
   sequences, we insert TTAATTAATTAA between each one to force stops in all
   six frames.  When we hit MAX_SEQ bp, we stop and return what we've got so
-  far for training.  This routine reads in FASTA, and has a very 'loose' 
-  Genbank and Embl parser, but, to be safe, FASTA should generally be 
+  far for training.  This routine reads in FASTA, and has a very 'loose'
+  Genbank and Embl parser, but, to be safe, FASTA should generally be
   preferred.
 *******************************************************************************/
 
-int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq, 
+int read_seq_training(fptr fp, unsigned char *seq, unsigned char *useq,
                       double *gc, int do_mask, mask *mlist, int *nm) {
   char line[MAX_LINE+1];
   int hdr = 0, fhdr = 0, bctr = 0, len = 0, wrn = 0;
@@ -37,7 +37,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
   unsigned int i, gapsize = 0;
 
   line[MAX_LINE] = '\0';
-  while(fgets(line, MAX_LINE, fp) != NULL) {
+  while(INPUT_GETS(line, MAX_LINE, fp) != NULL) {
     if(hdr == 0 && line[strlen(line)-1] != '\n' && wrn == 0) {
       wrn = 1;
       fprintf(stderr, "\n\nWarning: saw non-sequence line longer than ");
@@ -58,7 +58,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
     else if(hdr == 1 && (line[0] == '/' && line[1] == '/')) hdr = 0;
     else if(hdr == 1) {
       if(strstr(line, "Expand") != NULL && strstr(line, "gap") != NULL) {
-        sscanf(strstr(line, "gap")+4, "%u", &gapsize); 
+        sscanf(strstr(line, "gap")+4, "%u", &gapsize);
         if(gapsize < 1 || gapsize > MAX_LINE) {
           fprintf(stderr, "Error: gap size in gbk file can't exceed line");
           fprintf(stderr, " size.\n");
@@ -73,7 +73,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
           if(len - mask_beg >= MASK_SIZE) {
             if(*nm == MAX_MASKS) {
               fprintf(stderr, "Error: saw too many regions of 'N''s in the ");
-              fprintf(stderr, "sequence.\n"); 
+              fprintf(stderr, "sequence.\n");
               exit(52);
             }
             mlist[*nm].begin = mask_beg;
@@ -93,8 +93,8 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
           set(seq, bctr+1);
           gc_cont++;
         }
-        else if(line[i] != 'a' && line[i] != 'A') { 
-          set(seq, bctr+1); 
+        else if(line[i] != 'a' && line[i] != 'A') {
+          set(seq, bctr+1);
           set(useq, len);
         }
         bctr+=2; len++;
@@ -119,7 +119,7 @@ int read_seq_training(FILE *fp, unsigned char *seq, unsigned char *useq,
 
 /* This routine reads in the next sequence in a FASTA/GB/EMBL file */
 
-int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
+int next_seq_multi(fptr fp, unsigned char *seq, unsigned char *useq,
                    int *sctr, double *gc, int do_mask, mask *mlist, int *nm,
                    char *cur_hdr, char *new_hdr) {
   char line[MAX_LINE+1];
@@ -131,7 +131,7 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
 
   if(*sctr > 0) reading_seq = 1;
   line[MAX_LINE] = '\0';
-  while(fgets(line, MAX_LINE, fp) != NULL) {
+  while(INPUT_GETS(line, MAX_LINE, fp) != NULL) {
     if(reading_seq == 0 && line[strlen(line)-1] != '\n' && wrn == 0) {
       wrn = 1;
       fprintf(stderr, "\n\nWarning: saw non-sequence line longer than ");
@@ -169,7 +169,7 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
     }
     else if(reading_seq == 1) {
       if(strstr(line, "Expand") != NULL && strstr(line, "gap") != NULL) {
-        sscanf(strstr(line, "gap")+4, "%u", &gapsize); 
+        sscanf(strstr(line, "gap")+4, "%u", &gapsize);
         if(gapsize < 1 || gapsize > MAX_LINE) {
           fprintf(stderr, "Error: gap size in gbk file can't exceed line");
           fprintf(stderr, " size.\n");
@@ -184,7 +184,7 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
           if(len - mask_beg >= MASK_SIZE) {
             if(*nm == MAX_MASKS) {
               fprintf(stderr, "Error: saw too many regions of 'N''s in the ");
-              fprintf(stderr, "sequence.\n"); 
+              fprintf(stderr, "sequence.\n");
               exit(55);
             }
             mlist[*nm].begin = mask_beg;
@@ -204,8 +204,8 @@ int next_seq_multi(FILE *fp, unsigned char *seq, unsigned char *useq,
           set(seq, bctr+1);
           gc_cont++;
         }
-        else if(line[i] != 'a' && line[i] != 'A') { 
-          set(seq, bctr+1); 
+        else if(line[i] != 'a' && line[i] != 'A') {
+          set(seq, bctr+1);
           set(useq, len);
         }
         bctr+=2; len++;
@@ -240,14 +240,14 @@ void calc_short_header(char *header, char *short_header, int sctr) {
 
 /* Takes rseq and fills it up with the rev complement of seq */
 
-void rcom_seq(unsigned char *seq, unsigned char *rseq, unsigned char *useq, 
+void rcom_seq(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
               int len) {
   int i, slen=len*2;
   for(i = 0; i < slen; i++)
     if(test(seq, i) == 0) set(rseq, slen-i-1+(i%2==0?-1:1));
   for(i = 0; i < len; i++) {
     if(test(useq, i) == 1) {
-      toggle(rseq, slen-1-i*2); 
+      toggle(rseq, slen-1-i*2);
       toggle(rseq, slen-2-i*2);
     }
   }
@@ -564,7 +564,7 @@ int max_fr(int n1, int n2, int n3) {
 }
 
 /*******************************************************************************
-  Creates a GC frame plot for a given sequence.  This is simply a string with 
+  Creates a GC frame plot for a given sequence.  This is simply a string with
   the highest GC content frame for a window centered on position for every
   position in the sequence.
 *******************************************************************************/
@@ -654,7 +654,7 @@ void calc_mer_bg(int len, unsigned char *seq, unsigned char *rseq, int slen,
 }
 
 /*******************************************************************************
-  Finds the highest-scoring region similar to AGGAGG in a given stretch of 
+  Finds the highest-scoring region similar to AGGAGG in a given stretch of
   sequence upstream of a start.
 *******************************************************************************/
 
@@ -730,7 +730,7 @@ int shine_dalgarno_exact(unsigned char *seq, int pos, int start, double *rwt) {
 }
 
 /*******************************************************************************
-  Finds the highest-scoring region similar to AGGAGG in a given stretch of 
+  Finds the highest-scoring region similar to AGGAGG in a given stretch of
   sequence upstream of a start.  Only considers 5/6-mers with 1 mismatch.
 *******************************************************************************/
 

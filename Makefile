@@ -25,9 +25,11 @@ CFLAGS  += -pedantic -Wall -O3
 LFLAGS = -lm $(LDFLAGS)
 
 TARGET  = prodigal
+ZTARGET  = zprodigal
 SOURCES = $(shell echo *.c)
 HEADERS = $(shell echo *.h)
 OBJECTS = $(SOURCES:.c=.o)
+ZOBJECTS = $(SOURCES:.c=.oz)
 
 INSTALLDIR  = /usr/local/bin
 
@@ -36,8 +38,14 @@ all: $(TARGET)
 $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS)
 
+$(ZTARGET): $(ZOBJECTS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS) -lz -DSUPPORT_GZIP_COMPRESSED
+
 %.o: %.c $(HEADERS)
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+%.oz: %.c $(HEADERS)
+	$(CC) $(CFLAGS) -c -o $@ $<  -DSUPPORT_GZIP_COMPRESSED
 
 install: $(TARGET)
 	install -d -m 0755 $(INSTALLDIR)
@@ -47,7 +55,7 @@ uninstall:
 	-rm $(INSTALLDIR)/$(TARGET)
 
 clean:
-	-rm -f $(OBJECTS)
+	-rm -f $(OBJECTS) $(ZOBJECTS)
  
 distclean: clean
 	-rm -f $(TARGET)
