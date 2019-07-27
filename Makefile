@@ -21,8 +21,8 @@
 SHELL   = /bin/sh
 CC      = gcc
 
-CFLAGS  += -pedantic -Wall -O3
-LFLAGS = -lm $(LDFLAGS)
+CFLAGS  += -pedantic -Wall -O3 -DSUPPORT_GZIP_COMPRESSED
+LFLAGS = -lm $(LDFLAGS) -lz
 
 TARGET  = prodigal
 ZTARGET  = zprodigal
@@ -38,14 +38,8 @@ all: $(TARGET)
 $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS)
 
-$(ZTARGET): $(ZOBJECTS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS) -lz -DSUPPORT_GZIP_COMPRESSED
-
 %.o: %.c $(HEADERS)
 	$(CC) $(CFLAGS) -c -o $@ $<
-
-%.oz: %.c $(HEADERS)
-	$(CC) $(CFLAGS) -c -o $@ $<  -DSUPPORT_GZIP_COMPRESSED
 
 install: $(TARGET)
 	install -d -m 0755 $(INSTALLDIR)
