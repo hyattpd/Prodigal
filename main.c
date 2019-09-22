@@ -25,12 +25,15 @@
 #include "node.h"
 #include "dprog.h"
 #include "gene.h"
+#include "fptr.h"
+
 
 #define VERSION "2.6.3"
 #define DATE "February, 2016"
 
 #define MIN_SINGLE_GENOME 20000
 #define IDEAL_SINGLE_GENOME 100000
+
 
 void version();
 void usage(char *);
@@ -47,7 +50,8 @@ int main(int argc, char *argv[]) {
   char *train_file, *start_file, *trans_file, *nuc_file; 
   char *input_file, *output_file, input_copy[MAX_LINE];
   char cur_header[MAX_LINE], new_header[MAX_LINE], short_header[MAX_LINE];
-  FILE *input_ptr, *output_ptr, *start_ptr, *trans_ptr, *nuc_ptr;
+  FILE *output_ptr, *start_ptr, *trans_ptr, *nuc_ptr;
+  fptr input_ptr = NULL;
   struct stat fbuf;
   pid_t pid;
   struct _node *nodes;
@@ -89,7 +93,7 @@ int main(int argc, char *argv[]) {
   start_file = NULL; trans_file = NULL; nuc_file = NULL;
   start_ptr = stdout; trans_ptr = stdout; nuc_ptr = stdout;
   input_file = NULL; output_file = NULL; piped = 0;
-  input_ptr = stdin; output_ptr = stdout; max_slen = 0;
+  output_ptr = stdout; max_slen = 0;
   output = 0; closed = 0; do_mask = 0; force_nonsd = 0;
 
   /* Filename for input copy if needed */
@@ -249,7 +253,14 @@ int main(int argc, char *argv[]) {
 
   /* Check i/o files (if specified) and prepare them for reading/writing */
   if(input_file != NULL) {
-    input_ptr = fopen(input_file, "r");
+    input_ptr = INPUT_OPEN(input_file, "r");
+    if(input_ptr == NULL) {
+      fprintf(stderr, "\nError: can't open input file %s.\n\n", input_file);
+      exit(5);
+    }
+  }
+  if(input_ptr == NULL) {
+    input_ptr = INPUT_OPEN("/dev/stdin", "r");
     if(input_ptr == NULL) {
       fprintf(stderr, "\nError: can't open input file %s.\n\n", input_file);
       exit(5);
@@ -423,7 +434,7 @@ int main(int argc, char *argv[]) {
 
     /* Rewind input file */    
     if(quiet == 0) fprintf(stderr, "-------------------------------------\n");
-    if(fseek(input_ptr, 0, SEEK_SET) == -1) {
+    if(INPUT_SEEK(input_ptr, 0, SEEK_SET) == -1) {
       fprintf(stderr, "\nError: could not rewind input file.\n"); 
       exit(13);
     }
@@ -600,15 +611,15 @@ int main(int argc, char *argv[]) {
   }
 
   /* Free all memory */
-  if(seq != NULL) free(seq);
-  if(rseq != NULL) free(rseq);
-  if(useq != NULL) free(useq);
-  if(nodes != NULL) free(nodes);
-  if(genes != NULL) free(genes);
-  for(i = 0; i < NUM_META; i++) if(meta[i].tinf != NULL) free(meta[i].tinf);
+  free(seq);
+  free(rseq);
+  free(useq);
+  free(nodes);
+  free(genes);
+  for(i = 0; i < NUM_META; i++) free(meta[i].tinf);
 
   /* Close all the filehandles and exit */
-  if(input_ptr != stdin) fclose(input_ptr);
+  INPUT_CLOSE(input_ptr);
   if(output_ptr != stdout) fclose(output_ptr);
   if(start_ptr != stdout) fclose(start_ptr);
   if(trans_ptr != stdout) fclose(trans_ptr);

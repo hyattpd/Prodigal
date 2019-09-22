@@ -21,13 +21,15 @@
 SHELL   = /bin/sh
 CC      = gcc
 
-CFLAGS  += -pedantic -Wall -O3
-LFLAGS = -lm $(LDFLAGS)
+CFLAGS  += -pedantic -Wall -O3 -DSUPPORT_GZIP_COMPRESSED
+LFLAGS = -lm $(LDFLAGS) -lz
 
 TARGET  = prodigal
+ZTARGET  = zprodigal
 SOURCES = $(shell echo *.c)
 HEADERS = $(shell echo *.h)
 OBJECTS = $(SOURCES:.c=.o)
+ZOBJECTS = $(SOURCES:.c=.oz)
 
 INSTALLDIR  = /usr/local/bin
 
@@ -47,7 +49,7 @@ uninstall:
 	-rm $(INSTALLDIR)/$(TARGET)
 
 clean:
-	-rm -f $(OBJECTS)
+	-rm -f $(OBJECTS) $(ZOBJECTS)
  
 distclean: clean
 	-rm -f $(TARGET)

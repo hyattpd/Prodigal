@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+
 struct _training {
   double gc;                    /* GC Content */
   int trans_table;              /* 11 = Standard Microbial, NCBI Trans Table to
