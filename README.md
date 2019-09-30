@@ -1,4 +1,4 @@
-[[Prodigal Logo](http://i57.tinypic.com/n3rygn.png)]
+# Prodigal
 
   Fast, reliable protein-coding gene prediction for prokaryotic genomes.
 
