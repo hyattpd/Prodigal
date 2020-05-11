@@ -1,0 +1,5 @@
+
+script:
+  - make install
+  - ./prodigal -h
+ 
