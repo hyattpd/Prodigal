@@ -1,5 +1,5 @@
 
 script:
-  - make install
-  - ./prodigal -h
+  - sudo make install
+  - prodigal -h
  
