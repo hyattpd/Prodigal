@@ -1,0 +1,7 @@
+
+script:
+  - sudo make install
+  - prodigal -h
+  - prodigal -i anthus_aco.fas -o anthus_aco_genes.txt -a anthus_aco_proteins.faa
+  - cat anthus_aco_genes.txt
+  - cat anthus_aco_proteins.faa
