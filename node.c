@@ -487,7 +487,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
     /* genes are also penalized.                                  */
     /**************************************************************/
     if(is_meta == 1 && slen < 3000 && edge_gene == 0 && 
-       (nod[i].cscore < 5.0 || abs(nod[i].ndx-nod[i].stop_val < 120))) {
+       (nod[i].cscore < 5.0 || abs(nod[i].ndx-nod[i].stop_val) < 120)) {
       nod[i].cscore -= META_PEN*dmax(0, (3000-slen)/2700.0);
     }
  
@@ -515,7 +515,7 @@ void score_nodes(unsigned char *seq, unsigned char *rseq, int slen,
       else nod[i].sscore -= 0.5;
     }
     else if(nod[i].cscore < 5.0 && is_meta == 1 && abs(nod[i].ndx-
-            nod[i].stop_val < 120) && nod[i].sscore < 0.0)
+            nod[i].stop_val) < 120 && nod[i].sscore < 0.0)
       nod[i].sscore -= tinf->st_wt; 
   }
 }
