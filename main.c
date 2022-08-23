@@ -653,7 +653,7 @@ void usage(char *msg) {
   fprintf(stderr, "                 [-g tr_table] [-h] [-i input_file] [-m]");
   fprintf(stderr, " [-n] [-o output_file]\n");
   fprintf(stderr, "                 [-p mode] [-q] [-s start_file]");
-  fprintf(stderr, " [-t training_file] [-v]\n");
+  fprintf(stderr, " [-t training_file] [-x] [-r] [-v]\n");
   fprintf(stderr, "\nDo 'prodigal -h' for more information.\n\n");
   exit(15);
 }
