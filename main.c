@@ -43,7 +43,7 @@ int copy_standard_input_to_file(char *, int);
 int main(int argc, char *argv[]) {
 
   int rv, slen, nn, ng, i, ipath, *gc_frame, do_training, output, max_phase;
-  int closed, do_mask, nmask, force_nonsd, user_tt, is_meta, num_seq, quiet, max_node_dist;
+  int closed, do_mask, nmask, force_nonsd, user_tt, is_meta, num_seq, quiet, max_node_dist, rapid;
   int piped, max_slen, fnum;
   double max_score, gc, low, high;
   unsigned char *seq, *rseq, *useq;
@@ -87,7 +87,7 @@ int main(int argc, char *argv[]) {
     memset(meta[i].tinf, 0, sizeof(struct _training));
   }
   nn = 0; slen = 0; ipath = 0; ng = 0; nmask = 0;
-  user_tt = 0; is_meta = 0; num_seq = 0; quiet = 0; max_node_dist = 500;
+  user_tt = 0; is_meta = 0; num_seq = 0; quiet = 0; max_node_dist = 500; rapid = 0;
   max_phase = 0; max_score = -100.0;
   train_file = NULL; do_training = 0;
   start_file = NULL; trans_file = NULL; nuc_file = NULL;
@@ -122,7 +122,7 @@ int main(int argc, char *argv[]) {
        strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "-I") == 0 ||
        strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "-O") == 0 ||
        strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "-P") == 0 ||
-       strcmp(argv[i], "-x") == 0 || strcmp(argv[i], "-X") == 0))
+       strcmp(argv[i], "-x") == 0 || strcmp(argv[i], "-X") == 0 ))
       usage("-a/-f/-g/-i/-o/-p/-s/-x options require parameters.");
     else if(strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "-C") == 0)
       closed = 1;
@@ -195,6 +195,8 @@ int main(int argc, char *argv[]) {
         max_node_dist = atoi(argv[i+1]);
         i++;
     }
+    else if(strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "-R") == 0)
+        rapid = 1;
     else usage("Unknown option.");
   }
 
@@ -388,7 +390,7 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Building initial set of genes to train from...");
     }
     record_overlapping_starts(nodes, nn, &tinf, 0);
-    ipath = dprog(nodes, nn, &tinf, 0);
+    ipath = dprog(nodes, nn, &tinf, 0, max_node_dist, rapid);
     if(quiet == 0) {
       fprintf(stderr, "done!\n"); 
     }
@@ -520,7 +522,7 @@ int main(int argc, char *argv[]) {
         write_start_file(start_ptr, nodes, nn, &tinf, num_seq, slen, 0, NULL,
                          VERSION, cur_header);
       record_overlapping_starts(nodes, nn, &tinf, 1);
-      ipath = dprog(nodes, nn, &tinf, 1);
+      ipath = dprog(nodes, nn, &tinf, 1, max_node_dist, rapid);
       eliminate_bad_genes(nodes, ipath, &tinf);
       ng = add_genes(genes, nodes, ipath);
       tweak_final_starts(genes, ng, nodes, nn, &tinf);
@@ -561,7 +563,7 @@ int main(int argc, char *argv[]) {
         reset_node_scores(nodes, nn);
         score_nodes(seq, rseq, slen, nodes, nn, meta[i].tinf, closed, is_meta);
         record_overlapping_starts(nodes, nn, meta[i].tinf, 1);
-        ipath = dprog(nodes, nn, meta[i].tinf, 1);
+        ipath = dprog(nodes, nn, meta[i].tinf, 1, max_node_dist, rapid);
         if(nodes[ipath].score > max_score) {
           max_phase = i;
           max_score = nodes[ipath].score;
@@ -690,8 +692,10 @@ void help() {
   fprintf(stderr, "         -t:  Write a training file (if none exists); ");
   fprintf(stderr, "otherwise, read and use\n");
   fprintf(stderr, "              the specified training file.\n");
-  fprintf(stderr, "         -x:  Specify the number of neighbor nodes for connection scoring.");
+  fprintf(stderr, "         -x:  Specify the number of neighbor nodes to score connection.");
   fprintf(stderr, " Default is 500.\n");
+  fprintf(stderr, "         -r:  Rapid mode. When tested with the E. coli genome, ");
+  fprintf(stderr, "the same result was obtained in 2/3 of the original time.");
   fprintf(stderr, "         -v:  Print version number and exit.\n\n");
   exit(0);
 }
