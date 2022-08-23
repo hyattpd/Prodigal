@@ -43,7 +43,7 @@ int copy_standard_input_to_file(char *, int);
 int main(int argc, char *argv[]) {
 
   int rv, slen, nn, ng, i, ipath, *gc_frame, do_training, output, max_phase;
-  int closed, do_mask, nmask, force_nonsd, user_tt, is_meta, num_seq, quiet;
+  int closed, do_mask, nmask, force_nonsd, user_tt, is_meta, num_seq, quiet, max_node_dist;
   int piped, max_slen, fnum;
   double max_score, gc, low, high;
   unsigned char *seq, *rseq, *useq;
@@ -87,7 +87,7 @@ int main(int argc, char *argv[]) {
     memset(meta[i].tinf, 0, sizeof(struct _training));
   }
   nn = 0; slen = 0; ipath = 0; ng = 0; nmask = 0;
-  user_tt = 0; is_meta = 0; num_seq = 0; quiet = 0;
+  user_tt = 0; is_meta = 0; num_seq = 0; quiet = 0; max_node_dist = 500;
   max_phase = 0; max_score = -100.0;
   train_file = NULL; do_training = 0;
   start_file = NULL; trans_file = NULL; nuc_file = NULL;
@@ -113,15 +113,17 @@ int main(int argc, char *argv[]) {
 
   /* Parse the command line arguments */
   for(i = 1; i < argc; i++) {
-    if(i == argc-1 && (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0
-       || strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "-A") == 0 ||
+    if(i == argc-1 &&
+      (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0 ||
+       strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "-A") == 0 ||
        strcmp(argv[i], "-g") == 0 || strcmp(argv[i], "-g") == 0 ||
        strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "-F") == 0 ||
        strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "-S") == 0 ||
        strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "-I") == 0 ||
        strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "-O") == 0 ||
-       strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "-P") == 0))
-      usage("-a/-f/-g/-i/-o/-p/-s options require parameters.");
+       strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "-P") == 0 ||
+       strcmp(argv[i], "-x") == 0 || strcmp(argv[i], "-X") == 0))
+      usage("-a/-f/-g/-i/-o/-p/-s/-x options require parameters.");
     else if(strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "-C") == 0)
       closed = 1;
     else if(strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "-Q") == 0)
@@ -188,6 +190,10 @@ int main(int argc, char *argv[]) {
         output = 3;
       else usage("Invalid output format specified.");
       i++;
+    }
+    else if(strcmp(argv[i], "-x") == 0 || strcmp(argv[i], "-X") == 0) {
+        max_node_dist = atoi(argv[i+1]);
+        i++;
     }
     else usage("Unknown option.");
   }
@@ -684,6 +690,8 @@ void help() {
   fprintf(stderr, "         -t:  Write a training file (if none exists); ");
   fprintf(stderr, "otherwise, read and use\n");
   fprintf(stderr, "              the specified training file.\n");
+  fprintf(stderr, "         -x:  Specify the number of neighbor nodes for connection scoring.");
+  fprintf(stderr, " Default is 500.\n");
   fprintf(stderr, "         -v:  Print version number and exit.\n\n");
   exit(0);
 }
