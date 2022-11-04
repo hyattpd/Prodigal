@@ -124,7 +124,7 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
                       int flag) {
   struct _node *n1 = &(nod[p1]), *n2 = &(nod[p2]), *n3;
   int i, left = n1->ndx, right = n2->ndx, bnd, ovlp = 0, maxfr = -1;
-  double score = 0.0, scr_mod = 0.0, maxval;
+  double score = 0.0, scr_mod = 0.0, frval, maxval;
 
   /***********************/
   /* Invalid Connections */
@@ -202,21 +202,16 @@ void score_connection(struct _node *nod, int p1, int p2, struct _training *tinf,
       if(ovlp >= n3->ndx - left) continue;
       if(n1->traceb == -1) continue;
       if(ovlp >= n3->stop_val - nod[n1->traceb].ndx - 2) continue;
-      if((flag == 1 && n3->cscore + n3->sscore + intergenic_mod(n3, n2, tinf) >
-          maxval) || (flag == 0 && tinf->bias[0]*n3->gc_score[0] +
-          tinf->bias[1]*n3->gc_score[1] + tinf->bias[2]*n3->gc_score[2] >
-          maxval)) {
+      if(flag == 1) frval = n3->cscore + n3->sscore + intergenic_mod(n3, n2, tinf);
+      else frval = tinf->bias[0]*n3->gc_score[0] + tinf->bias[1]*n3->gc_score[1] + tinf->bias[2]*n3->gc_score[2];
+      if(frval > maxval) {
         maxfr = i;
-        maxval = n3->cscore + n3->sscore + intergenic_mod(n3, n2, tinf);
+        maxval = frval;
       }
     }
     if(maxfr != -1) {
-      n3 = &(nod[n2->star_ptr[maxfr]]);
-      if(flag == 0) scr_mod = tinf->bias[0]*n3->gc_score[0] +
-                    tinf->bias[1]*n3->gc_score[1] +
-                    tinf->bias[2]*n3->gc_score[2];
-      else if(flag == 1) score = n3->cscore + n3->sscore +
-              intergenic_mod(n3, n2, tinf);
+      if(flag == 0) scr_mod = maxval;
+      else score = maxval;
     }
     else if(flag == 1) score = intergenic_mod(n1, n2, tinf);
   }
