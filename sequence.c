@@ -667,10 +667,10 @@ int shine_dalgarno_exact(unsigned char *seq, int pos, int start, double *rwt) {
 
   /* Compare the 6-base region to AGGAGG */
   for(i = 0; i < limit; i++) {
-    if(pos+i < 0) continue;
-    if(i%3 == 0 && is_a(seq, pos+i) == 1) match[i] = 2.0;
-    else if(i%3 != 0 && is_g(seq, pos+i) == 1) match[i] = 3.0;
-    else match[i] = -10.0;
+    if(pos + i >= 0) {
+      if(i%3 == 0 && is_a(seq, pos+i) == 1) match[i] = 2.0;
+      else if(i%3 != 0 && is_g(seq, pos+i) == 1) match[i] = 3.0;
+    }
   }
 
   /* Find the maximally scoring motif */
@@ -743,14 +743,15 @@ int shine_dalgarno_mm(unsigned char *seq, int pos, int start, double *rwt) {
 
   /* Compare the 6-base region to AGGAGG */
   for(i = 0; i < limit; i++) {
-    if(pos+i < 0) continue;
-    if(i % 3 == 0) {
-      if(is_a(seq, pos+i) == 1) match[i] = 2.0;
-      else match[i] = -3.0;
-    }
-    else {
-      if(is_g(seq, pos+i) == 1) match[i] = 3.0;
-      else match[i] = -2.0;
+    if(pos+i >= 0) {
+      if(i % 3 == 0) {
+        if(is_a(seq, pos+i) == 1) match[i] = 2.0;
+        else match[i] = -3.0;
+      }
+      else {
+        if(is_g(seq, pos+i) == 1) match[i] = 3.0;
+        else match[i] = -2.0;
+      }
     }
   }
 
