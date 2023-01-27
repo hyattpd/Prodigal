@@ -663,7 +663,7 @@ int shine_dalgarno_exact(unsigned char *seq, int pos, int start, double *rwt) {
   double match[6], cur_ctr, dis_flag;
 
   limit = imin(6, start-4-pos);
-  for(i = limit; i < 6; i++) match[i] = -10.0;
+  for(i = 0; i < 6; i++) match[i] = -10.0;
 
   /* Compare the 6-base region to AGGAGG */
   for(i = 0; i < limit; i++) {
@@ -739,7 +739,7 @@ int shine_dalgarno_mm(unsigned char *seq, int pos, int start, double *rwt) {
   double match[6], cur_ctr, dis_flag;
 
   limit = imin(6, start-4-pos);
-  for(i = limit; i < 6; i++) match[i] = -10.0;
+  for(i = 0; i < 6; i++) match[i] = -10.0;
 
   /* Compare the 6-base region to AGGAGG */
   for(i = 0; i < limit; i++) {
