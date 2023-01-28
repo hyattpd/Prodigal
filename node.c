@@ -552,7 +552,7 @@ void calc_orf_gc(unsigned char *seq, unsigned char *rseq, int slen, struct
                is_gc(seq, nod[i].ndx-2);
     }
     else if(nod[i].strand == -1) {
-      for(j = last[fr]+3; j <= nod[i].ndx; j+=3)
+      for(j = last[fr]+1; j <= nod[i].ndx; j+=3)
         gc[fr] += is_gc(seq, j) + is_gc(seq, j+1) + is_gc(seq, j+2);
       gsize = (float)(abs(nod[i].stop_val-nod[i].ndx)+3.0);
       nod[i].gc_cont = gc[fr]/gsize;
