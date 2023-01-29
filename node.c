@@ -709,7 +709,6 @@ void rbs_score(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     nod[i].rbs[1] = 0;
     if(nod[i].strand == 1) {
       for(j = nod[i].ndx - 20; j <= nod[i].ndx - 6; j++) {
-        if(j < 0) continue;
         cur_sc[0] = shine_dalgarno_exact(seq, j, nod[i].ndx, tinf->rbs_wt);
         cur_sc[1] = shine_dalgarno_mm(seq, j, nod[i].ndx, tinf->rbs_wt);
         if(cur_sc[0] > nod[i].rbs[0]) nod[i].rbs[0] = cur_sc[0];
@@ -718,7 +717,6 @@ void rbs_score(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     }
     else if(nod[i].strand == -1) {
       for(j = slen - nod[i].ndx - 21; j <= slen - nod[i].ndx - 7; j++) {
-        if(j > slen-1) continue;
         cur_sc[0] = shine_dalgarno_exact(rseq, j, slen-1-nod[i].ndx,
                                          tinf->rbs_wt);
         cur_sc[1] = shine_dalgarno_mm(rseq, j, slen-1-nod[i].ndx,
