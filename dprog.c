@@ -43,12 +43,12 @@ int dprog(struct _node *nod, int nn, struct _training *tinf, int flag) {
     /* Set up distance constraints for making connections, */
     /* but make exceptions for giant ORFS.                 */
     if(i < MAX_NODE_DIST) min = 0; else min = i-MAX_NODE_DIST;
-    if(nod[i].strand == -1 && nod[i].type != STOP && nod[min].ndx >=
+    if(nod[i].strand == -1 && nod[i].type != STOP && nod[min].ndx >
        nod[i].stop_val)
-      while(min >= 0 && nod[i].ndx != nod[i].stop_val) min--;
-    if(nod[i].strand == 1 && nod[i].type == STOP && nod[min].ndx >=
+      while(min >= 0 && nod[min].ndx != nod[i].stop_val) min--;
+    if(nod[i].strand == 1 && nod[i].type == STOP && nod[min].ndx >
        nod[i].stop_val)
-      while(min >= 0 && nod[i].ndx != nod[i].stop_val) min--;
+      while(min >= 0 && nod[min].ndx != nod[i].stop_val) min--;
     if(min < MAX_NODE_DIST) min = 0;
     else min = min-MAX_NODE_DIST;
     for(j = min; j < i; j++) {
