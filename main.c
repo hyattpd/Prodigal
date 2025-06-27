@@ -26,6 +26,7 @@
 #include "dprog.h"
 #include "gene.h"
 #include "fptr.h"
+#include "table.h"
 
 
 #define VERSION "2.6.3"
@@ -87,7 +88,7 @@ int main(int argc, char *argv[]) {
     memset(meta[i].tinf, 0, sizeof(struct _training));
   }
   nn = 0; slen = 0; ipath = 0; ng = 0; nmask = 0;
-  user_tt = 0; is_meta = 0; num_seq = 0; quiet = 0;
+  user_tt = -2; is_meta = 0; num_seq = 0; quiet = 0;
   max_phase = 0; max_score = -100.0;
   train_file = NULL; do_training = 0;
   start_file = NULL; trans_file = NULL; nuc_file = NULL;
@@ -110,6 +111,7 @@ int main(int argc, char *argv[]) {
   ***************************************************************************/
   tinf.st_wt = 4.35;
   tinf.trans_table = 11;
+  id_to_table(tinf.table, tinf.trans_table);
 
   /* Parse the command line arguments */
   for(i = 1; i < argc; i++) {
@@ -157,12 +159,19 @@ int main(int argc, char *argv[]) {
       i++;
     }
     else if(strcmp(argv[i], "-g") == 0 || strcmp(argv[i], "-G") == 0) {
-      tinf.trans_table = atoi(argv[i+1]);
-      if(tinf.trans_table < 1 || tinf.trans_table > 25 || tinf.trans_table == 7
-         || tinf.trans_table == 8 || (tinf.trans_table >= 17 && tinf.trans_table
-         <= 20))
-        usage("Invalid translation table specified.");
-      user_tt = tinf.trans_table;
+      if ('0' <= argv[i+1][0] && argv[i+1][0] <= '9') {
+        /* Numeric ID path */
+        tinf.trans_table = atoi(argv[i+1]);
+        if (id_to_table(tinf.table, tinf.trans_table))
+          usage("Invalid translation table numeric specified (should be "
+          "between 0 and " STRMAXTABLE ", inclusive)");
+        user_tt = tinf.trans_table;
+      } else {
+        /* LUMP-OF-STRING PATH */
+        if (cmdline_eaa_to_table(tinf.table, argv[i+1]))
+          usage("Invalid translation table string specified.");
+        tinf.trans_table = user_tt = table_to_id(tinf.table);
+      }
       i++;
     }
     else if(strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "-P") == 0) {
@@ -207,7 +216,9 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "\nError: cannot specify metagenomic sequence with a");
       fprintf(stderr, " training file.\n");
       exit(2);
-    } 
+    }
+    char orig_table[64];
+    memcpy(orig_table, tinf.table, 64);
     rv = read_training_file(train_file, &tinf);
     if(rv == 1) do_training = 1;
     else {
@@ -217,9 +228,18 @@ int main(int argc, char *argv[]) {
       }
       if(quiet == 0)
         fprintf(stderr, "Reading in training data from file %s...", train_file);
-      if(user_tt > 0 && user_tt != tinf.trans_table) { 
-        fprintf(stderr, "\n\nWarning: user-specified translation table does");
-        fprintf(stderr, "not match the one in the specified training file! \n\n");
+      if(user_tt != -2 && user_tt != tinf.trans_table) { 
+        fprintf(stderr, "\n\nWarning: user-specified translation table %d "
+          "does", user_tt);
+        fprintf(stderr, "not match the one in the specified training file "
+          "%d!\n\n", tinf.trans_table);
+      }
+      if(user_tt == -1 && tinf.trans_table == -1 &&
+        memcmp(orig_table, tinf.table, 64) != 0) {
+        fprintf(stderr, "\n\nWarning: user-specified translation table %.64s "
+          "does\n", orig_table);
+        fprintf(stderr, "not match the one in the specified training file "
+          "%.64s!\n\n", tinf.table);
       }
       if(rv == -1) { 
         fprintf(stderr, "\n\nError: training file did not read correctly!\n"); 
@@ -262,7 +282,7 @@ int main(int argc, char *argv[]) {
   if(input_ptr == NULL) {
     input_ptr = INPUT_OPEN("/dev/stdin", "r");
     if(input_ptr == NULL) {
-      fprintf(stderr, "\nError: can't open input file %s.\n\n", input_file);
+      fprintf(stderr, "\nError: can't open stdin.\n\n");
       exit(5);
     }
   }
@@ -544,6 +564,8 @@ int main(int argc, char *argv[]) {
 
       max_score = -100.0;
       for(i = 0; i < NUM_META; i++) { 
+        /* XX: This trans_table comparison is acceptable because all the tables
+               come from id_to_table() */
         if(i == 0 || meta[i].tinf->trans_table != 
            meta[i-1].tinf->trans_table) {
           memset(nodes, 0, nn*sizeof(struct _node));
@@ -667,6 +689,8 @@ void help() {
   fprintf(stderr, "Default is gbk.\n");
   fprintf(stderr, "         -g:  Specify a translation table to use (default");
   fprintf(stderr, " 11).\n");
+  fprintf(stderr, "              NEW: specify custom table in the form");
+  fprintf(stderr, " NCBIEAA[,SNCBIEAA] (64 or 129 characters).\n");
   fprintf(stderr, "         -h:  Print help menu and exit.\n");
   fprintf(stderr, "         -i:  Specify FASTA/Genbank input file (default ");
   fprintf(stderr, "reads from stdin).\n");

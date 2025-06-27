@@ -19,6 +19,7 @@
 *******************************************************************************/
 
 #include "node.h"
+#include "table.h"
 
 /*******************************************************************************
   Adds nodes to the node list.  Genes must be >=90bp in length, unless they
@@ -40,7 +41,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     if(closed == 0) while(last[(i+slmod)%3]+2 > slen-1) last[(i+slmod)%3]-=3;
   }
   for(i = slen-3; i >= 0; i--) {
-    if(is_stop(seq, i, tinf)==1) {
+    if(is_stop(seq, i, tinf)) {
       if(saw_start[i%3] == 1) {
         if(is_stop(seq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
         nodes[nn].ndx = last[i%3]; 
@@ -55,7 +56,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     }
     if(last[i%3] >= slen) continue;
      
-    if(is_start(seq, i, tinf) == 1 && is_atg(seq, i)==1 && ((last[i%3]-i+3)
+    if(is_start(seq, i, tinf) && is_atg(seq, i) && ((last[i%3]-i+3)
             >= min_dist[i%3]) && cross_mask(i, last[i%3], mlist, nm) == 0) {
       nodes[nn].ndx = i; 
       nodes[nn].type = ATG; 
@@ -63,7 +64,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
       nodes[nn].stop_val = last[i%3]; 
       nodes[nn++].strand = 1;
     }
-    else if(is_start(seq, i, tinf) == 1 && is_gtg(seq, i)==1 && ((last[i%3]-i+3)
+    else if(is_start(seq, i, tinf) && is_gtg(seq, i) && ((last[i%3]-i+3)
             >= min_dist[i%3]) && cross_mask(i, last[i%3], mlist, nm) == 0) {
       nodes[nn].ndx = i; 
       nodes[nn].type = GTG; 
@@ -71,7 +72,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
       nodes[nn].stop_val = last[i%3]; 
       nodes[nn++].strand = 1;
     }
-    else if(is_start(seq, i, tinf) == 1 && is_ttg(seq, i)==1 && ((last[i%3]-i+3)
+    else if(is_start(seq, i, tinf) && is_ttg(seq, i) && ((last[i%3]-i+3)
             >= min_dist[i%3]) && cross_mask(i, last[i%3], mlist, nm) == 0) {
       nodes[nn].ndx = i; 
       nodes[nn].type = TTG; 
@@ -107,7 +108,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     if(closed == 0) while(last[(i+slmod)%3]+2 > slen-1) last[(i+slmod)%3]-=3;
   }
   for(i = slen-3; i >= 0; i--) {
-    if(is_stop(rseq, i, tinf)==1) {
+    if(is_stop(rseq, i, tinf)) {
       if(saw_start[i%3] == 1) {
         if(is_stop(rseq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
         nodes[nn].ndx = slen-last[i%3]-1; 
@@ -122,7 +123,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     }
     if(last[i%3] >= slen) continue;
 
-    if(is_start(rseq, i, tinf) == 1 && is_atg(rseq, i)==1 && ((last[i%3]-i+3)
+    if(is_start(rseq, i, tinf) && is_atg(rseq, i) && ((last[i%3]-i+3)
        >= min_dist[i%3]) && cross_mask(slen-last[i%3]-1, slen-i-1, mlist, nm) ==
        0) {
       nodes[nn].ndx = slen - i - 1; 
@@ -131,7 +132,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
       nodes[nn].stop_val = slen-last[i%3]-1; 
       nodes[nn++].strand = -1;
     }
-    else if(is_start(rseq, i, tinf) == 1 && is_gtg(rseq, i)==1 && 
+    else if(is_start(rseq, i, tinf) && is_gtg(rseq, i) && 
             ((last[i%3]-i+3) >= min_dist[i%3]) && cross_mask(slen-last[i%3]-1,
             slen-i-1, mlist, nm) == 0) {
       nodes[nn].ndx = slen - i - 1; 
@@ -140,7 +141,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
       nodes[nn].stop_val = slen-last[i%3]-1; 
       nodes[nn++].strand = -1;
     }
-    else if(is_start(rseq, i, tinf) == 1 && is_ttg(rseq, i)==1 && 
+    else if(is_start(rseq, i, tinf) && is_ttg(rseq, i) && 
             ((last[i%3]-i+3) >= min_dist[i%3]) && cross_mask(slen-last[i%3]-1,
             slen-i-1, mlist, nm) == 0) {
       nodes[nn].ndx = slen - i - 1; 
@@ -572,7 +573,8 @@ void raw_coding_score(unsigned char *seq, unsigned char *rseq, int slen, struct
   int i, j, last[3], fr;
   double score[3], lfac, no_stop, gsize = 0.0;
 
-  if(tinf->trans_table != 11) { /* TGA or TAG is not a stop */
+  /* FIXME: There's probably a way to consider the other stops too */
+  if(tinf->table[P_TGA] != '*' || tinf->table[P_TAG] != '*') { /* TGA or TAG is not a stop */
     no_stop = ((1-tinf->gc)*(1-tinf->gc)*tinf->gc)/8.0;
     no_stop += ((1-tinf->gc)*(1-tinf->gc)*(1-tinf->gc))/8.0;
     no_stop = (1 - no_stop);

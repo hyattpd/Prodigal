@@ -20,10 +20,52 @@
 
 #ifndef BITMAP_H_
 #define BITMAP_H_
+#include <stddef.h>
 
-unsigned char test(unsigned char *, int);
-void clear(unsigned char *, int);
-void set(unsigned char *, int);
-void toggle(unsigned char *, int);
+/* Test a bit, 0 = not set, 1 = set */
+static inline unsigned char test(unsigned char *bm, size_t ndx) {
+  return ( bm[ndx>>3] & (1 << (ndx&0x07))?1:0 ); 
+}
 
+/* Clear a bit (set it to 0) */
+static inline void clear(unsigned char *bm, size_t ndx) {
+  bm[ndx>>3] &= ~(1 << (ndx&0x07));
+}
+
+/* Set a bit to 1 */
+static inline void set(unsigned char *bm, size_t ndx) {
+  bm[ndx>>3] |= (1 << (ndx&0x07));
+}
+
+/* Flip a bit's value 0->1 or 1->0 */
+static inline void toggle(unsigned char *bm, size_t ndx) {
+  bm[ndx>>3] ^= (1 << (ndx&0x07)); 
+}
+
+/* Get two bits */
+static inline unsigned char nuc(unsigned char *bm, size_t ndx) {
+  ndx *= 2;
+  return ((bm[ndx >> 3] >> (ndx & 0x07)) & 0x03);
+}
+
+/* Get six bits, which can be in two bytes
+   out-of-bound read may happen but will not affect result */
+static inline unsigned char trinuc(unsigned char *bm, size_t ndx) {
+  ndx *= 2;
+  unsigned byte = ndx >> 3;
+  unsigned stretch = (bm[byte + 1] << 8) | bm[byte];
+  return ((stretch >> (ndx & 0x07)) & 0x3F);
+}
+
+/* Get twelve bits, which can be in four bytes
+   mer_ndx(6) is relatively common and should be replaced with this
+   (shorter assembly).  unfortunately the order is different, which
+   breaks tinf->gene_dc compatibility! */
+static inline unsigned char hexnuc(unsigned char *bm, int ndx) {
+  ndx *= 2;
+  unsigned byte = ndx >> 3;
+  unsigned stretch = (bm[byte + 3] << 24) | (bm[byte + 2] << 16) |
+                     (bm[byte + 1] << 8) | bm[byte];
+  return ((stretch >> (ndx & 0x07)) & 0x3F);
+}
 #endif

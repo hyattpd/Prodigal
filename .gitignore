@@ -1,2 +1,16 @@
+# Build artifacts
 *.o
 prodigal
+prodigal.exe
+prodigal-table
+prodigal-table.exe
+
+# Release binary names
+prodigal.linux
+prodigal.osx*
+prodigal.windows.exe
+
+# A playground directory
+test/
+
+

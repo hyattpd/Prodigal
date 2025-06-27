@@ -362,6 +362,11 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
           tinf->gc*100.0, tinf->trans_table, tinf->uses_sd);
   strcat(run_data, buffer);
 
+  if (tinf->trans_table == -1) {
+    sprintf(buffer, ";x_prodigal_transl=%.64s", tinf->table);
+    strcat(run_data, buffer);
+  }
+
   strcpy(left, "");
   strcpy(right, "");
 

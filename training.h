@@ -25,11 +25,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-
+/* FIXME: This is a giant 558 KB struct which is awful for locality. Many bytes
+   can be saved by replacing double with float, and a couple more by squeezing
+   the two ints together. That would however change the on-disk format which is
+   a big bother. (Either you break compatibility or you write a conversion
+   routine.)
+   
+   Just appending should not break things given some care. */
 struct _training {
   double gc;                    /* GC Content */
-  int trans_table;              /* 11 = Standard Microbial, NCBI Trans Table to
-                                   use */
+  int trans_table;              /* For compatibility: NCBI trans table ID */
   double st_wt;                 /* Start weight */
   double bias[3];               /* GC frame bias for each of the 3 positions */
   double type_wt[3];            /* Weights for ATG vs GTG vs TTG */
@@ -48,9 +53,26 @@ struct _training {
                                    motifs) */
   double no_mot;                /* Weight for the case of no motif */
   double gene_dc[4096];         /* Coding statistics for the genome */
+  char   table[64];             /* Translation table as trinuc()-to-AA mapping */ 
 };
 
-int write_training_file(char *, struct _training *);
+/* The old struct for figuring out where the original file should end.
+   Can't just subtract by 64 due to struct layout magic */
+struct _training_v0 {
+  double gc;
+  int trans_table;
+  double st_wt;
+  double bias[3];
+  double type_wt[3];
+  int uses_sd;
+  double rbs_wt[28];
+  double ups_comp[32][4];
+  double mot_wt[4][4][4096];
+  double no_mot;
+  double gene_dc[4096];
+};
+
+int write_training_file(char *, const struct _training *);
 int read_training_file(char *, struct _training *);
 
 void initialize_metagenome_0(struct _training *);

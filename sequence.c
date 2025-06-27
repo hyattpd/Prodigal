@@ -253,128 +253,6 @@ void rcom_seq(unsigned char *seq, unsigned char *rseq, unsigned char *useq,
   }
 }
 
-/* Simple routines to say whether or not bases are */
-/* a, c, t, g, starts, stops, etc. */
-
-int is_a(unsigned char *seq, int n) {
-  int ndx = n*2;
-  if(test(seq, ndx) == 1 || test(seq, ndx+1) == 1) return 0;
-  return 1;
-}
-
-int is_c(unsigned char *seq, int n) {
-  int ndx = n*2;
-  if(test(seq, ndx) == 1 || test(seq, ndx+1) == 0) return 0;
-  return 1;
-}
-
-int is_g(unsigned char *seq, int n) {
-  int ndx = n*2;
-  if(test(seq, ndx) == 0 || test(seq, ndx+1) == 1) return 0;
-  return 1;
-}
-
-int is_t(unsigned char *seq, int n) {
-  int ndx = n*2;
-  if(test(seq, ndx) == 0 || test(seq, ndx+1) == 0) return 0;
-  return 1;
-}
-
-int is_n(unsigned char *useq, int n) {
-  if(test(useq, n) == 0) return 0;
-  return 1;
-}
-
-int is_stop(unsigned char *seq, int n, struct _training *tinf) {
-
-  /* TAG */
-  if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table == 6 || tinf->trans_table == 15 ||
-       tinf->trans_table == 16 || tinf->trans_table == 22) return 0;
-    return 1;
-  }
-
-  /* TGA */
-  if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if((tinf->trans_table >= 2 && tinf->trans_table <= 5) ||
-       tinf->trans_table == 9 || tinf->trans_table == 10 ||
-       tinf->trans_table == 13 || tinf->trans_table == 14 ||
-       tinf->trans_table == 21 || tinf->trans_table == 25) return 0;
-    return 1;
-  }
-
-  /* TAA */
-  if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 6 || tinf->trans_table == 14) return 0;
-    return 1;
-  }
-
-  /* Code 2 */
-  if(tinf->trans_table == 2 && is_a(seq, n) == 1 && is_g(seq, n+1) == 1 &&
-     is_a(seq, n+2) == 1) return 1;
-  if(tinf->trans_table == 2 && is_a(seq, n) == 1 && is_g(seq, n+1) == 1 &&
-     is_g(seq, n+2) == 1) return 1;
-
-  /* Code 22 */
-  if(tinf->trans_table == 22 && is_t(seq, n) == 1 && is_c(seq, n+1) == 1 &&
-     is_a(seq, n+2) == 1) return 1;
-
-  /* Code 23 */
-  if(tinf->trans_table == 23 && is_t(seq, n) == 1 && is_t(seq, n+1) == 1 &&
-     is_a(seq, n+2) == 1) return 1;
-
-  return 0;
-}
-
-int is_start(unsigned char *seq, int n, struct _training *tinf) {
-
-  /* ATG */
-  if(is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) return 1;
-
-  /* Codes that only use ATG */
-  if(tinf->trans_table == 6 || tinf->trans_table == 10 ||
-     tinf->trans_table == 14 || tinf->trans_table == 15 ||
-     tinf->trans_table == 16 || tinf->trans_table == 22) return 0;
-
-  /* GTG */
-  if(is_g(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table == 1 || tinf->trans_table == 3 ||
-       tinf->trans_table == 12 || tinf->trans_table == 22) return 0;
-    return 1;
-  }
-
-  /* TTG */
-  if(is_t(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table < 4 || tinf->trans_table == 9 ||
-       (tinf->trans_table >= 21 && tinf->trans_table < 25)) return 0;
-    return 1;
-  }
-
-  /* We do not handle other initiation codons */
-  return 0;
-}
-
-int is_atg(unsigned char *seq, int n) {
-  if(is_a(seq, n) == 0 || is_t(seq, n+1) == 0 || is_g(seq, n+2) == 0) return 0;
-  return 1;
-}
-
-int is_gtg(unsigned char *seq, int n) {
-  if(is_g(seq, n) == 0 || is_t(seq, n+1) == 0 || is_g(seq, n+2) == 0) return 0;
-  return 1;
-}
-
-int is_ttg(unsigned char *seq, int n) {
-  if(is_t(seq, n) == 0 || is_t(seq, n+1) == 0 || is_g(seq, n+2) == 0) return 0;
-  return 1;
-}
-
-int is_gc(unsigned char *seq, int n) {
-  int ndx = n*2;
-  if(test(seq, ndx) != test(seq, ndx+1)) return 1;
-  return 0;
-}
-
 double gc_content(unsigned char *seq, int a, int b) {
   double sum = 0.0, gc = 0.0;
   int i;
@@ -383,117 +261,6 @@ double gc_content(unsigned char *seq, int a, int b) {
     sum++;
   }
   return gc/sum;
-}
-
-/* Returns a single amino acid for this position */
-char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
-  if(is_stop(seq, n, tinf) == 1) return '*';
-  if(is_start(seq, n, tinf) == 1 && is_init == 1) return 'M';
-  if(is_t(seq, n) == 1 && is_t(seq, n+1) == 1 && is_t(seq, n+2) == 1)
-    return 'F';
-  if(is_t(seq, n) == 1 && is_t(seq, n+1) == 1 && is_c(seq, n+2) == 1)
-    return 'F';
-  if(is_t(seq, n) == 1 && is_t(seq, n+1) == 1 && is_a(seq, n+2) == 1)
-    return 'L';
-  if(is_t(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1)
-    return 'L';
-  if(is_t(seq, n) == 1 && is_c(seq, n+1) == 1) return 'S';
-  if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_t(seq, n+2) == 1)
-    return 'Y';
-  if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_c(seq, n+2) == 1)
-    return 'Y';
-  if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 6) return 'Q';
-    if(tinf->trans_table == 14) return 'Y';
-  }
-  if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table == 6 || tinf->trans_table == 15) return 'Q';
-    if(tinf->trans_table == 22) return 'L';
-  }
-  if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_t(seq, n+2) == 1)
-    return 'C';
-  if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_c(seq, n+2) == 1)
-    return 'C';
-  if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 25) return 'G';
-    else return 'W';
-  }
-  if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_g(seq, n+2) == 1)
-    return 'W';
-  if(is_c(seq, n) == 1 && is_t(seq, n+1) == 1 && is_t(seq, n+2) == 1) {
-    if(tinf->trans_table == 3) return 'T';
-    return 'L';
-  }
-  if(is_c(seq, n) == 1 && is_t(seq, n+1) == 1 && is_c(seq, n+2) == 1) {
-    if(tinf->trans_table == 3) return 'T';
-    return 'L';
-  }
-  if(is_c(seq, n) == 1 && is_t(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 3) return 'T';
-    return 'L';
-  }
-  if(is_c(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
-    if(tinf->trans_table == 3) return 'T';
-    if(tinf->trans_table == 12) return 'S';
-    return 'L';
-  }
-  if(is_c(seq, n) == 1 && is_c(seq, n+1) == 1) return 'P';
-  if(is_c(seq, n) == 1 && is_a(seq, n+1) == 1 && is_t(seq, n+2) == 1)
-    return 'H';
-  if(is_c(seq, n) == 1 && is_a(seq, n+1) == 1 && is_c(seq, n+2) == 1)
-    return 'H';
-  if(is_c(seq, n) == 1 && is_a(seq, n+1) == 1 && is_a(seq, n+2) == 1)
-    return 'Q';
-  if(is_c(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1)
-    return 'Q';
-  if(is_c(seq, n) == 1 && is_g(seq, n+1) == 1) return 'R';
-  if(is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_t(seq, n+2) == 1)
-    return 'I';
-  if(is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_c(seq, n+2) == 1)
-    return 'I';
-  if(is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 2 || tinf->trans_table == 3 ||
-       tinf->trans_table == 5 || tinf->trans_table == 13 ||
-       tinf->trans_table == 21) return 'M';
-    return 'I';
-  }
-  if(is_a(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1)
-    return 'M';
-  if(is_a(seq, n) == 1 && is_c(seq, n+1) == 1) return 'T';
-  if(is_a(seq, n) == 1 && is_a(seq, n+1) == 1 && is_t(seq, n+2) == 1)
-    return 'N';
-  if(is_a(seq, n) == 1 && is_a(seq, n+1) == 1 && is_c(seq, n+2) == 1)
-    return 'N';
-  if(is_a(seq, n) == 1 && is_a(seq, n+1) == 1 && is_a(seq, n+2) == 1) {
-    if(tinf->trans_table == 9 || tinf->trans_table == 14 ||
-       tinf->trans_table == 21) return 'N';
-    return 'K';
-  }
-  if(is_a(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1)
-    return 'K';
-  if(is_a(seq, n) == 1 && is_g(seq, n+1) == 1 && is_t(seq, n+2) == 1)
-    return 'S';
-  if(is_a(seq, n) == 1 && is_g(seq, n+1) == 1 && is_c(seq, n+2) == 1)
-    return 'S';
-  if(is_a(seq, n) == 1 && is_g(seq, n+1) == 1 && (is_a(seq, n+2) == 1 ||
-     is_g(seq, n+2) == 1)) {
-    if(tinf->trans_table == 13) return 'G';
-    if(tinf->trans_table == 5 || tinf->trans_table == 9 ||
-       tinf->trans_table == 14 || tinf->trans_table == 21) return 'S';
-    return 'R';
-  }
-  if(is_g(seq, n) == 1 && is_t(seq, n+1) == 1) return 'V';
-  if(is_g(seq, n) == 1 && is_c(seq, n+1) == 1) return 'A';
-  if(is_g(seq, n) == 1 && is_a(seq, n+1) == 1 && is_t(seq, n+2) == 1)
-    return 'D';
-  if(is_g(seq, n) == 1 && is_a(seq, n+1) == 1 && is_c(seq, n+2) == 1)
-    return 'D';
-  if(is_g(seq, n) == 1 && is_a(seq, n+1) == 1 && is_a(seq, n+2) == 1)
-    return 'E';
-  if(is_g(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1)
-    return 'E';
-  if(is_g(seq, n) == 1 && is_g(seq, n+1) == 1) return 'G';
-  return 'X';
 }
 
 /* Converts an amino acid letter to a numerical value */
@@ -518,6 +285,8 @@ int amino_num(char aa) {
   if(aa == 'v' || aa == 'V') return 17;
   if(aa == 'w' || aa == 'W') return 18;
   if(aa == 'y' || aa == 'Y') return 19;
+  if(aa == 'u' || aa == 'U') return 20;
+  if(aa == 'o' || aa == 'O') return 21;
   return -1;
 }
 
@@ -543,6 +312,8 @@ char amino_letter(int num) {
   if(num == 17) return 'V';
   if(num == 18) return 'W';
   if(num == 19) return 'Y';
+  if(num == 20) return 'U';
+  if(num == 21) return 'O';
   return 'X';
 }
 
@@ -600,14 +371,6 @@ int *calc_most_gc_frame(unsigned char *seq, int slen) {
   }
   free(tot);
   return gp;
-}
-
-
-/* Converts a word of size len to a number */
-int mer_ndx(int len, unsigned char *seq, int pos) {
-  int i, ndx = 0;
-  for(i = 0; i < 2*len; i++) ndx |= (test(seq, pos*2+i)<<i);
-  return ndx;
 }
 
 /* Gives a text string for a start */
@@ -796,10 +559,4 @@ int shine_dalgarno_mm(unsigned char *seq, int pos, int start, double *rwt) {
   }
 
   return max_val;
-}
-
-/* Returns the minimum of two numbers */
-int imin(int x, int y) {
-  if(x < y) return x;
-  return y;
 }
