@@ -262,7 +262,7 @@ int main(int argc, char *argv[]) {
   if(input_ptr == NULL) {
     input_ptr = INPUT_OPEN("/dev/stdin", "r");
     if(input_ptr == NULL) {
-      fprintf(stderr, "\nError: can't open input file %s.\n\n", input_file);
+      fprintf(stderr, "\nError: can't open input file stdin.\n\n");
       exit(5);
     }
   }
