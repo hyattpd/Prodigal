@@ -55,6 +55,7 @@ int main(int argc, char *argv[]) {
   struct stat fbuf;
   pid_t pid;
   struct _node *nodes;
+  size_t nodesize;
   struct _gene *genes;
   struct _training tinf;
   struct _metagenomic_bin meta[NUM_META];
@@ -64,7 +65,9 @@ int main(int argc, char *argv[]) {
   seq = (unsigned char *)malloc(MAX_SEQ/4*sizeof(unsigned char));
   rseq = (unsigned char *)malloc(MAX_SEQ/4*sizeof(unsigned char));
   useq = (unsigned char *)malloc(MAX_SEQ/8*sizeof(unsigned char));
-  nodes = (struct _node *)malloc(STT_NOD*sizeof(struct _node));
+  nodesize = STT_NOD*sizeof(struct _node);
+  nodes = (struct _node *)malloc(nodesize);
+
   genes = (struct _gene *)malloc(MAX_GENES*sizeof(struct _gene));
   if(seq == NULL || rseq == NULL || nodes == NULL || genes == NULL) {
     fprintf(stderr, "\nError: Malloc failed on sequence/orfs\n\n"); exit(1);
@@ -262,7 +265,7 @@ int main(int argc, char *argv[]) {
   if(input_ptr == NULL) {
     input_ptr = INPUT_OPEN("/dev/stdin", "r");
     if(input_ptr == NULL) {
-      fprintf(stderr, "\nError: can't open input file %s.\n\n", input_file);
+      fprintf(stderr, "\nError: can't open input file stdin.\n\n");
       exit(5);
     }
   }
@@ -340,11 +343,14 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Locating all potential starts and stops..."); 
     }
     if(slen > max_slen && slen > STT_NOD*8) {
-      nodes = (struct _node *)realloc(nodes, (int)(slen/8)*sizeof(struct _node));
+      size_t newnodesize = (int)(slen/8)*sizeof(struct _node);
+      nodes = (struct _node *)realloc(nodes, newnodesize);
       if(nodes == NULL) {
         fprintf(stderr, "Realloc failed on nodes\n\n");
         exit(11);
       }
+      memset( ((char*) &nodes[0]) + nodesize, 0, newnodesize-nodesize);
+      nodesize = newnodesize;
       max_slen = slen;
     }
     nn = add_nodes(seq, rseq, slen, nodes, closed, mlist, nmask, &tinf);
@@ -485,11 +491,14 @@ int main(int argc, char *argv[]) {
 
     /* Reallocate memory if this is the biggest sequence we've seen */
     if(slen > max_slen && slen > STT_NOD*8) {
-      nodes = (struct _node *)realloc(nodes, (int)(slen/8)*sizeof(struct _node));
+      size_t newnodesize = (int)(slen/8)*sizeof(struct _node);
+      nodes = (struct _node *)realloc(nodes, newnodesize);
       if(nodes == NULL) {
         fprintf(stderr, "Realloc failed on nodes\n\n");
         exit(11);
       }
+      memset( ((char*) &nodes[0]) + nodesize, 0, newnodesize-nodesize);
+      nodesize = newnodesize;
       max_slen = slen;
     }
 
