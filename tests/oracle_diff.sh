@@ -13,8 +13,9 @@
 #   PRODIGAL      binary under test (default ./prodigal in the repo root)
 #   ORACLE        oracle binary; when unset, c1e2d36 + ORACLE_PATCH is built
 #                 into ORACLE_DIR (default tests/out/oracle-c1e2d36) with $CC
-#                 (default gcc) and $CFLAGS, and rebuilt when its stamp (key
-#                 below) changes. Needs full history (not a shallow clone).
+#                 (default gcc), -ffp-contract=off and $CFLAGS, and rebuilt
+#                 when its stamp (key below) changes. Needs full history (not
+#                 a shallow clone).
 #   ORACLE_PATCH  patch applied to the oracle (default
 #                 tests/oracle-c1e2d36.patch); empty builds upstream unpatched,
 #                 whose meta mode crashes on macOS
@@ -51,8 +52,11 @@ OCOMMIT=c1e2d361479cc1b18175ea79ebd8ff10411c46cb
 patch=${ORACLE_PATCH-$ROOT/tests/oracle-c1e2d36.patch}
 patch=${patch:+$(abspath "$patch")}
 cc=${CC:-gcc}
-key="recipe=2 $OCOMMIT patch=$([ -n "$patch" ] && cksum <"$patch" || echo none)"
-key="$key cc=$cc ($("$cc" --version 2>/dev/null | head -1)) cflags=${CFLAGS:-}"
+# The fork's Makefile builds with -ffp-contract=off; without it the oracle
+# would differ on ARM64 by contraction alone.
+ocflags="-ffp-contract=off${CFLAGS:+ $CFLAGS}"
+key="recipe=3 $OCOMMIT patch=$([ -n "$patch" ] && cksum <"$patch" || echo none)"
+key="$key cc=$cc ($("$cc" --version 2>/dev/null | head -1)) cflags=$ocflags"
 [ "${1:-}" = --stamp-key ] && { echo "$key"; exit 0; }
 
 SELF=$(abspath "$0")
@@ -88,7 +92,7 @@ if [ -z "$ORACLE" ]; then
       git archive "$OCOMMIT" | tar -x -f - -C "$OD" &&
       { [ -z "$patch" ] || patch -s -p1 -d "$OD" <"$patch"; } &&
       { make -C "$OD" CC="$cc" CFLAGS=-O0 training.o &&
-        make -C "$OD" CC="$cc"; } >"$OD/build.log" 2>&1 ||
+        CFLAGS="$ocflags" make -C "$OD" CC="$cc"; } >"$OD/build.log" 2>&1 ||
       { echo "error: oracle build failed; see $OD/build.log" >&2; exit 2; }
     echo "$key" >"$OD/.oracle-stamp"
   fi

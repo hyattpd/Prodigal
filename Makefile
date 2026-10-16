@@ -21,7 +21,10 @@
 SHELL   = /bin/sh
 CC      = gcc
 
-CFLAGS  += -pedantic -Wall -O3 -DSUPPORT_GZIP_COMPRESSED
+# -ffp-contract=off: no fused multiply-add, so ARM64 builds compute exactly
+# what x86-64 does (docs/testing.md); tests/oracle_diff.sh builds the oracle
+# the same way.
+CFLAGS  += -pedantic -Wall -O3 -ffp-contract=off -DSUPPORT_GZIP_COMPRESSED
 LFLAGS = -lm $(LDFLAGS) -lz
 
 TARGET  = prodigal

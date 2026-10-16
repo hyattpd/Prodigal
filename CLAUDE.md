@@ -128,6 +128,9 @@ x86-64/ARM64 and macOS, and `test_api` under WASM, for pushes and PRs to
   - the `CORE=` lists in `ci.yml` (WASM job);
   - GPL-boundary's `build_prodigal()` file list and its `rerun-if-changed`
     lines.
+- **Floating point:** build with `-ffp-contract=off` (the Makefile does).
+  With fused multiply-adds, ARM64 output drifts from x86-64 in the last
+  printed digit. GPL-boundary's `build.rs` must use the same flag.
 - **Stack:** library code runs on Rust worker threads with 2 MiB stacks.
   `train_starts_nonsd` already uses 1.31 MB of stack, and each
   `initialize_metagenome_N` uses about 558 KB. Don't add large stack arrays;

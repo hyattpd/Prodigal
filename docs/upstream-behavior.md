@@ -125,6 +125,11 @@ defect.
 
 ## Fork deviations (CLI)
 
+- **`-ffp-contract=off`.** The fork builds without fused multiply-adds, so
+  ARM64 output equals x86-64 output. A default ARM64 build of upstream can
+  differ in the last printed digit of some scores (`docs/testing.md`).
+  `make oracle` builds the oracle with the same flag.
+
 - **Training progress on stderr** (since `fea252a`). Without `-q`, upstream
   prints progress lines while training ("Looking for GC bias in different
   frames…frame bias scores: …", "Building initial set of genes to train

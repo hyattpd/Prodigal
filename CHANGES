@@ -5,6 +5,9 @@ bin produced no gene path, the CLI read the score of nodes[-1], before the
 start of the node array. Such a bin now scores 0.0, the score of the empty
 path, which is also what that read returned on Linux, so output is unchanged
 (checked against upstream c1e2d36 on the test corpus and E. coli K-12).
+* Builds with -ffp-contract=off, so ARM64 computes exactly what x86-64 does.
+Without it a default ARM64 build fused multiply-adds and printed some start
+scores differently in the last digit (e.g. in the -s output).
 * Known deviation since 2.6.4: without -q, single mode and -t no longer
 print upstream's training progress lines on stderr (training goes through
 the library, which prints nothing). Output files are unaffected.

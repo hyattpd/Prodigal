@@ -38,17 +38,21 @@ Run `make regress` (`tests/cli_regress.sh`) after any change outside the API
 files; usage, checks and environment are in the script header. Each failed
 check leaves a `.diff` in `tests/out/regress`.
 
-**Training file on ARM64 macOS.** `ref_train.bin` was written on x86-64
-Linux. Builds on Linux ARM64 (gcc and clang) and Windows x86-64 write it
-byte for byte. ARM64 macOS builds read it correctly, but the file they
-*write* differs at the byte level (first seen in `d48c935`); prediction
-output is unaffected. It is not FMA contraction: on 2026-10-16 CI built
-every ARM64 target with and without `-ffp-contract=off`, and Linux ARM64
-matched with both while macOS differed with both, which leaves Apple's libm
-(or toolchain). Intel macOS has not been checked. On ARM64 macOS the script
-therefore checks that training is deterministic instead (`--binary` forces
-the byte compare); prediction from the committed `ref_train.bin` is still
-checked everywhere.
+**ARM64 and floating-point contraction.** ARM64 compilers fuse multiply-adds
+by default, which changes the last bits of some scores: on 2026-10-16 a
+default Linux ARM64 build (gcc or clang) printed one start score in
+`meta.starts` as -55.59 instead of -55.58. With `-ffp-contract=off` it
+matched the x86-64 ground truth byte for byte in every output, training file
+included, so the Makefile builds with that flag (a no-op on x86-64, where the
+default build emits no FMA). `make oracle` builds the oracle the same way.
+
+**Training file on ARM64 macOS.** Even so, the training file an ARM64 macOS
+build writes differs from `ref_train.bin` at the byte level (first seen in
+`d48c935`; also with `-ffp-contract=off`), which points to Apple's libm or
+toolchain. Prediction from the committed `ref_train.bin` is unaffected. On
+ARM64 macOS the script therefore checks that training is deterministic
+instead (`--binary` forces the byte compare). Intel macOS has not been
+checked.
 
 **Windows.** Text-mode `fopen` writes CRLF, so only there a line-final CR is
 stripped. Mid-line CRs are real output: `anthus_aco.fas` has CRLF line
