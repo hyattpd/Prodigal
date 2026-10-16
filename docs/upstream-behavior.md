@@ -97,6 +97,24 @@ These are defects in upstream code paths that both the CLI and the library
 reach. Fixes must not change output on any input that does not trigger the
 defect.
 
+- **`nodes[-1]` read in the metagenomic loop (fixed).** When `dprog` finds
+  no gene path it returns -1, and `main.c` then compared
+  `nodes[-1].score` with the best score so far. That reads before the node
+  array: ASan reports it on ordinary input (anthus), and it segfaults on
+  current macOS. **Rule:** a bin without a gene path scores 0.0, the score of
+  the empty path (`dprog` starts every node at 0 and only raises a score
+  together with its traceback). A no-path bin therefore "wins" only when no
+  earlier in-window bin has a path, and it adds no genes. That is also what
+  upstream does on glibc, where the read lands in the allocator's header for
+  the mmap'd node array and returns 0.0. `tests/oracle-c1e2d36.patch` applies
+  the rule to the oracle. On 2026-10-16 on Linux the fixed CLI matched the
+  patched and the unpatched oracle (`ORACLE_PATCH=`) on all 150 `make oracle`
+  cases with E. coli, and every zero-gene meta contig in the synthetic corpus
+  reports the first in-window bin (23/23 default, 43/43 `-c`, 24/24 `-m`,
+  23/23 `-g 4`).
+  The library's own meta loop skips no-path bins instead, so it can report a
+  different bin for a contig where no bin has a path (to be unified in the
+  shared pipeline).
 - **Unbounded `add_nodes`** (`node.c:28`) overflows the node array on
   low-complexity input whose node density exceeds the capacity, e.g.
   `"ATG" × 110000`. The result is heap corruption. The fix is bounded
@@ -104,3 +122,13 @@ defect.
 - **Unchecked allocations:** `calc_mer_bg` does not check its `malloc`
   (`sequence.c:645`), and `calc_most_gc_frame` leaks on partial allocation
   failure (`sequence.c:576-580`).
+
+## Fork deviations (CLI)
+
+- **Training progress on stderr** (since `fea252a`). Without `-q`, upstream
+  prints progress lines while training ("Looking for GC bias in different
+  frames…frame bias scores: …", "Building initial set of genes to train
+  from…" and so on). The fork's CLI trains through the library's
+  `prodigal_train`, which prints nothing, so in single mode and with `-t`
+  the fork prints only "Locating all potential starts and stops...done!".
+  Output files are unaffected. To be restored through the log callback.

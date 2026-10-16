@@ -1,3 +1,17 @@
+VERSION 2.6.5 (unreleased)
+
+* Fixed a crash (segmentation fault on macOS) in metagenomic mode: when a
+bin produced no gene path, the CLI read the score of nodes[-1], before the
+start of the node array. Such a bin now scores 0.0, the score of the empty
+path, which is also what that read returned on Linux, so output is unchanged
+(checked against upstream c1e2d36 on the test corpus and E. coli K-12).
+* Known deviation since 2.6.4: without -q, single mode and -t no longer
+print upstream's training progress lines on stderr (training goes through
+the library, which prints nothing). Output files are unaffected.
+* CI now covers v2.6.4-miint: every CLI output type in both modes against
+the upstream ground truth on Linux (x86-64, ARM64), macOS and Windows, and
+the CLI against an upstream c1e2d36 build across a flag matrix and corpus.
+
 VERSION 2.6.4
 
 * Added a reentrant embeddable API

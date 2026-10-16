@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
   int rv, nn, ng, i, ipath, do_training, output, max_phase;
   int user_tt, num_seq, quiet;
   int piped, fnum;
-  double max_score, gc, low, high;
+  double max_score, path_score, gc, low, high;
   char *train_file, *start_file, *trans_file, *nuc_file;
   char *input_file, *output_file, input_copy[MAX_LINE];
   char cur_header[MAX_LINE], new_header[MAX_LINE], short_header[MAX_LINE];
@@ -483,9 +483,15 @@ int main(int argc, char *argv[]) {
                     ctx->meta[i].tinf, config.closed_ends, config.meta_mode);
         record_overlapping_starts(ctx->nodes, nn, ctx->meta[i].tinf, 1);
         ipath = dprog(ctx->nodes, nn, ctx->meta[i].tinf, 1);
-        if(ctx->nodes[ipath].score > max_score) {
+        /* dprog returns -1 when it finds no gene path; upstream then reads
+           nodes[-1].score, which is undefined (it crashes on macOS). The
+           empty path scores 0.0 in dprog, where every node starts at 0, and
+           that is also what upstream's read returns on glibc; see
+           docs/upstream-behavior.md. */
+        path_score = (ipath >= 0) ? ctx->nodes[ipath].score : 0.0;
+        if(path_score > max_score) {
           max_phase = i;
-          max_score = ctx->nodes[ipath].score;
+          max_score = path_score;
           eliminate_bad_genes(ctx->nodes, ipath, ctx->meta[i].tinf);
           ng = add_genes(ctx->genes, ctx->nodes, ipath);
           tweak_final_starts(ctx->genes, ng, ctx->nodes, nn,
