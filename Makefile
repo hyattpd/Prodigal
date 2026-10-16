@@ -81,6 +81,11 @@ test_api: $(TEST_SOURCE) libprodigal.a
 test: test_api
 	./test_api
 
+# CLI output vs testdata/ground_truth; REGRESS_FLAGS passes --binary or
+# --no-binary through (see docs/testing.md)
+regress: $(TARGET)
+	tests/cli_regress.sh $(REGRESS_FLAGS)
+
 install: $(TARGET)
 	install -d -m 0755 $(INSTALLDIR)
 	install -m 0755 $(TARGET) $(INSTALLDIR)
@@ -94,4 +99,4 @@ clean:
 distclean: clean
 	-rm -f $(TARGET) libprodigal.a libprodigal.so test_api
 
-.PHONY: all install uninstall clean distclean test
+.PHONY: all install uninstall clean distclean test regress

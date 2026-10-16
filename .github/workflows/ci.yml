@@ -2,9 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [ library-api, GoogleImport, master ]
+    branches: [ v2.6.4-miint, library-api, GoogleImport, master ]
   pull_request:
-    branches: [ library-api, GoogleImport, master ]
+    branches: [ v2.6.4-miint, library-api, GoogleImport, master ]
+  workflow_dispatch:
 
 jobs:
 
@@ -29,51 +30,11 @@ jobs:
       - name: Build and run tests
         run: make test CC=${{ matrix.cc }}
 
-      - name: Regression - metagenomic GFF
-        run: |
-          ./prodigal -i anthus_aco.fas -p meta -f gff -q -o /tmp/meta.gff
-          diff testdata/ground_truth/ref_meta.gff /tmp/meta.gff
-
-      - name: Regression - metagenomic GBK
-        run: |
-          ./prodigal -i anthus_aco.fas -p meta -f gbk -q -o /tmp/meta.gbk
-          diff testdata/ground_truth/ref_meta.gbk /tmp/meta.gbk
-
-      - name: Regression - metagenomic SCO
-        run: |
-          ./prodigal -i anthus_aco.fas -p meta -f sco -q -o /tmp/meta.sco
-          diff testdata/ground_truth/ref_meta.sco /tmp/meta.sco
-
-      - name: Regression - metagenomic proteins
-        run: |
-          ./prodigal -i anthus_aco.fas -p meta -f gff -q -o /dev/null \
-            -a /tmp/meta.proteins
-          diff testdata/ground_truth/ref_meta.proteins /tmp/meta.proteins
-
-      - name: Regression - metagenomic nucleotides
-        run: |
-          ./prodigal -i anthus_aco.fas -p meta -f gff -q -o /dev/null \
-            -d /tmp/meta.nucl
-          diff testdata/ground_truth/ref_meta.nucl /tmp/meta.nucl
-
-      - name: Regression - single genome GFF
-        run: |
-          ./prodigal -i anthus_aco.fas -p single -f gff -q -o /tmp/single.gff
-          diff testdata/ground_truth/ref_single.gff /tmp/single.gff
-
-      - name: Regression - training file round-trip
-        run: |
-          ./prodigal -i anthus_aco.fas -t /tmp/train.bin -q
-          diff testdata/ground_truth/ref_train.bin /tmp/train.bin
-          ./prodigal -i anthus_aco.fas -t /tmp/train.bin -f gff -q \
-            -o /tmp/trained.gff
-          diff testdata/ground_truth/ref_trained.gff /tmp/trained.gff
+      - name: CLI regression (every output type, both modes)
+        run: make regress CC=${{ matrix.cc }}
 
   # ── macOS ──────────────────────────────────────────────────────────────────
-  # Reference binaries were generated on Linux x86_64.  struct _training has
-  # different padding on ARM64, so training-file comparisons use self-
-  # consistent round-trips rather than cross-platform reference files.
-  # Text output (GFF, GBK, etc.) is architecture-independent.
+  # On ARM64 make regress skips the training-file byte compare (docs/testing.md).
   macos:
     runs-on: macos-latest
     steps:
@@ -85,26 +46,61 @@ jobs:
       - name: Build and run tests
         run: make test
 
-      - name: Regression - metagenomic GFF
-        run: |
-          ./prodigal -i anthus_aco.fas -p meta -f gff -q -o /tmp/meta.gff
-          diff testdata/ground_truth/ref_meta.gff /tmp/meta.gff
+      - name: CLI regression (every output type, both modes)
+        run: make regress
 
-      - name: Regression - single genome GFF
-        run: |
-          ./prodigal -i anthus_aco.fas -p single -f gff -q -o /tmp/single.gff
-          diff testdata/ground_truth/ref_single.gff /tmp/single.gff
+  # ── Determinism experiment (report only; docs/testing.md) ─────────────────
+  # ARM64 builds, default and -ffp-contract=off, byte-compared with the x86-64
+  # ground truth. Results go to the job summary. Never gates.
+  determinism:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, cc: clang }
+          - { os: ubuntu-24.04-arm, cc: gcc }
+          - { os: ubuntu-24.04-arm, cc: clang }
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Regression - training file round-trip (self-consistent)
+      - name: Install dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      - name: Compare against the x86-64 ground truth
+        env:
+          CC: ${{ matrix.cc }}
+          RUNNER: ${{ matrix.os }}
         run: |
-          ./prodigal -i anthus_aco.fas -t /tmp/train1.bin -q
-          ./prodigal -i anthus_aco.fas -t /tmp/train1.bin -f gff -q \
-            -o /tmp/trained1.gff
-          ./prodigal -i anthus_aco.fas -t /tmp/train2.bin -q
-          diff /tmp/train1.bin /tmp/train2.bin
-          ./prodigal -i anthus_aco.fas -t /tmp/train2.bin -f gff -q \
-            -o /tmp/trained2.gff
-          diff /tmp/trained1.gff /tmp/trained2.gff
+          set +e
+          mkdir -p tests/out
+          echo "| runner | cc | flags | result |" >>"$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|" >>"$GITHUB_STEP_SUMMARY"
+          for flags in "" "-ffp-contract=off"; do
+            label=${flags:-default}
+            out=tests/out/determinism-${label#-}
+            # training.o holds only constant data, so the flag cannot change
+            # it; keep it rather than recompile 25 MB of initialisers.
+            find . -maxdepth 1 -name '*.o' ! -name training.o -delete
+            rm -f prodigal
+            CFLAGS="$flags" make CC="$CC" >/dev/null
+            # The script, not make regress: make would turn 1 and 2 into 2.
+            REGRESS_OUT=$out tests/cli_regress.sh --binary | tee "$out.log"
+            case ${PIPESTATUS[0]} in
+              0) result=match ;;
+              1) result="differs: $(awk '/^(DIFF|FAIL)/ {printf "%s ", $2}' "$out.log")" ;;
+              *) result="setup error" ;;
+            esac
+            echo "| $RUNNER | $CC | $label | $result |" >>"$GITHUB_STEP_SUMMARY"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: determinism-${{ matrix.os }}-${{ matrix.cc }}
+          path: tests/out/
 
   # ── WASM (library only, via Emscripten) ────────────────────────────────────
   wasm:
@@ -151,8 +147,5 @@ jobs:
       - name: Build and run tests
         run: make test
 
-      - name: Regression - metagenomic GFF (determinism)
-        run: |
-          ./prodigal -i anthus_aco.fas -p meta -f gff -q -o /tmp/meta1.gff
-          ./prodigal -i anthus_aco.fas -p meta -f gff -q -o /tmp/meta2.gff
-          diff /tmp/meta1.gff /tmp/meta2.gff
+      - name: CLI regression (every output type, both modes)
+        run: make regress

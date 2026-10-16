@@ -49,6 +49,7 @@ API path. See "Two pipelines" in `docs/internals.md`.
 make                    # CLI binary ./prodigal (links zlib; gzip input support)
 make libprodigal.a      # static library, built with -DPRODIGAL_NO_MAIN
 make test               # builds ./test_api and runs it; run from the repo root
+make regress            # CLI vs testdata/ground_truth, every output type, both modes
 make distclean          # removes objects, binaries and libs
 ```
 
@@ -60,16 +61,15 @@ make distclean          # removes objects, binaries and libs
   clean build of the same commit passes 40/40.
 - `training.c` is about 25 MB of generated model data (50 metagenomic bins),
   so a full rebuild takes about a minute.
-- The CLI regression checks are in `docs/testing.md`. Run them whenever you
-  touch anything outside `prodigal_api.c` / `prodigal.h` / `test_api.c`.
+- Run `make regress` (`tests/cli_regress.sh`) whenever you touch anything
+  outside `prodigal_api.c` / `prodigal.h` / `test_api.c`. See
+  `docs/testing.md`.
 
-### CI caveats
+### CI
 
-- `.github/workflows/ci.yml` only triggers on `library-api`, `GoogleImport`
-  and `master`. **The active branch `v2.6.4-miint` is not CI-tested.**
-- The ground-truth files embed `Prodigal.v2.6.3`, but the CLI has printed
-  `2.6.4` since `dd88690`. The CI `diff` steps therefore fail on the current
-  tree, even though the outputs otherwise match.
+`.github/workflows/ci.yml` runs `make test` and `make regress` on Linux
+(gcc, clang), macOS and Windows, and `test_api` under WASM, for pushes and
+PRs to `v2.6.4-miint`. The `determinism` job is report-only.
 
 ## Layout
 

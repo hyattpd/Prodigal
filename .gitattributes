@@ -1,0 +1,7 @@
+# Test inputs and references must be byte-identical on every platform.
+# anthus_aco.fas has CRLF line endings as committed upstream (f729050), and
+# the ground truth was produced from it.
+anthus_aco.fas -text
+testdata/** -text
+# Shell scripts must keep LF on a Windows (core.autocrlf) checkout.
+*.sh text eol=lf

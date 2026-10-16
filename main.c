@@ -24,7 +24,7 @@
 #include "fptr.h"
 
 
-#define VERSION "2.6.4"
+#define VERSION PRODIGAL_VERSION_STRING
 #define DATE "April, 2026"
 
 #define MIN_SINGLE_GENOME 20000

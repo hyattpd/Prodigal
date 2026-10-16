@@ -24,42 +24,38 @@ Correctness is judged against **upstream Prodigal at `c1e2d36`** (upstream's
   |---|---|
   | `ref_meta.{gff,gbk,sco}` | `-p meta -f gff\|gbk\|sco` |
   | `ref_meta.proteins` / `.nucl` / `.starts` | `-p meta -a` / `-d` / `-s` |
-  | `ref_single.{gff,proteins,nucl,starts}` | `-p single` with the same output flags |
+  | `ref_single.{gff,gbk,sco,proteins,nucl,starts}` | `-p single` with the same output flags |
   | `ref_train.bin` | `-t ref_train.bin` (write a training file) |
   | `ref_trained.gff` | `-t ref_train.bin -f gff` (read it back) |
 
-  The text files embed the version string `Prodigal.v2.6.3`. The current CLI
-  prints `2.6.4`, so normalise the version before diffing (below) or
-  regenerate the files. `ref_train.bin` is x86-64 Linux struct layout; on
-  other ABIs, use self-consistent round-trips instead.
+  `ref_single.gbk` and `ref_single.sco` were added on 2026-10-16 from a fresh
+  `c1e2d36` build; on that day every other file was also re-checked as
+  byte-identical to that build's output.
+
+  The text files embed upstream's version string `Prodigal.v2.6.3`; the fork
+  prints its own, so each side is normalised for its own version before
+  diffing (`tests/lib.sh`). A script pointed at an upstream binary therefore
+  fails instead of passing vacuously.
 
 ## CLI regression (CLI ≡ upstream)
 
-Run this from the repo root after any change outside the API files. Every
-line must print `OK`.
+Run `make regress` (`tests/cli_regress.sh`) after any change outside the API
+files; usage, checks and environment are in the script header. Each failed
+check leaves a `.diff` in `tests/out/regress`.
 
-```bash
-make
-: "${O:?set O to a scratch directory outside the repo (not /tmp)}"; mkdir -p "$O"
-G=testdata/ground_truth
-./prodigal -i anthus_aco.fas -p meta -f gff -q -o $O/meta.gff
-./prodigal -i anthus_aco.fas -p meta -f gbk -q -o $O/meta.gbk
-./prodigal -i anthus_aco.fas -p meta -f sco -q -o $O/meta.sco
-./prodigal -i anthus_aco.fas -p meta -q -o /dev/null -a $O/meta.faa -d $O/meta.fna -s $O/meta.starts
-./prodigal -i anthus_aco.fas -p single -f gff -q -o $O/single.gff -a $O/single.faa -d $O/single.fna -s $O/single.starts
-./prodigal -i anthus_aco.fas -t $O/train.bin -q
-./prodigal -i anthus_aco.fas -t $O/train.bin -f gff -q -o $O/trained.gff
-n() { sed 's/2\.6\.[0-9]/2.6.X/g' "$1"; }
-for p in meta.gff:ref_meta.gff meta.gbk:ref_meta.gbk meta.sco:ref_meta.sco \
-         meta.faa:ref_meta.proteins meta.fna:ref_meta.nucl meta.starts:ref_meta.starts \
-         single.gff:ref_single.gff single.faa:ref_single.proteins \
-         single.fna:ref_single.nucl single.starts:ref_single.starts \
-         trained.gff:ref_trained.gff; do
-  a=${p%%:*}; b=${p##*:}
-  diff -q <(n $G/$b) <(n $O/$a) >/dev/null && echo "OK   $a" || echo "DIFF $a"
-done
-cmp $G/ref_train.bin $O/train.bin && echo "OK   train.bin"
-```
+**Training file on ARM64.** `ref_train.bin` was written on x86-64 Linux.
+ARM64 builds read it correctly (`struct _training` has the same layout on
+every LP64 ABI), but the file they *write* differs at the byte level, first
+seen on macOS in `d48c935`. The suspected cause is FMA contraction; CI's
+report-only `determinism` job measures it with and without
+`-ffp-contract=off`, on macOS and on Linux ARM64 with gcc and clang. Until
+that settles, the script skips the byte compare on ARM64 (use `--binary` to
+force it) and checks that training is deterministic instead. Prediction from
+the committed `ref_train.bin` is still checked on every platform.
+
+**Windows.** Text-mode `fopen` writes CRLF, so only there a line-final CR is
+stripped. Mid-line CRs are real output: `anthus_aco.fas` has CRLF line
+endings, and upstream keeps the header's CR inside `seqhdr="..."`.
 
 On 2026-10-16 every check passed at `dd88690`.
 
