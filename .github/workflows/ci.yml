@@ -11,12 +11,19 @@ jobs:
 
   # ── Linux ──────────────────────────────────────────────────────────────────
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
         cc: [gcc, clang]
+    env:
+      CC: ${{ matrix.cc }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # make oracle builds c1e2d36 with git archive
 
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
@@ -33,12 +40,38 @@ jobs:
       - name: CLI regression (every output type, both modes)
         run: make regress CC=${{ matrix.cc }}
 
+      # CLI vs an upstream c1e2d36 built here with the same compiler
+      # (tests/oracle_diff.sh). The cache key is the script's own stamp.
+      - name: Oracle cache key
+        id: oracle
+        run: echo "key=oracle-${{ runner.os }}-${{ runner.arch }}-$(tests/oracle_diff.sh --stamp-key | cksum | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: tests/out/oracle-c1e2d36
+          key: ${{ steps.oracle.outputs.key }}
+
+      - name: CLI vs upstream (flag matrix x corpus)
+        run: make oracle CC=${{ matrix.cc }}
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: oracle-${{ matrix.os }}-${{ matrix.cc }}
+          path: |
+            tests/out/oracle/cases/**/*.diff
+            tests/out/oracle/cases/**/stderr
+            tests/out/oracle-c1e2d36/build.log
+
   # ── macOS ──────────────────────────────────────────────────────────────────
-  # On ARM64 make regress skips the training-file byte compare (docs/testing.md).
+  # ARM64 macOS: make regress skips the train.bin byte compare (docs/testing.md).
   macos:
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Build CLI + library
         run: make
@@ -49,58 +82,28 @@ jobs:
       - name: CLI regression (every output type, both modes)
         run: make regress
 
-  # ── Determinism experiment (report only; docs/testing.md) ─────────────────
-  # ARM64 builds, default and -ffp-contract=off, byte-compared with the x86-64
-  # ground truth. Results go to the job summary. Never gates.
-  determinism:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: macos-latest, cc: clang }
-          - { os: ubuntu-24.04-arm, cc: gcc }
-          - { os: ubuntu-24.04-arm, cc: clang }
-    runs-on: ${{ matrix.os }}
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
+      # CLI vs an upstream c1e2d36 built here with the same compiler
+      # (tests/oracle_diff.sh). The cache key is the script's own stamp.
+      - name: Oracle cache key
+        id: oracle
+        run: echo "key=oracle-${{ runner.os }}-${{ runner.arch }}-$(tests/oracle_diff.sh --stamp-key | cksum | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
 
-      - name: Install dependencies
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+      - uses: actions/cache@v4
+        with:
+          path: tests/out/oracle-c1e2d36
+          key: ${{ steps.oracle.outputs.key }}
 
-      - name: Compare against the x86-64 ground truth
-        env:
-          CC: ${{ matrix.cc }}
-          RUNNER: ${{ matrix.os }}
-        run: |
-          set +e
-          mkdir -p tests/out
-          echo "| runner | cc | flags | result |" >>"$GITHUB_STEP_SUMMARY"
-          echo "|---|---|---|---|" >>"$GITHUB_STEP_SUMMARY"
-          for flags in "" "-ffp-contract=off"; do
-            label=${flags:-default}
-            out=tests/out/determinism-${label#-}
-            # training.o holds only constant data, so the flag cannot change
-            # it; keep it rather than recompile 25 MB of initialisers.
-            find . -maxdepth 1 -name '*.o' ! -name training.o -delete
-            rm -f prodigal
-            CFLAGS="$flags" make CC="$CC" >/dev/null
-            # The script, not make regress: make would turn 1 and 2 into 2.
-            REGRESS_OUT=$out tests/cli_regress.sh --binary | tee "$out.log"
-            case ${PIPESTATUS[0]} in
-              0) result=match ;;
-              1) result="differs: $(awk '/^(DIFF|FAIL)/ {printf "%s ", $2}' "$out.log")" ;;
-              *) result="setup error" ;;
-            esac
-            echo "| $RUNNER | $CC | $label | $result |" >>"$GITHUB_STEP_SUMMARY"
-          done
+      - name: CLI vs upstream (flag matrix x corpus)
+        run: make oracle
 
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
-          name: determinism-${{ matrix.os }}-${{ matrix.cc }}
-          path: tests/out/
+          name: oracle-macos
+          path: |
+            tests/out/oracle/cases/**/*.diff
+            tests/out/oracle/cases/**/stderr
+            tests/out/oracle-c1e2d36/build.log
 
   # ── WASM (library only, via Emscripten) ────────────────────────────────────
   wasm:

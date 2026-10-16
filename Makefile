@@ -48,12 +48,19 @@ LIB_OBJS = $(LIB_CORE_OBJS) $(LIB_API_OBJ)
 # Default: build CLI binary
 all: $(TARGET)
 
+# Objects depend on the compiler, its version and the flags, so changing any
+# of them rebuilds everything instead of mixing stale objects.
+BUILD_FLAGS := $(CC) $(shell $(CC) --version 2>/dev/null | head -1) $(CFLAGS)
+.build-flags: FORCE
+	@echo '$(BUILD_FLAGS)' | cmp -s - $@ || echo '$(BUILD_FLAGS)' >$@
+FORCE:
+
 # CLI objects: compiled WITHOUT PRODIGAL_NO_MAIN
-%.o: %.c $(HEADERS)
+%.o: %.c $(HEADERS) .build-flags
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Library objects: compiled WITH PRODIGAL_NO_MAIN (suppresses stderr in core)
-%.lib.o: %.c $(HEADERS)
+%.lib.o: %.c $(HEADERS) .build-flags
 	$(CC) $(CFLAGS) -DPRODIGAL_NO_MAIN -c -o $@ $<
 
 # Static library
@@ -65,7 +72,7 @@ $(TARGET): $(CLI_OBJ) $(CLI_CORE_OBJS) $(CLI_API_OBJ)
 	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS)
 
 # PIC objects for shared library
-%.pic.o: %.c $(HEADERS)
+%.pic.o: %.c $(HEADERS) .build-flags
 	$(CC) $(CFLAGS) -fPIC -DPRODIGAL_NO_MAIN -c -o $@ $<
 
 LIB_PIC_OBJS = $(CORE_SOURCES:.c=.pic.o) $(API_SOURCES:.c=.pic.o)
@@ -86,6 +93,11 @@ test: test_api
 regress: $(TARGET)
 	tests/cli_regress.sh $(REGRESS_FLAGS)
 
+# CLI vs an upstream c1e2d36 build across a flag matrix and corpus; set ECOLI
+# to an E. coli FASTA for the genome-scale cases (see docs/testing.md)
+oracle: $(TARGET)
+	CC="$(CC)" tests/oracle_diff.sh
+
 install: $(TARGET)
 	install -d -m 0755 $(INSTALLDIR)
 	install -m 0755 $(TARGET) $(INSTALLDIR)
@@ -97,6 +109,6 @@ clean:
 	-rm -f *.o *.lib.o *.pic.o
 
 distclean: clean
-	-rm -f $(TARGET) libprodigal.a libprodigal.so test_api
+	-rm -f $(TARGET) libprodigal.a libprodigal.so test_api .build-flags
 
-.PHONY: all install uninstall clean distclean test regress
+.PHONY: all install uninstall clean distclean test regress oracle FORCE

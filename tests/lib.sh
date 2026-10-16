@@ -27,14 +27,17 @@ FORK_VERSION=$(sed -n 's/^#define PRODIGAL_VERSION_STRING "\(.*\)"$/\1/p' "$ROOT
 # FASTA header in seqhdr="..."), and those must still compare.
 case $(uname -s) in MINGW* | MSYS* | CYGWIN*) EOL_CR=$'\r' ;; *) EOL_CR= ;; esac
 
-# norm FILE VERSION: print FILE with "Prodigal.vVERSION" -> "Prodigal.vX".
-# The dots in VERSION stay regex wildcards; the digits still have to match.
-norm() { sed -e "s/$EOL_CR\$//" -e "s/\(Prodigal[._]v\)$2/\1X/g" "$1"; }
+# norm FILE VERSION: print FILE with this version's strings replaced:
+# "Prodigal.vVERSION" -> "Prodigal.vX", and the stderr banner
+# "PRODIGAL vVERSION [date]" -> "PRODIGAL vX [date]". The dots in VERSION
+# stay regex wildcards; the digits still have to match.
+norm() {
+  sed -e "s/$EOL_CR\$//" -e "s/\(Prodigal[._]v\)$2/\1X/g" \
+      -e "s/^PRODIGAL v$2 \[[^]]*\]/PRODIGAL vX [date]/" "$1"
+}
 
-# diff_norm UPSTREAM_FILE FORK_FILE PREFIX: normalise each side for its own
-# version into PREFIX.{upstream,fork} and diff them into PREFIX.diff.
+# diff_norm UPSTREAM_FILE FORK_FILE DIFF: diff the two, each normalised for
+# its own version, into DIFF.
 diff_norm() {
-  norm "$1" "$UPSTREAM_VERSION" >"$3.upstream"
-  norm "$2" "$FORK_VERSION" >"$3.fork"
-  diff "$3.upstream" "$3.fork" >"$3.diff"
+  diff <(norm "$1" "$UPSTREAM_VERSION") <(norm "$2" "$FORK_VERSION") >"$3"
 }

@@ -50,6 +50,7 @@ make                    # CLI binary ./prodigal (links zlib; gzip input support)
 make libprodigal.a      # static library, built with -DPRODIGAL_NO_MAIN
 make test               # builds ./test_api and runs it; run from the repo root
 make regress            # CLI vs testdata/ground_truth, every output type, both modes
+make oracle             # CLI vs an upstream c1e2d36 build: flag matrix x corpus
 make distclean          # removes objects, binaries and libs
 ```
 
@@ -61,15 +62,17 @@ make distclean          # removes objects, binaries and libs
   clean build of the same commit passes 40/40.
 - `training.c` is about 25 MB of generated model data (50 metagenomic bins),
   so a full rebuild takes about a minute.
-- Run `make regress` (`tests/cli_regress.sh`) whenever you touch anything
-  outside `prodigal_api.c` / `prodigal.h` / `test_api.c`. See
-  `docs/testing.md`.
+- Run `make regress` and `make oracle` whenever you touch anything outside
+  `prodigal_api.c` / `prodigal.h` / `test_api.c`; set `ECOLI` for the
+  genome-scale cases before changing scoring, training or memory sizing.
+  See `docs/testing.md`.
 
 ### CI
 
 `.github/workflows/ci.yml` runs `make test` and `make regress` on Linux
-(gcc, clang), macOS and Windows, and `test_api` under WASM, for pushes and
-PRs to `v2.6.4-miint`. The `determinism` job is report-only.
+x86-64 and ARM64 (gcc, clang), macOS and Windows, `make oracle` on Linux
+x86-64/ARM64 and macOS, and `test_api` under WASM, for pushes and PRs to
+`v2.6.4-miint`.
 
 ## Layout
 

@@ -6,15 +6,10 @@ Correctness is judged against **upstream Prodigal at `c1e2d36`** (upstream's
 `GoogleImport` HEAD, which this fork is based on). See
 `upstream-behavior.md` for why that commit and not the `v2.6.3` tag.
 
-- **`prodigal_native`** (untracked, in the maintainer's checkout) is an
-  upstream build. It reports `V2.6.3` but is byte-identical to a `c1e2d36`
-  build: it agrees with the fork's CLI on 2,320 E. coli 2 kbp fragments,
-  where the real `v2.6.3` tag differs. To rebuild it from scratch:
-
-  ```bash
-  mkdir -p <dir> && git archive c1e2d36 | tar -x -C <dir> && make -C <dir>
-  ```
-
+- **An upstream build**, made by `make oracle` (below); it reports `V2.6.3`.
+  The untracked `prodigal_native` in the maintainer's checkout is
+  byte-identical to an unpatched build. The real `v2.6.3` tag is *not*: it
+  differs on the E. coli 2 kbp fragments.
 - **`testdata/ground_truth/`** holds upstream outputs on `anthus_aco.fas`.
   That file has 22 contigs of 960 bp each (21,142 bp). Its concatenation
   passes the 20 kbp training minimum but sits below the 100 kbp "ideal",
@@ -43,15 +38,17 @@ Run `make regress` (`tests/cli_regress.sh`) after any change outside the API
 files; usage, checks and environment are in the script header. Each failed
 check leaves a `.diff` in `tests/out/regress`.
 
-**Training file on ARM64.** `ref_train.bin` was written on x86-64 Linux.
-ARM64 builds read it correctly (`struct _training` has the same layout on
-every LP64 ABI), but the file they *write* differs at the byte level, first
-seen on macOS in `d48c935`. The suspected cause is FMA contraction; CI's
-report-only `determinism` job measures it with and without
-`-ffp-contract=off`, on macOS and on Linux ARM64 with gcc and clang. Until
-that settles, the script skips the byte compare on ARM64 (use `--binary` to
-force it) and checks that training is deterministic instead. Prediction from
-the committed `ref_train.bin` is still checked on every platform.
+**Training file on ARM64 macOS.** `ref_train.bin` was written on x86-64
+Linux. Builds on Linux ARM64 (gcc and clang) and Windows x86-64 write it
+byte for byte. ARM64 macOS builds read it correctly, but the file they
+*write* differs at the byte level (first seen in `d48c935`); prediction
+output is unaffected. It is not FMA contraction: on 2026-10-16 CI built
+every ARM64 target with and without `-ffp-contract=off`, and Linux ARM64
+matched with both while macOS differed with both, which leaves Apple's libm
+(or toolchain). Intel macOS has not been checked. On ARM64 macOS the script
+therefore checks that training is deterministic instead (`--binary` forces
+the byte compare); prediction from the committed `ref_train.bin` is still
+checked everywhere.
 
 **Windows.** Text-mode `fopen` writes CRLF, so only there a line-final CR is
 stripped. Mid-line CRs are real output: `anthus_aco.fas` has CRLF line
@@ -59,23 +56,38 @@ endings, and upstream keeps the header's CR inside `seqhdr="..."`.
 
 On 2026-10-16 every check passed at `dd88690`.
 
-### Larger inputs (not in the repo)
+## CLI ≡ upstream across flags and inputs (`make oracle`)
 
-anthus never exercises genome-scale training, large node arrays, or many
-short metagenomic contigs. Before shipping a change to scoring, training or
-memory sizing, also compare against `prodigal_native` on:
+`tests/oracle_diff.sh` runs the fork's CLI and an upstream `c1e2d36` build,
+made on the same machine with the same compiler, on a flag matrix × corpus,
+and compares exit status, stderr and every output file. How it builds and
+caches the oracle, the matrix, and the pass rules are in the script; the
+corpus is in `tests/make_corpus.sh`. Failed cases leave `.diff` files under
+`tests/out/oracle/cases/`. CI runs it in every Linux (x86-64 and ARM64, gcc
+and clang) and macOS job. Build `./prodigal` with the same `CC` you pass to
+`make oracle`.
 
-- **E. coli K-12 MG1655** (`NC_000913.3`, 4.64 Mbp; the maintainer has it at
-  `~/dev/G000005845.fasta`). Upstream calls 4,319 genes in both `-p single`
-  and `-p meta`. Fork and native were identical for gff/faa/fna in both
-  modes on 2026-10-16.
-- **E. coli shredded into 2 kbp fragments** (2,320 contigs). Upstream meta
-  calls 6,039 genes. This set exercises the `slen < 3000` metagenomic
-  penalties and the meta bin selection across many contigs. It is also the
-  set on which `c1e2d36` and the `v2.6.3` tag differ.
-- Low-complexity and synthetic input (all-N, all-A, long `ATG` repeats,
-  random 30–80% GC). Use these for memory-safety checks rather than output
-  comparison.
+- The oracle carries `tests/oracle-c1e2d36.patch`, which defines upstream's
+  `nodes[-1]` read so the oracle runs on macOS (`upstream-behavior.md`).
+  `ORACLE_PATCH=` builds it unpatched, for checking that rule on Linux.
+- Every case must succeed on the oracle, except the deliberate usage errors;
+  agreeing on an error is not agreement on output.
+- Almost every case runs with `-q`. A few anthus cases run without it, with
+  the banner normalised: their stderr must match, except single mode and
+  `-t`, where the fork lacks upstream's training progress lines
+  (`upstream-behavior.md`, "Fork deviations"). Those two must keep
+  differing until that is fixed, then the exception goes.
+- **`ECOLI=<fasta>`** adds E. coli K-12 MG1655 (`NC_000913.3`, 4.64 Mbp; the
+  maintainer has it at `~/dev/G000005845.fasta`) and its 2,320 2 kbp
+  fragments: genome-scale training, and the `slen < 3000` metagenomic
+  penalties across many contigs. Upstream calls 4,319 genes in both modes on
+  the genome and 6,039 (meta) on the fragments.
+- Long low-complexity input (`ATG` repeats over ~300 kbp) overflows the node
+  array and is left out; it is a memory-safety test, not a comparison.
+
+On 2026-10-16: 150/150 cases identical with `ECOLI` set (about 50 s at
+`JOBS=24`, including the oracle build), 98/98 without, against both the
+patched and the unpatched oracle.
 
 ## Library tests (`make test`)
 

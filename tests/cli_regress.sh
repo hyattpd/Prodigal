@@ -7,9 +7,9 @@
 # byte-compares it with ref_train.bin.
 #
 # Usage: tests/cli_regress.sh [--binary | --no-binary]
-#   The training-file byte compare is on by default except on ARM64, where it
-#   is replaced by a determinism check (see docs/testing.md); the flags force
-#   either behaviour.
+#   The training-file byte compare is on by default except on ARM64 macOS,
+#   where it is replaced by a determinism check (see docs/testing.md); the
+#   flags force either behaviour.
 # Environment:
 #   PRODIGAL     binary under test (default ./prodigal in the repo root)
 #   REGRESS_OUT  scratch directory for outputs (default tests/out/regress)
@@ -18,7 +18,7 @@
 set -u
 . "$(dirname "$0")/lib.sh"
 
-case $(uname -m) in arm64 | aarch64) binary=0 ;; *) binary=1 ;; esac
+case $(uname -sm) in "Darwin arm64") binary=0 ;; *) binary=1 ;; esac
 case "${1:-}" in
   --binary) binary=1 ;;
   --no-binary) binary=0 ;;
@@ -47,7 +47,7 @@ run() {  # run the CLI; any non-zero exit is a failure
   fi
 }
 check() {  # check <output> <reference>
-  if diff_norm "$G/$2" "$O/$1" "$O/$1"; then
+  if diff_norm "$G/$2" "$O/$1" "$O/$1.diff"; then
     echo "OK   $1"
   else
     echo "DIFF $1 (vs $2)"; head -20 "$O/$1.diff" | sed 's/^/     /'; fail=1

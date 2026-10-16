@@ -6,3 +6,4 @@ libprodigal.a
 libprodigal.so
 test_api
 tests/out/
+.build-flags
