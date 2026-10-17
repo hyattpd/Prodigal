@@ -137,6 +137,29 @@ so the flags stay checked while their plain cases are listed. For any
 other input, `tests/api_dump -p MODE [FLAGS] FASTA` and
 `tests/api_dump --from-cli -p MODE cli.gff` print the two sides.
 
+## Performance baselines
+
+Wall time and peak RSS (MiB = 1024 KiB), CLI vs `tests/api_dump` (the
+public API, printing the same GFF lines), median of 3 runs on 2026-10-17:
+AMD Ryzen 9 9950X3D, Debian, gcc 14.2, `make` defaults (`-O3`), one thread,
+output to a file. Measured at `6617375`, so the library no longer clears its
+gene array per call. "From model" predicts from a training file the CLI
+wrote for E. coli. Until P1 fixes defect A, the API's own single-mode
+training builds a different model (more genes), so the first row is only
+roughly comparable.
+
+| Input | Mode | CLI | API |
+|---|---|---|---|
+| E. coli K-12 (4.64 Mbp) | single, trained on input | 2.50 s, 209 MiB | 2.21 s, 212 MiB |
+| E. coli K-12 | single, from model | 1.19 s, 81 MiB | 1.07 s, 141 MiB |
+| E. coli K-12 | meta | 14.32 s, 136 MiB | 14.14 s, 181 MiB |
+| E. coli 2 kbp fragments (2,320) | meta | 6.01 s, 88 MiB | 6.03 s, 92 MiB |
+| E. coli 2 kbp fragments | single, from model | 0.68 s, 49 MiB | 0.65 s, 53 MiB |
+
+The API's peak RSS includes its fixed per-context buffers (sequence
+bitmaps and the 30 MB gene array, about 50 MB), which P4 sizes from the
+input. Compare later measurements with this table on the same machine.
+
 ## Sanitizers and concurrency
 
 The library has no mutable globals; keep it that way and keep these clean.
