@@ -95,28 +95,47 @@ patched and the unpatched oracle.
 
 ## Library tests (`make test`)
 
-`test_api.c` is a self-contained runner. A failing assert `return`s from
-that test and leaves `tests_passed` short; the exit code is non-zero unless
-every test passed. A missing fixture prints `[SKIP]` and **counts as a
-pass**.
+`test_api.c` is a self-contained runner; run it from the repo root. A
+failing assert `return`s from that test, and the exit code is non-zero
+unless every test passed. A missing fixture is a failure, never a known one.
 
-What it does *not* check today:
+**Golden tests (phase 14): API ≡ CLI ground truth.** The library's output,
+in the form of `tests/api_gff.h`, is compared line by line with the anthus
+references: meta mode with `ref_meta.gff`; training through the API with
+`ref_train.bin` byte for byte, and its predictions with `ref_single.gff`;
+prediction from `ref_train.bin` with `ref_trained.gff`. Two more tests check
+that a contig's output doesn't depend on what the context did before (a
+second pass, and each record on a fresh context). Anthus contigs carry about
+one gene each, so the meta golden test cannot see the recovery-pass scores
+(B); `make compare` does.
 
-- **Meta output against the reference:** `test_meta_matches_reference`
-  compares gene count, coordinates and strand against `ref_meta.gff`, but
-  not partial flags, start type, RBS fields, `gc_cont` or any score.
-- **API training against the reference:** `test_train_from_sequences` only
-  checks that training succeeds; it never compares against `ref_train.bin`.
-  It would have caught the missing `tinf.gc`.
-- **API single mode end to end:** no test trains from sequences via the API,
-  calls `find_genes` and compares with `ref_single.gff`.
-  `test_find_genes_with_training` uses `ref_train.bin`, so it bypasses API
-  training, and it checks only value ranges.
-- **Proteins or nucleotides:** the API has no such output yet.
+**Known failures.** A golden test whose row in `test_golden`'s table names a
+defect and the phase that fixes it counts as passed while it fails, and fails
+the run once it passes, so that the marker gets removed. It also runs as an
+*isolated* twin that neutralises only the known defects and must pass, so a
+known failure cannot hide a new regression: A by setting the training GC by
+hand (with it, API training writes `ref_train.bin` byte for byte), C by
+masking the motif wherever the API reports `"Upstream"`. On ARM64 macOS,
+whose training writes different bytes, the training test checks the model by
+its predictions instead (`ref_trained.gff`, motifs masked).
 
-The goal is for the library tests to assert **API ≡ CLI** field by field
-(CLI print precision for scores), in both modes, on anthus. It is cheap to
-add, and the larger sets above can serve as an opt-in slow tier.
+Under WASM (CI) the tests need `-sNODERAWFS=1` to see the fixtures and a
+stack of at least about 1.5 MB (`-sSTACK_SIZE=8MB`): `train_starts_nonsd`
+alone uses 1.31 MB of stack, against WASM's 64 KiB default.
+
+## API ≡ CLI on larger inputs (`make compare`)
+
+`tests/api_compare.sh` runs the CLI and `tests/api_dump` (the public API
+only) with the same options over the corpus and a flag matrix, in meta mode,
+single mode, and single mode from a CLI-written training file, and diffs the
+two in the form of `tests/api_gff.h`. `ECOLI` adds E. coli and its fragments.
+The cases in the script's `expect_diff` differ today because of A, B and C
+and must keep differing, so the list stays current; P1 empties it. The
+single-mode and model cases also run as `-iso` twins (`api_dump --isolated`:
+the training GC set by hand and every motif masked), which must match today,
+so the flags stay checked while their plain cases are listed. For any
+other input, `tests/api_dump -p MODE [FLAGS] FASTA` and
+`tests/api_dump --from-cli -p MODE cli.gff` print the two sides.
 
 ## Sanitizers and concurrency
 

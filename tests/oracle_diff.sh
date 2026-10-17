@@ -65,15 +65,8 @@ O=$(abspath "${ORACLE_OUT:-$ROOT/tests/out/oracle}")
 OD=$(abspath "${ORACLE_DIR:-$ROOT/tests/out/oracle-c1e2d36}")
 ORACLE=${ORACLE:+$(abspath "$ORACLE")}
 ECOLI=${ECOLI:+$(abspath "$ECOLI")}
-JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
 cd "$ROOT" || exit 2
-
-# Job lines are split by xargs, which also interprets quotes and backslashes.
-for path in "$ROOT" "$P" "$O" "$OD" "$ORACLE" "$ECOLI"; do
-  case $path in *[[:space:]\'\"\\]*)
-    echo "error: path contains whitespace, a quote or a backslash: $path" >&2; exit 2 ;;
-  esac
-done
+xargs_safe "$ROOT" "$P" "$O" "$OD" "$ORACLE" "$ECOLI"
 
 if [ -z "$ORACLE" ]; then
   ORACLE=$OD/prodigal
@@ -101,43 +94,27 @@ fi
 
 mkdir -p "$O" || exit 2
 rm -rf "$O/cases" "$O"/jobs.* "$O/cases.list"
-tests/make_corpus.sh "$O/corpus" ${ECOLI:+"$ECOLI"} || exit 2
-C=$O/corpus
+corpus_setup "$O/corpus" || exit 2
 
-# One job line per (case, binary), with $quiet appended. A case must succeed
+# One job line per (case, binary), with $quiet appended (never a trailing
+# blank, see run_jobs). The case list, not the directories found afterwards,
+# drives the comparison, so a case that never ran fails. A case must succeed
 # on the oracle unless it matches a pattern in expect_error. Cases matching
 # expect_stderr_diff are known to differ on stderr and must keep differing,
 # so the pattern is removed once they match.
-# The case list, not the directories found afterwards, drives the
-# comparison, so a case that never ran fails. A line must not end in a
-# blank: xargs -L would join it to the next.
 add() {  # add <case> <input> <args...>
   local name=$1; shift
   echo "$name" >>"$O/cases.list"
   echo "$P $O/cases/$name/fork $*${quiet:+ $quiet}" >>"$O/jobs.$phase"
   echo "$ORACLE $O/cases/$name/oracle $*${quiet:+ $quiet}" >>"$O/jobs.$phase"
 }
-run_phase() {
-  [ -s "$O/jobs.$phase" ] || return 0   # GNU xargs runs once on empty input
-  xargs -P "$JOBS" -L 1 "$SELF" --job <"$O/jobs.$phase" ||
-    { echo "error: job runner failed" >&2; exit 2; }
-}
 expect_error=("trained.*.n")   # -n with a training file is a usage error
 # The fork's CLI trains through the silent library (docs/upstream-behavior.md,
 # "Fork deviations"); to be restored in P1.
 expect_stderr_diff=("loud.single" "loud.train")
-matches() {  # matches NAME PATTERN...
-  local n=$1 p; shift
-  for p in "$@"; do case $n in $p) return 0 ;; esac; done
-  return 1
-}
 outs="-o out -a faa -d fna -s starts"
 flagsets=("" "-c" "-m" "-n" "-g 4" "-g 25")
 trainsets=("" "-c" "-m" "-n" "-g 4")
-fname() { local f=${1:-default}; f=${f// /}; echo "${f#-}"; }
-
-corpus=("anthus:$ROOT/anthus_aco.fas" "synthetic:$C/synthetic.fa" "big:$C/big.fa")
-[ -n "$ECOLI" ] && corpus+=("ecoli:$ECOLI" "ecoli2k:$C/ecoli_2k.fa")
 
 phase=1 quiet=-q
 for entry in "${corpus[@]}"; do
@@ -169,7 +146,7 @@ quiet=   # progress messages on stderr
 add loud.single "$ROOT/anthus_aco.fas" -p single -f gff -o out
 add loud.meta "$ROOT/anthus_aco.fas" -p meta -f gff -o out
 add loud.train "$ROOT/anthus_aco.fas" -t train.bin
-run_phase
+run_jobs "$O/jobs.1" "$SELF" --job
 
 # Phase 2 predicts from the training files the oracle wrote in phase 1. If
 # the oracle wrote none, its training case has already failed; the
@@ -187,7 +164,7 @@ done
 quiet=
 t=$O/cases/loud.train/oracle/train.bin
 [ -f "$t" ] && add loud.trained "$ROOT/anthus_aco.fas" -t "$t" -f gff -o out
-run_phase
+run_jobs "$O/jobs.2" "$SELF" --job
 
 ncase=0 nfail=0
 while read -r name; do

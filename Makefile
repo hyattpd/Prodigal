@@ -21,10 +21,11 @@
 SHELL   = /bin/sh
 CC      = gcc
 
-# -ffp-contract=off: no fused multiply-add, so ARM64 builds compute exactly
-# what x86-64 does (docs/testing.md); tests/oracle_diff.sh builds the oracle
-# the same way.
-CFLAGS  += -pedantic -Wall -O3 -ffp-contract=off -DSUPPORT_GZIP_COMPRESSED
+CFLAGS  += -pedantic -Wall -O3 -DSUPPORT_GZIP_COMPRESSED
+# No fused multiply-add, so ARM64 builds compute exactly what x86-64 does
+# (docs/testing.md); "override" keeps it when CFLAGS is given on the command
+# line. tests/oracle_diff.sh builds the oracle the same way.
+override CFLAGS += -ffp-contract=off
 LFLAGS = -lm $(LDFLAGS) -lz
 
 TARGET  = prodigal
@@ -35,6 +36,7 @@ CORE_SOURCES = bitmap.c dprog.c gene.c metagenomic.c node.c sequence.c training.
 API_SOURCES  = prodigal_api.c
 CLI_SOURCE   = main.c
 TEST_SOURCE  = test_api.c
+TEST_HEADERS = tests/api_gff.h tests/fasta.h
 
 HEADERS = $(shell echo *.h)
 
@@ -85,11 +87,19 @@ libprodigal.so: $(LIB_PIC_OBJS)
 	$(CC) -shared -o $@ $^ -lm
 
 # Test runner (linked against static library)
-test_api: $(TEST_SOURCE) libprodigal.a
+test_api: $(TEST_SOURCE) $(TEST_HEADERS) libprodigal.a
 	$(CC) $(CFLAGS) -DPRODIGAL_NO_MAIN -o $@ $< -L. -lprodigal $(LFLAGS)
 
 test: test_api
 	./test_api
+
+# Library API vs the CLI on the same build (tests/api_compare.sh); set ECOLI
+# for the genome-scale cases
+tests/api_dump: tests/api_dump.c $(TEST_HEADERS) libprodigal.a
+	$(CC) $(CFLAGS) -o $@ tests/api_dump.c -L. -lprodigal $(LFLAGS)
+
+compare: $(TARGET) tests/api_dump
+	tests/api_compare.sh
 
 # CLI output vs testdata/ground_truth; REGRESS_FLAGS passes --binary or
 # --no-binary through (see docs/testing.md)
@@ -112,6 +122,6 @@ clean:
 	-rm -f *.o *.lib.o *.pic.o
 
 distclean: clean
-	-rm -f $(TARGET) libprodigal.a libprodigal.so test_api .build-flags
+	-rm -f $(TARGET) libprodigal.a libprodigal.so test_api tests/api_dump .build-flags
 
-.PHONY: all install uninstall clean distclean test regress oracle FORCE
+.PHONY: all install uninstall clean distclean test regress oracle compare FORCE

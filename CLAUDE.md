@@ -49,17 +49,18 @@ API path. See "Two pipelines" in `docs/internals.md`.
 make                    # CLI binary ./prodigal (links zlib; gzip input support)
 make libprodigal.a      # static library, built with -DPRODIGAL_NO_MAIN
 make test               # builds ./test_api and runs it; run from the repo root
+make compare            # library API vs the CLI on the same build (tests/api_compare.sh)
 make regress            # CLI vs testdata/ground_truth, every output type, both modes
 make oracle             # CLI vs an upstream c1e2d36 build: flag matrix x corpus
 make distclean          # removes objects, binaries and libs
 ```
 
 - `test_api` opens `anthus_aco.fas` and `testdata/ground_truth/*` by relative
-  path, so run it from the repo root. A missing fixture prints `[SKIP]` and
-  counts as a pass.
+  path, so run it from the repo root. A missing fixture is a failure; known
+  failures are marked in `test_golden`'s table (see `docs/testing.md`).
 - If a result looks wrong, start with `make distclean && make test`. Stale
-  objects in the working tree once made `test_version_constants` fail; a
-  clean build of the same commit passes 40/40.
+  objects in the working tree once made `test_version_constants` fail (the
+  Makefile now rebuilds when the compiler or flags change).
 - `training.c` is about 25 MB of generated model data (50 metagenomic bins),
   so a full rebuild takes about a minute.
 - Run `make regress` and `make oracle` whenever you touch anything outside

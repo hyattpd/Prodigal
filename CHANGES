@@ -5,6 +5,12 @@ bin produced no gene path, the CLI read the score of nodes[-1], before the
 start of the node array. Such a bin now scores 0.0, the score of the empty
 path, which is also what that read returned on Linux, so output is unchanged
 (checked against upstream c1e2d36 on the test corpus and E. coli K-12).
+* Library, metagenomic mode: a contig on which no bin finds a gene path now
+reports the same bin as the CLI (the first whose GC window contains the
+contig) instead of bin 0.
+* Library: prodigal_find_genes no longer clears its 30 MB gene array on
+every call (the CLI never did, and every field read is written first). Output
+is unchanged; metagenomic mode runs about twice as fast.
 * Builds with -ffp-contract=off, so ARM64 computes exactly what x86-64 does.
 Without it a default ARM64 build fused multiply-adds and printed some start
 scores differently in the last digit (e.g. in the -s output).

@@ -40,6 +40,10 @@ jobs:
       - name: CLI regression (every output type, both modes)
         run: make regress CC=${{ matrix.cc }}
 
+      # Library API vs the CLI on the same build (tests/api_compare.sh)
+      - name: API vs CLI (flag matrix x corpus)
+        run: make compare CC=${{ matrix.cc }}
+
       # CLI vs an upstream c1e2d36 built here with the same compiler
       # (tests/oracle_diff.sh). The cache key is the script's own stamp.
       - name: Oracle cache key
@@ -57,8 +61,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: oracle-${{ matrix.os }}-${{ matrix.cc }}
+          name: diffs-${{ matrix.os }}-${{ matrix.cc }}
           path: |
+            tests/out/compare/cases/**/diff
+            tests/out/compare/cases/**/RESULT
+            tests/out/compare/cases/**/*.err
             tests/out/oracle/cases/**/*.diff
             tests/out/oracle/cases/**/stderr
             tests/out/oracle-c1e2d36/build.log
@@ -82,6 +89,10 @@ jobs:
       - name: CLI regression (every output type, both modes)
         run: make regress
 
+      # Library API vs the CLI on the same build (tests/api_compare.sh)
+      - name: API vs CLI (flag matrix x corpus)
+        run: make compare
+
       # CLI vs an upstream c1e2d36 built here with the same compiler
       # (tests/oracle_diff.sh). The cache key is the script's own stamp.
       - name: Oracle cache key
@@ -99,8 +110,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: oracle-macos
+          name: diffs-macos
           path: |
+            tests/out/compare/cases/**/diff
+            tests/out/compare/cases/**/RESULT
+            tests/out/compare/cases/**/*.err
             tests/out/oracle/cases/**/*.diff
             tests/out/oracle/cases/**/stderr
             tests/out/oracle-c1e2d36/build.log
@@ -117,16 +131,21 @@ jobs:
       - name: Build library with emcc
         run: |
           CORE="bitmap.c dprog.c gene.c metagenomic.c node.c sequence.c training.c prodigal_api.c"
-          emcc -O3 -Wall -DPRODIGAL_NO_MAIN -c $CORE
+          emcc -O3 -Wall -ffp-contract=off -DPRODIGAL_NO_MAIN -c $CORE
           emar rcs libprodigal.a *.o
           echo "WASM library build succeeded"
 
       - name: Build and run test suite in Node.js
         run: |
           CORE="bitmap.c dprog.c gene.c metagenomic.c node.c sequence.c training.c prodigal_api.c"
-          emcc -O3 -Wall -DPRODIGAL_NO_MAIN $CORE test_api.c -o test_api.js \
+          # NODERAWFS: the tests read anthus_aco.fas and testdata/ from disk.
+          # STACK_SIZE: training needs more than WASM's 64 KiB default
+          # (docs/testing.md).
+          emcc -O3 -Wall -ffp-contract=off -DPRODIGAL_NO_MAIN $CORE test_api.c -o test_api.js \
             -s ALLOW_MEMORY_GROWTH=1 \
             -s INITIAL_MEMORY=134217728 \
+            -s NODERAWFS=1 \
+            -s STACK_SIZE=8MB \
             -lm
           node test_api.js
 

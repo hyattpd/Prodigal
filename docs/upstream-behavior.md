@@ -112,13 +112,20 @@ defect.
   cases with E. coli, and every zero-gene meta contig in the synthetic corpus
   reports the first in-window bin (23/23 default, 43/43 `-c`, 24/24 `-m`,
   23/23 `-g 4`).
-  The library's own meta loop skips no-path bins instead, so it can report a
-  different bin for a contig where no bin has a path (to be unified in the
-  shared pipeline).
+  The library's meta loop applies the same rule (until 2.6.5 it skipped
+  no-path bins, so a contig on which no bin had a path reported bin 0).
 - **Unbounded `add_nodes`** (`node.c:28`) overflows the node array on
   low-complexity input whose node density exceeds the capacity, e.g.
   `"ATG" × 110000`. The result is heap corruption. The fix is bounded
   growth or a clean error, not truncation that alters results.
+- **An empty record ends the CLI's input** (CLI only). `next_seq_multi`
+  returns -1, its end-of-input value, for a record with no sequence
+  (`sequence.c:219`). In either mode, a FASTA header with no sequence lines
+  therefore silently drops every record after it, and a file that starts
+  with one fails with "no input sequences to analyze". The library takes one
+  record at a time and rejects an empty one (`PRODIGAL_ERR_INVALID_INPUT`).
+  Not fixed yet: a fix changes output on such input, so it needs a documented
+  deviation (P2).
 - **Unchecked allocations:** `calc_mer_bg` does not check its `malloc`
   (`sequence.c:645`), and `calc_most_gc_frame` leaks on partial allocation
   failure (`sequence.c:576-580`).

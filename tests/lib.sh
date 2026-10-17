@@ -15,6 +15,45 @@ prodigal_bin() {
   echo "$p"
 }
 
+# Parallel job runners (oracle_diff.sh, api_compare.sh): a job file holds one
+# job per line, run as "SCRIPT FLAG <line words>" by xargs -L 1, which splits
+# lines on blanks and interprets quotes and backslashes, and joins a line
+# that ends in a blank to the next.
+JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
+xargs_safe() {  # xargs_safe PATH...: exit 2 unless every path is safe in a job line
+  local p
+  for p in "$@"; do
+    case $p in *[[:space:]\'\"\\]*)
+      echo "error: path contains whitespace, a quote or a backslash: $p" >&2; exit 2 ;;
+    esac
+  done
+}
+run_jobs() {  # run_jobs JOBFILE SCRIPT FLAG
+  [ -s "$1" ] || return 0   # GNU xargs runs once on empty input
+  xargs -P "$JOBS" -L 1 "$2" "$3" <"$1" ||
+    { echo "error: job runner failed" >&2; exit 2; }
+}
+
+# corpus_setup DIR: generate the test corpus (tests/make_corpus.sh) into DIR,
+# set C to DIR and corpus to its "label:path" entries. An absolute $ECOLI
+# adds the genome and its 2 kbp fragments.
+corpus_setup() {
+  "$ROOT/tests/make_corpus.sh" "$1" ${ECOLI:+"$ECOLI"} || return 1
+  C=$1
+  corpus=("anthus:$ROOT/anthus_aco.fas" "synthetic:$C/synthetic.fa" "big:$C/big.fa")
+  [ -z "${ECOLI:-}" ] || corpus+=("ecoli:$ECOLI" "ecoli2k:$C/ecoli_2k.fa")
+}
+
+# fname FLAGS: the case-name word for a flag set: "" -> default, "-g 4" -> g4.
+fname() { local f=${1:-default}; f=${f// /}; echo "${f#-}"; }
+
+# matches NAME PATTERN...: does NAME match one of the glob patterns?
+matches() {
+  local n=$1 p; shift
+  for p in "$@"; do case $n in $p) return 0 ;; esac; done
+  return 1
+}
+
 # The ground truth and the oracle print upstream's version; the fork prints
 # PRODIGAL_VERSION_STRING. Each side is normalised for its own version only,
 # so pointing a script at the wrong binary shows up as a difference.

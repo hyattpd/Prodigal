@@ -612,7 +612,6 @@ static int run_gene_pipeline(prodigal_ctx_t *ctx) {
 
     /* Eliminate bad genes and extract */
     eliminate_bad_genes(ctx->nodes, ipath, &ctx->tinf);
-    memset(ctx->genes, 0, MAX_GENES * sizeof(struct _gene));
     ng = add_genes(ctx->genes, ctx->nodes, ipath);
     tweak_final_starts(ctx->genes, ng, ctx->nodes, ctx->nn, &ctx->tinf);
     record_gene_data(ctx->genes, ng, ctx->nodes, &ctx->tinf, 1);
@@ -874,6 +873,7 @@ int prodigal_find_genes(prodigal_ctx_t *ctx, prodigal_genes_soa_t **genes_out,
         /* Try all metagenomic bins */
         for (i = 0; i < NUM_META; i++) {
             int ipath;
+            double path_score;
 
             /* Progress callback */
             if (ctx->config.progress_callback) {
@@ -908,11 +908,13 @@ int prodigal_find_genes(prodigal_ctx_t *ctx, prodigal_genes_soa_t **genes_out,
                                       ctx->meta[i].tinf, 1);
             ipath = dprog(ctx->nodes, ctx->nn, ctx->meta[i].tinf, 1);
 
-            if (ipath >= 0 && ctx->nodes[ipath].score > max_score) {
+            /* A bin without a gene path (ipath -1) scores 0.0, the empty
+               path, as in the CLI (docs/upstream-behavior.md). */
+            path_score = (ipath >= 0) ? ctx->nodes[ipath].score : 0.0;
+            if (path_score > max_score) {
                 max_phase = i;
-                max_score = ctx->nodes[ipath].score;
+                max_score = path_score;
                 eliminate_bad_genes(ctx->nodes, ipath, ctx->meta[i].tinf);
-                memset(ctx->genes, 0, MAX_GENES * sizeof(struct _gene));
                 ng = add_genes(ctx->genes, ctx->nodes, ipath);
                 tweak_final_starts(ctx->genes, ng, ctx->nodes, ctx->nn,
                                    ctx->meta[i].tinf);
@@ -933,9 +935,6 @@ int prodigal_find_genes(prodigal_ctx_t *ctx, prodigal_genes_soa_t **genes_out,
         /* Use best bin's training for SOA extraction */
         memcpy(&ctx->tinf, ctx->meta[max_phase].tinf,
                sizeof(struct _training));
-
-        /* ng was set during the loop above for the best bin */
-        if (max_score <= -100.0) ng = 0;
 
         *genes_out = extract_soa(ctx, ng);
         fill_stats(ctx, ng, stats_out, max_phase,

@@ -5,118 +5,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 #include <math.h>
 #include <stdint.h>
 #include "prodigal.h"
+#include "tests/api_gff.h"
+#include "tests/fasta.h"
 
 static int tests_run = 0;
 static int tests_passed = 0;
-
-/*******************************************************************************
-    Test helpers
-*******************************************************************************/
-
-static void *load_file(const char *path, size_t *out_len) {
-    FILE *f = fopen(path, "rb");
-    long sz;
-    void *buf;
-    if (f == NULL) return NULL;
-    fseek(f, 0, SEEK_END);
-    sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    buf = malloc((size_t)sz);
-    if (buf == NULL) { fclose(f); return NULL; }
-    if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
-        free(buf); fclose(f); return NULL;
-    }
-    fclose(f);
-    if (out_len) *out_len = (size_t)sz;
-    return buf;
-}
-
-/* Load a FASTA file into arrays of sequences and headers.
-   Caller must free returned arrays and their contents. */
-static int load_fasta(const char *path, char ***seqs_out, char ***headers_out,
-                      int32_t **lens_out, int32_t *nseqs_out) {
-    FILE *f = fopen(path, "r");
-    char line[10001];
-    int cap = 64, n = 0;
-    char **seqs, **hdrs;
-    int32_t *lens;
-    char *cur_seq = NULL;
-    int cur_len = 0, cur_cap = 0;
-
-    if (f == NULL) return -1;
-    seqs = (char **)malloc(cap * sizeof(char *));
-    hdrs = (char **)malloc(cap * sizeof(char *));
-    lens = (int32_t *)malloc(cap * sizeof(int32_t));
-
-    while (fgets(line, sizeof(line), f) != NULL) {
-        /* Strip newline */
-        int ln = (int)strlen(line);
-        while (ln > 0 && (line[ln-1] == '\n' || line[ln-1] == '\r'))
-            line[--ln] = '\0';
-
-        if (line[0] == '>') {
-            /* Save previous sequence */
-            if (cur_seq != NULL) {
-                if (n >= cap) {
-                    cap *= 2;
-                    seqs = (char **)realloc(seqs, cap * sizeof(char *));
-                    hdrs = (char **)realloc(hdrs, cap * sizeof(char *));
-                    lens = (int32_t *)realloc(lens, cap * sizeof(int32_t));
-                }
-                seqs[n] = cur_seq;
-                lens[n] = cur_len;
-                n++;
-            }
-            /* Start new header */
-            if (n >= cap) {
-                cap *= 2;
-                seqs = (char **)realloc(seqs, cap * sizeof(char *));
-                hdrs = (char **)realloc(hdrs, cap * sizeof(char *));
-                lens = (int32_t *)realloc(lens, cap * sizeof(int32_t));
-            }
-            hdrs[n] = strdup(line + 1);
-            cur_seq = NULL;
-            cur_len = 0;
-            cur_cap = 0;
-        } else {
-            int i;
-            for (i = 0; i < ln; i++) {
-                if (cur_len >= cur_cap) {
-                    cur_cap = cur_cap == 0 ? 4096 : cur_cap * 2;
-                    cur_seq = (char *)realloc(cur_seq, cur_cap);
-                }
-                cur_seq[cur_len++] = line[i];
-            }
-        }
-    }
-    /* Save last sequence */
-    if (cur_seq != NULL && n < cap) {
-        seqs[n] = cur_seq;
-        lens[n] = cur_len;
-        n++;
-    }
-    fclose(f);
-    *seqs_out = seqs;
-    *headers_out = hdrs;
-    *lens_out = lens;
-    *nseqs_out = n;
-    return 0;
-}
-
-static void free_fasta(char **seqs, char **hdrs, int32_t *lens, int32_t n) {
-    int32_t i;
-    for (i = 0; i < n; i++) {
-        free(seqs[i]);
-        free(hdrs[i]);
-    }
-    free(seqs);
-    free(hdrs);
-    free(lens);
-}
+static int tests_xfailed = 0;
+static int fixtures_missing = 0;
 
 #define TEST_START(name) do { \
     tests_run++; \
@@ -127,11 +25,6 @@ static void free_fasta(char **seqs, char **hdrs, int32_t *lens, int32_t n) {
 #define TEST_PASS() do { \
     tests_passed++; \
     printf("[PASS]\n"); \
-} while(0)
-
-#define TEST_FAIL(msg) do { \
-    printf("[FAIL] %s\n", msg); \
-    return; \
 } while(0)
 
 #define ASSERT_EQ_INT(a, b) do { \
@@ -147,6 +40,49 @@ static void free_fasta(char **seqs, char **hdrs, int32_t *lens, int32_t n) {
         return; \
     } \
 } while(0)
+
+/*******************************************************************************
+    Test helpers: fixtures and contexts. Each prints a [FAIL] line when it
+    returns 0 or NULL.
+*******************************************************************************/
+
+#define REF_DIR "testdata/ground_truth/"
+
+/* A missing fixture fails the test, and is never a known failure. */
+static void missing_fixture(const char *what) {
+    printf("[FAIL] missing fixture %s (run from the repo root)\n", what);
+    fixtures_missing++;
+}
+
+static int load_anthus(fasta_t *fa) {
+    if (fasta_load("anthus_aco.fas", fa) == 0 && fa->n > 0) return 1;
+    missing_fixture("anthus_aco.fas");
+    return 0;
+}
+
+static void *load_ref_model(size_t *len) {
+    void *blob = load_file(REF_DIR "ref_train.bin", len);
+    if (blob == NULL) missing_fixture(REF_DIR "ref_train.bin");
+    return blob;
+}
+
+static prodigal_ctx_t *make_ctx(int meta) {
+    prodigal_config_t config;
+    prodigal_ctx_t *ctx;
+    prodigal_config_init(&config);
+    config.meta_mode = meta;
+    if ((ctx = prodigal_create(&config)) == NULL) printf("[FAIL] prodigal_create\n");
+    return ctx;
+}
+
+static prodigal_ctx_t *make_model_ctx(const void *blob, size_t len) {
+    prodigal_ctx_t *ctx = make_ctx(0);
+    if (ctx != NULL && prodigal_load_training(ctx, blob, len) != PRODIGAL_OK) {
+        printf("[FAIL] load_training: %s\n", prodigal_last_error(ctx));
+        prodigal_destroy(ctx); ctx = NULL;
+    }
+    return ctx;
+}
 
 /*******************************************************************************
     Phase 1.1: Error Codes
@@ -515,23 +451,16 @@ static void test_training_null_args(void) {
 
 static void test_training_load_roundtrip(void) {
     TEST_START("training load/export round-trip is byte-identical");
-    prodigal_config_t config;
-    prodigal_config_init(&config);
-    prodigal_ctx_t *ctx = prodigal_create(&config);
-    ASSERT_TRUE(ctx != NULL);
-
-    /* Load reference training file */
     size_t tlen;
-    void *tdata = load_file("testdata/ground_truth/ref_train.bin", &tlen);
-    if (tdata == NULL) { printf("[SKIP] ref_train.bin not found\n"); tests_passed++; prodigal_destroy(ctx); return; }
-
-    int rc = prodigal_load_training(ctx, tdata, tlen);
-    ASSERT_EQ_INT(rc, PRODIGAL_OK);
+    void *tdata = load_ref_model(&tlen);
+    if (tdata == NULL) return;
+    prodigal_ctx_t *ctx = make_model_ctx(tdata, tlen);
+    ASSERT_TRUE(ctx != NULL);
 
     /* Export and compare */
     void *exported;
     size_t exported_len;
-    rc = prodigal_export_training(ctx, &exported, &exported_len);
+    int rc = prodigal_export_training(ctx, &exported, &exported_len);
     ASSERT_EQ_INT(rc, PRODIGAL_OK);
     ASSERT_TRUE(exported_len == tlen);
     ASSERT_TRUE(memcmp(tdata, exported, exported_len) == 0);
@@ -566,22 +495,13 @@ static void test_training_load_invalid(void) {
 
 static void test_train_from_sequences(void) {
     TEST_START("train from FASTA sequences produces valid model");
-
-    /* Load anthus_aco.fas */
-    char **seqs, **hdrs;
-    int32_t *lens, nseqs;
-    if (load_fasta("anthus_aco.fas", &seqs, &hdrs, &lens, &nseqs) != 0) {
-        printf("[SKIP] anthus_aco.fas not found\n"); tests_passed++; return;
-    }
-    ASSERT_TRUE(nseqs > 0);
-
-    prodigal_config_t config;
-    prodigal_config_init(&config);
-    prodigal_ctx_t *ctx = prodigal_create(&config);
+    fasta_t fa;
+    if (!load_anthus(&fa)) return;
+    prodigal_ctx_t *ctx = make_ctx(0);
     ASSERT_TRUE(ctx != NULL);
 
     int rc = prodigal_set_training_sequences(ctx,
-        (const char **)seqs, (const char **)hdrs, lens, nseqs);
+        (const char **)fa.seqs, (const char **)fa.headers, fa.lens, fa.n);
     ASSERT_EQ_INT(rc, PRODIGAL_OK);
 
     prodigal_seq_info_t info;
@@ -589,9 +509,8 @@ static void test_train_from_sequences(void) {
 
     /* Training requires >= 20000 bp */
     if (info.length < 20000) {
-        printf("[SKIP] concat length %d < 20000\n", info.length);
-        tests_passed++;
-        free_fasta(seqs, hdrs, lens, nseqs);
+        printf("[FAIL] concat length %d < 20000\n", info.length);
+        fasta_free(&fa);
         prodigal_destroy(ctx);
         return;
     }
@@ -606,13 +525,10 @@ static void test_train_from_sequences(void) {
     ASSERT_EQ_INT(rc, PRODIGAL_OK);
     ASSERT_TRUE(elen > 0);
 
-    /* The exported training should have valid GC and trans_table */
-    /* We can't compare byte-for-byte to ref_train.bin because the
-       native prodigal does FILE* I/O which may process the FASTA
-       slightly differently (e.g., trailing newlines). But we can
-       verify the model is valid. */
+    /* The golden test "API training = ref_train.bin" compares the model with
+       the reference. */
     free(exported);
-    free_fasta(seqs, hdrs, lens, nseqs);
+    fasta_free(&fa);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -624,28 +540,16 @@ static void test_train_from_sequences(void) {
 static void test_find_genes_with_training(void) {
     TEST_START("find genes using loaded training data");
 
-    /* Load training data */
     size_t tlen;
-    void *tdata = load_file("testdata/ground_truth/ref_train.bin", &tlen);
-    if (tdata == NULL) { printf("[SKIP] ref_train.bin not found\n"); tests_passed++; return; }
-
-    /* Load first sequence from anthus_aco.fas */
-    char **seqs, **hdrs;
-    int32_t *lens, nseqs;
-    if (load_fasta("anthus_aco.fas", &seqs, &hdrs, &lens, &nseqs) != 0) {
-        printf("[SKIP] anthus_aco.fas not found\n"); tests_passed++; free(tdata); return;
-    }
-
-    prodigal_config_t config;
-    prodigal_config_init(&config);
-    prodigal_ctx_t *ctx = prodigal_create(&config);
+    void *tdata = load_ref_model(&tlen);
+    if (tdata == NULL) return;
+    fasta_t fa;
+    if (!load_anthus(&fa)) { free(tdata); return; }
+    prodigal_ctx_t *ctx = make_model_ctx(tdata, tlen);
+    free(tdata);
     ASSERT_TRUE(ctx != NULL);
 
-    int rc = prodigal_load_training(ctx, tdata, tlen);
-    ASSERT_EQ_INT(rc, PRODIGAL_OK);
-    free(tdata);
-
-    rc = prodigal_set_sequence(ctx, seqs[0], lens[0], hdrs[0]);
+    int rc = prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], fa.headers[0]);
     ASSERT_EQ_INT(rc, PRODIGAL_OK);
 
     prodigal_genes_soa_t *genes = NULL;
@@ -678,7 +582,7 @@ static void test_find_genes_with_training(void) {
     ASSERT_TRUE(stats.n_nodes > 0);
 
     prodigal_genes_free(genes);
-    free_fasta(seqs, hdrs, lens, nseqs);
+    fasta_free(&fa);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -691,28 +595,20 @@ static void test_aos_matches_soa(void) {
     TEST_START("AOS output matches SOA for same input");
 
     size_t tlen;
-    void *tdata = load_file("testdata/ground_truth/ref_train.bin", &tlen);
-    if (tdata == NULL) { printf("[SKIP] ref_train.bin not found\n"); tests_passed++; return; }
-
-    char **seqs, **hdrs;
-    int32_t *lens, nseqs;
-    if (load_fasta("anthus_aco.fas", &seqs, &hdrs, &lens, &nseqs) != 0) {
-        printf("[SKIP] anthus_aco.fas not found\n"); tests_passed++; free(tdata); return;
-    }
-
-    prodigal_config_t config;
-    prodigal_config_init(&config);
-    prodigal_ctx_t *ctx = prodigal_create(&config);
-
-    prodigal_load_training(ctx, tdata, tlen);
+    void *tdata = load_ref_model(&tlen);
+    if (tdata == NULL) return;
+    fasta_t fa;
+    if (!load_anthus(&fa)) { free(tdata); return; }
+    prodigal_ctx_t *ctx = make_model_ctx(tdata, tlen);
     free(tdata);
-    prodigal_set_sequence(ctx, seqs[0], lens[0], hdrs[0]);
+    ASSERT_TRUE(ctx != NULL);
+    prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], fa.headers[0]);
 
     prodigal_genes_soa_t *soa = NULL;
     prodigal_find_genes(ctx, &soa, NULL);
 
     /* Re-set same sequence for AOS */
-    prodigal_set_sequence(ctx, seqs[0], lens[0], hdrs[0]);
+    prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], fa.headers[0]);
     prodigal_genes_t *aos = NULL;
     prodigal_find_genes_aos(ctx, &aos, NULL);
 
@@ -732,7 +628,7 @@ static void test_aos_matches_soa(void) {
 
     prodigal_genes_free(soa);
     prodigal_genes_aos_free(aos);
-    free_fasta(seqs, hdrs, lens, nseqs);
+    fasta_free(&fa);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -744,18 +640,12 @@ static void test_aos_matches_soa(void) {
 static void test_meta_find_genes(void) {
     TEST_START("metagenomic mode finds genes");
 
-    char **seqs, **hdrs;
-    int32_t *lens, nseqs;
-    if (load_fasta("anthus_aco.fas", &seqs, &hdrs, &lens, &nseqs) != 0) {
-        printf("[SKIP] anthus_aco.fas not found\n"); tests_passed++; return;
-    }
+    fasta_t fa;
+    if (!load_anthus(&fa)) return;
+    prodigal_ctx_t *ctx = make_ctx(1);
+    ASSERT_TRUE(ctx != NULL);
 
-    prodigal_config_t config;
-    prodigal_config_init(&config);
-    config.meta_mode = 1;
-    prodigal_ctx_t *ctx = prodigal_create(&config);
-
-    prodigal_set_sequence(ctx, seqs[0], lens[0], hdrs[0]);
+    prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], fa.headers[0]);
 
     prodigal_genes_soa_t *genes = NULL;
     prodigal_stats_t stats;
@@ -765,137 +655,31 @@ static void test_meta_find_genes(void) {
     ASSERT_TRUE(stats.best_meta_bin >= 0);
 
     prodigal_genes_free(genes);
-    free_fasta(seqs, hdrs, lens, nseqs);
+    fasta_free(&fa);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
 
-/* Helper: parse GFF to extract gene coordinates for comparison */
-typedef struct {
-    int32_t begin, end, strand;
-} gff_gene_t;
+static void test_meta_no_path_bin(void) {
+    TEST_START("meta: contig without a gene path reports the CLI's bin");
+    /* The first 50 bp of anthus_aco.fas: no bin finds a gene path. The CLI
+       and upstream c1e2d36 report bin 1, the first whose GC window holds the
+       contig (docs/upstream-behavior.md). */
+    static const char seq[] = "ACAGGTTAGAAACTACTCTGTTTTCTGGCTCCTTGTTTAATGCCCTGTCC";
+    prodigal_ctx_t *ctx = make_ctx(1);
+    prodigal_genes_soa_t *genes = NULL;
+    prodigal_stats_t stats;
 
-static int parse_gff_for_seqname(const char *path, const char *target_seqname,
-                                  gff_gene_t **genes_out, int *n_out) {
-    FILE *f = fopen(path, "r");
-    char line[10001];
-    int cap = 64, n = 0;
-    gff_gene_t *genes;
-
-    if (f == NULL) return -1;
-    genes = (gff_gene_t *)malloc(cap * sizeof(gff_gene_t));
-
-    while (fgets(line, sizeof(line), f) != NULL) {
-        char seqname[256], source[64], feature[64], strand_ch;
-        int begin, end;
-        double score;
-        int phase;
-
-        if (line[0] == '#') continue;
-        if (sscanf(line, "%255s %63s %63s %d %d %lf %c %d",
-                   seqname, source, feature, &begin, &end, &score,
-                   &strand_ch, &phase) < 8) continue;
-        if (strcmp(feature, "CDS") != 0) continue;
-
-        /* Match sequence name (GFF uses short header) */
-        if (target_seqname != NULL && strstr(seqname, target_seqname) == NULL)
-            continue;
-
-        if (n >= cap) { cap *= 2; genes = (gff_gene_t *)realloc(genes, cap * sizeof(gff_gene_t)); }
-        genes[n].begin = begin;
-        genes[n].end = end;
-        genes[n].strand = (strand_ch == '+') ? 1 : -1;
-        n++;
-    }
-    fclose(f);
-    *genes_out = genes;
-    *n_out = n;
-    return 0;
-}
-
-static void test_meta_matches_reference(void) {
-    TEST_START("meta mode matches reference GFF for all sequences");
-
-    char **seqs, **hdrs;
-    int32_t *lens, nseqs;
-    if (load_fasta("anthus_aco.fas", &seqs, &hdrs, &lens, &nseqs) != 0) {
-        printf("[SKIP] anthus_aco.fas not found\n"); tests_passed++; return;
-    }
-
-    /* Load all reference genes from GFF */
-    gff_gene_t *ref_genes;
-    int ref_n;
-    if (parse_gff_for_seqname("testdata/ground_truth/ref_meta.gff",
-                               NULL, &ref_genes, &ref_n) != 0) {
-        printf("[SKIP] ref_meta.gff not found\n"); tests_passed++;
-        free_fasta(seqs, hdrs, lens, nseqs); return;
-    }
-
-    prodigal_config_t config;
-    prodigal_config_init(&config);
-    config.meta_mode = 1;
-    prodigal_ctx_t *ctx = prodigal_create(&config);
-
-    /* Run all sequences and collect all genes */
-    int total_lib_genes = 0;
-    int32_t *lib_begins = NULL, *lib_ends = NULL, *lib_strands = NULL;
-    int lib_cap = 0;
-
-    int32_t s;
-    for (s = 0; s < nseqs; s++) {
-        prodigal_set_sequence(ctx, seqs[s], lens[s], hdrs[s]);
-        prodigal_genes_soa_t *genes = NULL;
-        int rc = prodigal_find_genes(ctx, &genes, NULL);
-        ASSERT_EQ_INT(rc, PRODIGAL_OK);
-
-        if (genes != NULL && genes->n_genes > 0) {
-            int new_total = total_lib_genes + genes->n_genes;
-            if (new_total > lib_cap) {
-                lib_cap = new_total * 2;
-                lib_begins = (int32_t *)realloc(lib_begins, lib_cap * sizeof(int32_t));
-                lib_ends = (int32_t *)realloc(lib_ends, lib_cap * sizeof(int32_t));
-                lib_strands = (int32_t *)realloc(lib_strands, lib_cap * sizeof(int32_t));
-            }
-            int g;
-            for (g = 0; g < genes->n_genes; g++) {
-                lib_begins[total_lib_genes + g] = genes->begin[g];
-                lib_ends[total_lib_genes + g] = genes->end[g];
-                lib_strands[total_lib_genes + g] = genes->strand[g];
-            }
-            total_lib_genes = new_total;
-        }
-        prodigal_genes_free(genes);
-    }
-
-    /* Compare total gene count */
-    if (total_lib_genes != ref_n) {
-        printf("[FAIL] gene count: lib=%d ref=%d\n", total_lib_genes, ref_n);
-        goto cleanup;
-    }
-
-    /* Compare each gene's coordinates */
-    {
-        int i;
-        for (i = 0; i < ref_n; i++) {
-            if (lib_begins[i] != ref_genes[i].begin ||
-                lib_ends[i] != ref_genes[i].end ||
-                lib_strands[i] != ref_genes[i].strand) {
-                printf("[FAIL] gene %d: lib=(%d,%d,%d) ref=(%d,%d,%d)\n", i,
-                       lib_begins[i], lib_ends[i], lib_strands[i],
-                       ref_genes[i].begin, ref_genes[i].end, ref_genes[i].strand);
-                goto cleanup;
-            }
-        }
-    }
-
-    tests_passed++;
-    printf("[PASS]\n");
-
-cleanup:
-    free(lib_begins); free(lib_ends); free(lib_strands);
-    free(ref_genes);
-    free_fasta(seqs, hdrs, lens, nseqs);
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_EQ_INT(prodigal_set_sequence(ctx, seq, 50, NULL), PRODIGAL_OK);
+    ASSERT_EQ_INT(prodigal_find_genes(ctx, &genes, &stats), PRODIGAL_OK);
+    ASSERT_EQ_INT(stats.n_genes, 0);
+    ASSERT_EQ_INT(stats.best_meta_bin, 1);
+    ASSERT_EQ_INT(stats.translation_table, 4);
+    ASSERT_EQ_INT(stats.uses_sd, 0);
+    prodigal_genes_free(genes);
     prodigal_destroy(ctx);
+    TEST_PASS();
 }
 
 /*******************************************************************************
@@ -905,27 +689,21 @@ cleanup:
 static void test_context_reuse(void) {
     TEST_START("context reuse: process multiple sequences sequentially");
 
-    char **seqs, **hdrs;
-    int32_t *lens, nseqs;
-    if (load_fasta("anthus_aco.fas", &seqs, &hdrs, &lens, &nseqs) != 0) {
-        printf("[SKIP] anthus_aco.fas not found\n"); tests_passed++; return;
-    }
-
-    prodigal_config_t config;
-    prodigal_config_init(&config);
-    config.meta_mode = 1;
-    prodigal_ctx_t *ctx = prodigal_create(&config);
+    fasta_t fa;
+    if (!load_anthus(&fa)) return;
+    prodigal_ctx_t *ctx = make_ctx(1);
+    ASSERT_TRUE(ctx != NULL);
 
     int32_t s;
-    for (s = 0; s < nseqs; s++) {
-        prodigal_set_sequence(ctx, seqs[s], lens[s], hdrs[s]);
+    for (s = 0; s < fa.n; s++) {
+        prodigal_set_sequence(ctx, fa.seqs[s], fa.lens[s], fa.headers[s]);
         prodigal_genes_soa_t *genes = NULL;
         int rc = prodigal_find_genes(ctx, &genes, NULL);
         ASSERT_EQ_INT(rc, PRODIGAL_OK);
         prodigal_genes_free(genes);
     }
 
-    free_fasta(seqs, hdrs, lens, nseqs);
+    fasta_free(&fa);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -933,16 +711,10 @@ static void test_context_reuse(void) {
 static void test_error_recovery(void) {
     TEST_START("error recovery: bad input then good input");
 
-    char **seqs, **hdrs;
-    int32_t *lens, nseqs;
-    if (load_fasta("anthus_aco.fas", &seqs, &hdrs, &lens, &nseqs) != 0) {
-        printf("[SKIP] anthus_aco.fas not found\n"); tests_passed++; return;
-    }
-
-    prodigal_config_t config;
-    prodigal_config_init(&config);
-    config.meta_mode = 1;
-    prodigal_ctx_t *ctx = prodigal_create(&config);
+    fasta_t fa;
+    if (!load_anthus(&fa)) return;
+    prodigal_ctx_t *ctx = make_ctx(1);
+    ASSERT_TRUE(ctx != NULL);
 
     /* Bad input */
     int rc = prodigal_set_sequence(ctx, NULL, 0, "bad");
@@ -950,7 +722,7 @@ static void test_error_recovery(void) {
     ASSERT_TRUE(strlen(prodigal_last_error(ctx)) > 0);
 
     /* Good input should still work */
-    rc = prodigal_set_sequence(ctx, seqs[0], lens[0], "good");
+    rc = prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], "good");
     ASSERT_EQ_INT(rc, PRODIGAL_OK);
 
     prodigal_genes_soa_t *genes = NULL;
@@ -959,7 +731,7 @@ static void test_error_recovery(void) {
     ASSERT_TRUE(genes != NULL);
 
     prodigal_genes_free(genes);
-    free_fasta(seqs, hdrs, lens, nseqs);
+    fasta_free(&fa);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -988,11 +760,8 @@ static void test_custom_allocator(void) {
     alloc_count = 0;
     free_count = 0;
 
-    char **seqs, **hdrs;
-    int32_t *lens, nseqs;
-    if (load_fasta("anthus_aco.fas", &seqs, &hdrs, &lens, &nseqs) != 0) {
-        printf("[SKIP] anthus_aco.fas not found\n"); tests_passed++; return;
-    }
+    fasta_t fa;
+    if (!load_anthus(&fa)) return;
 
     prodigal_config_t config;
     prodigal_config_init(&config);
@@ -1003,7 +772,7 @@ static void test_custom_allocator(void) {
     ASSERT_TRUE(ctx != NULL);
     ASSERT_TRUE(alloc_count > 0);
 
-    prodigal_set_sequence(ctx, seqs[0], lens[0], hdrs[0]);
+    prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], fa.headers[0]);
     prodigal_genes_soa_t *genes = NULL;
     prodigal_find_genes(ctx, &genes, NULL);
     ASSERT_TRUE(genes != NULL);
@@ -1012,7 +781,7 @@ static void test_custom_allocator(void) {
     prodigal_destroy(ctx);
     ASSERT_TRUE(free_count > 0);
 
-    free_fasta(seqs, hdrs, lens, nseqs);
+    fasta_free(&fa);
     TEST_PASS();
 }
 
@@ -1032,11 +801,8 @@ static void test_log_callback(void) {
     TEST_START("log callback receives messages during find_genes");
     log_call_count = 0;
 
-    char **seqs, **hdrs;
-    int32_t *lens, nseqs;
-    if (load_fasta("anthus_aco.fas", &seqs, &hdrs, &lens, &nseqs) != 0) {
-        printf("[SKIP] anthus_aco.fas not found\n"); tests_passed++; return;
-    }
+    fasta_t fa;
+    if (!load_anthus(&fa)) return;
 
     prodigal_config_t config;
     prodigal_config_init(&config);
@@ -1044,7 +810,7 @@ static void test_log_callback(void) {
     config.log_callback = test_log_cb;
     prodigal_ctx_t *ctx = prodigal_create(&config);
 
-    prodigal_set_sequence(ctx, seqs[0], lens[0], hdrs[0]);
+    prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], fa.headers[0]);
     prodigal_genes_soa_t *genes = NULL;
     prodigal_find_genes(ctx, &genes, NULL);
 
@@ -1054,7 +820,7 @@ static void test_log_callback(void) {
     ASSERT_TRUE(log_call_count >= 0);  /* may be 0 in meta mode without training */
 
     prodigal_genes_free(genes);
-    free_fasta(seqs, hdrs, lens, nseqs);
+    fasta_free(&fa);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -1067,11 +833,8 @@ static int cancel_immediately(const char *stage, double frac, void *user_data) {
 static void test_progress_cancellation(void) {
     TEST_START("progress callback can cancel metagenomic computation");
 
-    char **seqs, **hdrs;
-    int32_t *lens, nseqs;
-    if (load_fasta("anthus_aco.fas", &seqs, &hdrs, &lens, &nseqs) != 0) {
-        printf("[SKIP] anthus_aco.fas not found\n"); tests_passed++; return;
-    }
+    fasta_t fa;
+    if (!load_anthus(&fa)) return;
 
     prodigal_config_t config;
     prodigal_config_init(&config);
@@ -1079,13 +842,13 @@ static void test_progress_cancellation(void) {
     config.progress_callback = cancel_immediately;
     prodigal_ctx_t *ctx = prodigal_create(&config);
 
-    prodigal_set_sequence(ctx, seqs[0], lens[0], hdrs[0]);
+    prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], fa.headers[0]);
     prodigal_genes_soa_t *genes = NULL;
     int rc = prodigal_find_genes(ctx, &genes, NULL);
     ASSERT_EQ_INT(rc, PRODIGAL_ERR_CANCELLED);
     ASSERT_TRUE(genes == NULL);
 
-    free_fasta(seqs, hdrs, lens, nseqs);
+    fasta_free(&fa);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -1151,17 +914,11 @@ static void test_all_n_sequence(void) {
 static void test_soa_alignment(void) {
     TEST_START("SOA arrays are 16-byte aligned");
 
-    char **seqs, **hdrs;
-    int32_t *lens, nseqs;
-    if (load_fasta("anthus_aco.fas", &seqs, &hdrs, &lens, &nseqs) != 0) {
-        printf("[SKIP] anthus_aco.fas not found\n"); tests_passed++; return;
-    }
-
-    prodigal_config_t config;
-    prodigal_config_init(&config);
-    config.meta_mode = 1;
-    prodigal_ctx_t *ctx = prodigal_create(&config);
-    prodigal_set_sequence(ctx, seqs[0], lens[0], hdrs[0]);
+    fasta_t fa;
+    if (!load_anthus(&fa)) return;
+    prodigal_ctx_t *ctx = make_ctx(1);
+    ASSERT_TRUE(ctx != NULL);
+    prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], fa.headers[0]);
 
     prodigal_genes_soa_t *genes = NULL;
     prodigal_find_genes(ctx, &genes, NULL);
@@ -1179,7 +936,7 @@ static void test_soa_alignment(void) {
     }
 
     prodigal_genes_free(genes);
-    free_fasta(seqs, hdrs, lens, nseqs);
+    fasta_free(&fa);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -1208,6 +965,228 @@ static void test_training_setters(void) {
 
     prodigal_destroy(ctx);
     TEST_PASS();
+}
+
+/*******************************************************************************
+    Phase 14: API ≡ CLI golden tests
+
+    The library's output, in the form of tests/api_gff.h, must equal the
+    CLI's ground truth line for line. A known failure runs again as an
+    "isolated" twin that neutralises only the known defects and must pass
+    (docs/testing.md).
+*******************************************************************************/
+
+typedef struct { char **v; int n, cap; } lines_t;
+
+static void lines_emit(const char *line, void *arg) {
+    lines_t *l = (lines_t *)arg;
+    if (l->n == l->cap) {
+        l->cap = l->cap ? l->cap * 2 : 256;
+        l->v = (char **)xrealloc(l->v, l->cap * sizeof(char *));
+    }
+    l->v[l->n++] = dupstr(line);
+}
+
+static void lines_free(lines_t *l) {
+    int i;
+    for (i = 0; i < l->n; i++) free(l->v[i]);
+    free(l->v);
+    memset(l, 0, sizeof(*l));
+}
+
+/* 1 if want and got are equal; otherwise prints [FAIL] with the number of
+   differing lines and the first difference, and returns 0. With mask_c, a
+   pair where got's motif is "Upstream" (defect C) is compared without the
+   motif. */
+static int lines_equal(const lines_t *want, const lines_t *got, const char *what,
+                       int mask_c) {
+    char w[API_GFF_LINE_MAX], g[API_GFF_LINE_MAX];
+    int i, ndiff = 0, first = -1;
+    if (want->n != got->n) {
+        printf("[FAIL] %s: %d lines, expected %d\n", what, got->n, want->n);
+        return 0;
+    }
+    for (i = 0; i < want->n; i++) {
+        const char *a = want->v[i], *b = got->v[i];
+        if (mask_c && strstr(b, "rbs_motif=Upstream;") != NULL) {
+            api_mask_motif(strcpy(w, a)); a = w;   /* lines are < API_GFF_LINE_MAX */
+            api_mask_motif(strcpy(g, b)); b = g;
+        }
+        if (strcmp(a, b) != 0 && ndiff++ == 0) first = i;
+    }
+    if (ndiff == 0) return 1;
+    printf("[FAIL] %s: %d of %d lines differ; first:\n      want %s\n      got  %s\n",
+           what, ndiff, want->n, want->v[first], got->v[first]);
+    return 0;
+}
+
+/* Single-mode context trained through the API on all of fa (api_train). */
+static prodigal_ctx_t *make_trained_ctx(const fasta_t *fa, int fix_gc) {
+    prodigal_ctx_t *ctx = make_ctx(0);
+    if (ctx != NULL && api_train(ctx, fa, fix_gc) != PRODIGAL_OK) {
+        printf("[FAIL] training: %s\n", prodigal_last_error(ctx));
+        prodigal_destroy(ctx); ctx = NULL;
+    }
+    return ctx;
+}
+
+/* Run all of fa on ctx and compare with the CLI's output in ref. */
+static int golden_run(prodigal_ctx_t *ctx, const fasta_t *fa, const char *ref,
+                      int meta, int mask_c) {
+    lines_t want = {0}, got = {0};
+    int ok = 0;
+    if (api_emit_cli_file(ref, meta, lines_emit, &want) != 0)
+        missing_fixture(ref);
+    else if (api_emit_records(ctx, fa, 0, fa->n, meta, lines_emit, &got) != PRODIGAL_OK)
+        printf("[FAIL] find_genes: %s\n", prodigal_last_error(ctx));
+    else
+        ok = lines_equal(&want, &got, ref, mask_c);
+    lines_free(&want); lines_free(&got);
+    return ok;
+}
+
+/* ARM64 macOS training writes different bytes (docs/testing.md). */
+#if defined(__APPLE__) && defined(__aarch64__)
+static const int train_bytes_match = 0;
+#else
+static const int train_bytes_match = 1;
+#endif
+
+/* Is the model trained on ctx the reference? Byte for byte where training
+   writes the reference's bytes; elsewhere it must predict ref_trained.gff,
+   with motifs masked (C), since this test is about the model. */
+static int model_is_ref(prodigal_ctx_t *ctx, const fasta_t *fa) {
+    void *got = NULL, *ref = NULL;
+    size_t glen = 0, rlen = 0, i = 0;
+    int ok = 0;
+    if (prodigal_export_training(ctx, &got, &glen) != PRODIGAL_OK) {
+        printf("[FAIL] export: %s\n", prodigal_last_error(ctx));
+        return 0;
+    }
+    if (!train_bytes_match) {
+        prodigal_ctx_t *pred = make_model_ctx(got, glen);
+        ok = pred != NULL && golden_run(pred, fa, REF_DIR "ref_trained.gff", 0, 1);
+        prodigal_destroy(pred);
+    } else if ((ref = load_ref_model(&rlen)) != NULL) {
+        while (i < rlen && i < glen && ((char *)ref)[i] == ((char *)got)[i]) i++;
+        ok = glen == rlen && i == rlen;
+        if (!ok) printf("[FAIL] %zu vs %zu bytes, first difference at byte %zu\n", glen, rlen, i);
+    }
+    free(got); free(ref);
+    return ok;
+}
+
+enum { META, API_TRAINED, REF_MODEL };
+
+/* One golden test on anthus_aco.fas: the genes found on a context made from
+   src against the CLI's output in ref or, when ref is NULL, the model
+   trained on it against ref_train.bin. isolated neutralises defects A and
+   C. */
+static void golden(int src, const char *ref, int isolated) {
+    fasta_t fa;
+    prodigal_ctx_t *ctx = NULL;
+    void *blob = NULL;
+    size_t len;
+    if (!load_anthus(&fa)) return;
+    if (src == META) ctx = make_ctx(1);
+    else if (src == API_TRAINED) ctx = make_trained_ctx(&fa, isolated);
+    else if ((blob = load_ref_model(&len)) != NULL) ctx = make_model_ctx(blob, len);
+    if (ctx != NULL && (ref != NULL ? golden_run(ctx, &fa, ref, src == META, isolated)
+                                    : model_is_ref(ctx, &fa)))
+        TEST_PASS();
+    prodigal_destroy(ctx);
+    free(blob);
+    fasta_free(&fa);
+}
+
+/* Settle a test that is known to fail, given tests_passed and
+   fixtures_missing from before it ran; reason names the defect and the plan
+   phase that fixes it. While it fails it counts as passed; once it passes
+   the run fails, so that the marker gets removed. */
+static void settle_xfail(int passed, int missing, const char *reason) {
+    if (fixtures_missing > missing) return;
+    if (tests_passed > passed) {
+        tests_passed--;
+        printf("    ^ XPASS: passes now; remove its XFAIL marker (%s)\n", reason);
+    } else {
+        tests_passed++;
+        tests_xfailed++;
+        printf("    ^ XFAIL, known: %s\n", reason);
+    }
+}
+
+static void test_golden(void) {
+    static const struct {
+        const char *name;
+        int src;
+        const char *ref, *xfail;
+    } t[] = {
+        { "meta mode = ref_meta.gff, every field", META, REF_DIR "ref_meta.gff", NULL },
+        { "API training = ref_train.bin", API_TRAINED, NULL,
+          "A, prodigal_train never sets tinf.gc (P1)" },
+        { "single mode, API-trained = ref_single.gff", API_TRAINED,
+          REF_DIR "ref_single.gff",
+          "A, training GC; C, non-SD motifs read \"Upstream\" (P1)" },
+        { "single mode from ref_train.bin = ref_trained.gff", REF_MODEL,
+          REF_DIR "ref_trained.gff", "C, non-SD motifs read \"Upstream\" (P1)" },
+    };
+    char name[128];
+    size_t i;
+    for (i = 0; i < sizeof(t) / sizeof(t[0]); i++) {
+        int passed = tests_passed, missing = fixtures_missing;
+        snprintf(name, sizeof(name), "golden: %s", t[i].name);
+        TEST_START(name);
+        golden(t[i].src, t[i].ref, 0);
+        if (t[i].xfail == NULL) continue;
+        settle_xfail(passed, missing, t[i].xfail);
+        snprintf(name, sizeof(name), "golden: %s, isolated", t[i].name);
+        TEST_START(name);
+        golden(t[i].src, t[i].ref, 1);
+    }
+}
+
+/* A contig's output must not depend on what the context did before: running
+   every record twice on one context, and each record on a fresh context,
+   must both give the first run's output. */
+static void independence(int meta) {
+    fasta_t fa;
+    lines_t first = {0}, again = {0}, solo = {0};
+    prodigal_ctx_t *ctx = NULL;
+    void *blob = NULL;
+    size_t len = 0;
+    int32_t k;
+    int rc;
+    if (!load_anthus(&fa)) return;
+    if (meta || (blob = load_ref_model(&len)) != NULL)
+        ctx = meta ? make_ctx(1) : make_model_ctx(blob, len);
+    if (ctx != NULL) {
+        rc = api_emit_records(ctx, &fa, 0, fa.n, meta, lines_emit, &first);
+        if (rc == PRODIGAL_OK) rc = api_emit_records(ctx, &fa, 0, fa.n, meta, lines_emit, &again);
+        for (k = 0; rc == PRODIGAL_OK && k < fa.n; k++) {
+            prodigal_ctx_t *one = meta ? make_ctx(1) : make_model_ctx(blob, len);
+            rc = one ? api_emit_records(one, &fa, k, k + 1, meta, lines_emit, &solo)
+                     : PRODIGAL_ERR_NOMEM;
+            prodigal_destroy(one);
+        }
+        if (rc != PRODIGAL_OK) printf("[FAIL] find_genes failed (%d)\n", rc);
+        else if (lines_equal(&first, &again, "second pass on the same context", 0) &&
+                 lines_equal(&first, &solo, "each record on a fresh context", 0))
+            TEST_PASS();
+    }
+    lines_free(&first); lines_free(&again); lines_free(&solo);
+    prodigal_destroy(ctx);
+    free(blob);
+    fasta_free(&fa);
+}
+
+static void test_independence_meta(void) {
+    TEST_START("repeat and order independence: meta mode");
+    independence(1);
+}
+
+static void test_independence_single(void) {
+    TEST_START("repeat and order independence: single mode from model");
+    independence(0);
 }
 
 /*******************************************************************************
@@ -1266,7 +1245,7 @@ int main(void) {
 
     printf("\nPhase 5: Metagenomic Mode\n");
     test_meta_find_genes();
-    test_meta_matches_reference();
+    test_meta_no_path_bin();
 
     printf("\nPhase 7: Context Reuse and Error Recovery\n");
     test_context_reuse();
@@ -1289,6 +1268,12 @@ int main(void) {
     printf("\nPhase 13: Training Setters\n");
     test_training_setters();
 
-    printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
+    printf("\nPhase 14: Golden (API = CLI ground truth)\n");
+    test_golden();
+    test_independence_meta();
+    test_independence_single();
+
+    printf("\n=== Results: %d/%d passed, %d of them known failures (XFAIL) ===\n",
+           tests_passed, tests_run, tests_xfailed);
     return (tests_passed == tests_run) ? 0 : 1;
 }
