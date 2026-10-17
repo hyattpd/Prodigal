@@ -44,6 +44,12 @@ struct _motif {
   double score;        /* Score for the motif */
 };
 
+/* RBS motif and spacer text, as reported (pdg_rbs_text) */
+struct _rbs_text {
+  char motif[16];      /* Longest: "AGGAG(G)/GGAGG" */
+  char spacer[8];      /* Longest: "13-15bp" */
+};
+
 struct _node {
   int type;            /* 0=ATG, 1=GTG, 2=TTG/Other, 3=Stop */
   int edge;            /* Runs off the edge; 0 = normal, 1 = edge node */
@@ -117,6 +123,8 @@ void update_motif_counts(double [4][4][4096], double *, unsigned char *,
 
 void write_start_file(FILE *, struct _node *, int, struct _training *, int,
                       int, int, char *, char *, char *);
+void pdg_rbs_text(struct _rbs_text *, const struct _node *,
+                  const struct _training *);
 
 int cross_mask(int, int, mask *, int);
 

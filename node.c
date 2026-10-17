@@ -1401,6 +1401,50 @@ double intergenic_mod(struct _node *n1, struct _node *n2, struct _training
 }
 
 /*******************************************************************************
+  The RBS motif and spacer reported for a start node (GFF attributes, -s).
+*******************************************************************************/
+
+/* The text for each SD motif (node.rbs[]) */
+static const struct { const char *motif, *spacer; } sd_text[28] = {
+  { "None", "None" }, { "GGA/GAG/AGG", "3-4bp" }, { "3Base/5BMM", "13-15bp" },
+  { "4Base/6BMM", "13-15bp" }, { "AGxAG", "11-12bp" }, { "AGxAG", "3-4bp" },
+  { "GGA/GAG/AGG", "11-12bp" }, { "GGxGG", "11-12bp" }, { "GGxGG", "3-4bp" },
+  { "AGxAG", "5-10bp" }, { "AGGAG(G)/GGAGG", "13-15bp" },
+  { "AGGA/GGAG/GAGG", "3-4bp" }, { "AGGA/GGAG/GAGG", "11-12bp" },
+  { "GGA/GAG/AGG", "5-10bp" }, { "GGxGG", "5-10bp" }, { "AGGA", "5-10bp" },
+  { "GGAG/GAGG", "5-10bp" }, { "AGxAGG/AGGxGG", "11-12bp" },
+  { "AGxAGG/AGGxGG", "3-4bp" }, { "AGxAGG/AGGxGG", "5-10bp" },
+  { "AGGAG/GGAGG", "11-12bp" }, { "AGGAG", "3-4bp" }, { "AGGAG", "5-10bp" },
+  { "GGAGG", "3-4bp" }, { "GGAGG", "5-10bp" }, { "AGGAGG", "11-12bp" },
+  { "AGGAGG", "3-4bp" }, { "AGGAGG", "5-10bp" }
+};
+
+/* The better SD motif in SD mode; otherwise an SD motif that outscores the
+   node's upstream motif, that motif, or none (SD entry 0). */
+void pdg_rbs_text(struct _rbs_text *out, const struct _node *n,
+                  const struct _training *tinf) {
+  double rbs1 = tinf->rbs_wt[n->rbs[0]]*tinf->st_wt;
+  double rbs2 = tinf->rbs_wt[n->rbs[1]]*tinf->st_wt;
+  int sd = -1;
+
+  if(tinf->uses_sd == 1) sd = (rbs1 > rbs2) ? n->rbs[0] : n->rbs[1];
+  else if(tinf->no_mot > -0.5 && rbs1 > rbs2 && rbs1 > n->mot.score *
+          tinf->st_wt) sd = n->rbs[0];
+  else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && rbs2 > n->mot.score *
+          tinf->st_wt) sd = n->rbs[1];
+  else if(n->mot.len == 0) sd = 0;
+
+  if(sd >= 0) {
+    strcpy(out->motif, sd_text[sd].motif);
+    strcpy(out->spacer, sd_text[sd].spacer);
+  }
+  else {
+    mer_text(out->motif, n->mot.len, n->mot.ndx);
+    snprintf(out->spacer, sizeof(out->spacer), "%dbp", n->mot.spacer);
+  }
+}
+
+/*******************************************************************************
   Write detailed scoring information about every single possible gene.  Only
   done at the user's request.
 *******************************************************************************/
@@ -1408,8 +1452,7 @@ void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
                       *tinf, int sctr, int slen, int is_meta, char *mdesc, 
                       char *version, char *header) {
   int i, prev_stop = -1, prev_strand = 0, st_type;
-  double rbs1, rbs2;
-  char sd_string[28][100], sd_spacer[28][20], qt[10];
+  struct _rbs_text rbs;
   char type_string[4][5] = { "ATG", "GTG", "TTG" , "Edge" };
   char seq_data[MAX_LINE*2], run_data[MAX_LINE];
   char buffer[MAX_LINE] = {0};
@@ -1431,62 +1474,6 @@ void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
           tinf->gc*100.0, tinf->trans_table, tinf->uses_sd);
   strcat(run_data, buffer);
  
-  strcpy(sd_string[0], "None");
-  strcpy(sd_spacer[0], "None");
-  strcpy(sd_string[1], "GGA/GAG/AGG");
-  strcpy(sd_spacer[1], "3-4bp");
-  strcpy(sd_string[2], "3Base/5BMM");
-  strcpy(sd_spacer[2], "13-15bp");
-  strcpy(sd_string[3], "4Base/6BMM");
-  strcpy(sd_spacer[3], "13-15bp");
-  strcpy(sd_string[4], "AGxAG");
-  strcpy(sd_spacer[4], "11-12bp");
-  strcpy(sd_string[5], "AGxAG");
-  strcpy(sd_spacer[5], "3-4bp");
-  strcpy(sd_string[6], "GGA/GAG/AGG");
-  strcpy(sd_spacer[6], "11-12bp");
-  strcpy(sd_string[7], "GGxGG");
-  strcpy(sd_spacer[7], "11-12bp");
-  strcpy(sd_string[8], "GGxGG");
-  strcpy(sd_spacer[8], "3-4bp");
-  strcpy(sd_string[9], "AGxAG");
-  strcpy(sd_spacer[9], "5-10bp");
-  strcpy(sd_string[10], "AGGAG(G)/GGAGG");
-  strcpy(sd_spacer[10], "13-15bp");
-  strcpy(sd_string[11], "AGGA/GGAG/GAGG");
-  strcpy(sd_spacer[11], "3-4bp");
-  strcpy(sd_string[12], "AGGA/GGAG/GAGG");
-  strcpy(sd_spacer[12], "11-12bp");
-  strcpy(sd_string[13], "GGA/GAG/AGG");
-  strcpy(sd_spacer[13], "5-10bp");
-  strcpy(sd_string[14], "GGxGG");
-  strcpy(sd_spacer[14], "5-10bp");
-  strcpy(sd_string[15], "AGGA");
-  strcpy(sd_spacer[15], "5-10bp");
-  strcpy(sd_string[16], "GGAG/GAGG");
-  strcpy(sd_spacer[16], "5-10bp");
-  strcpy(sd_string[17], "AGxAGG/AGGxGG");
-  strcpy(sd_spacer[17], "11-12bp");
-  strcpy(sd_string[18], "AGxAGG/AGGxGG");
-  strcpy(sd_spacer[18], "3-4bp");
-  strcpy(sd_string[19], "AGxAGG/AGGxGG");
-  strcpy(sd_spacer[19], "5-10bp");
-  strcpy(sd_string[20], "AGGAG/GGAGG");
-  strcpy(sd_spacer[20], "11-12bp");
-  strcpy(sd_string[21], "AGGAG");
-  strcpy(sd_spacer[21], "3-4bp");
-  strcpy(sd_string[22], "AGGAG");
-  strcpy(sd_spacer[22], "5-10bp");
-  strcpy(sd_string[23], "GGAGG");
-  strcpy(sd_spacer[23], "3-4bp");
-  strcpy(sd_string[24], "GGAGG");
-  strcpy(sd_spacer[24], "5-10bp");
-  strcpy(sd_string[25], "AGGAGG");
-  strcpy(sd_spacer[25], "11-12bp");
-  strcpy(sd_string[26], "AGGAGG");
-  strcpy(sd_spacer[26], "3-4bp");
-  strcpy(sd_string[27], "AGGAGG");
-  strcpy(sd_spacer[27], "5-10bp");
 
   qsort(nod, nn, sizeof(struct _node), &stopcmp_nodes);
 
@@ -1512,37 +1499,8 @@ void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
       fprintf(fh, "%d\t%d\t-\t%.2f\t%.2f\t%.2f\t%s\t", nod[i].stop_val-1,
               nod[i].ndx+1, nod[i].cscore+nod[i].sscore, nod[i].cscore,
               nod[i].sscore, type_string[st_type]);
-    rbs1 = tinf->rbs_wt[nod[i].rbs[0]]*tinf->st_wt;
-    rbs2 = tinf->rbs_wt[nod[i].rbs[1]]*tinf->st_wt;
-    if(tinf->uses_sd == 1) {
-      if(rbs1 > rbs2) {
-        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[0]], 
-                sd_spacer[nod[i].rbs[0]], nod[i].rscore);
-      }
-      else {
-        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[1]], 
-                sd_spacer[nod[i].rbs[1]], nod[i].rscore);
-      }
-    }
-    else {
-      mer_text(qt, nod[i].mot.len, nod[i].mot.ndx);
-      if(tinf->no_mot > -0.5 && rbs1 > rbs2 && rbs1 > nod[i].mot.score *
-         tinf->st_wt) {
-        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[0]], 
-                sd_spacer[nod[i].rbs[0]], nod[i].rscore);
-      }
-      else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && rbs2 > nod[i].mot.score *
-              tinf->st_wt) {
-        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[1]], 
-                sd_spacer[nod[i].rbs[1]], nod[i].rscore);
-      }
-      else {
-        if(nod[i].mot.len == 0) fprintf(fh, "None\tNone\t%.2f\t", 
-                                      nod[i].rscore);
-        else fprintf(fh, "%s\t%dbp\t%.2f\t", qt, nod[i].mot.spacer, 
-                     nod[i].rscore);
-      }
-    }
+    pdg_rbs_text(&rbs, &nod[i], tinf);
+    fprintf(fh, "%s\t%s\t%.2f\t", rbs.motif, rbs.spacer, nod[i].rscore);
     fprintf(fh, "%.2f\t%.2f\t%.3f\n", nod[i].uscore, nod[i].tscore, nod[i].gc_cont);
   }
   fprintf(fh, "\n");

@@ -103,19 +103,18 @@ references: meta mode with `ref_meta.gff`; training through the API with
 `ref_train.bin` byte for byte, and its predictions with `ref_single.gff`;
 prediction from `ref_train.bin` with `ref_trained.gff`. Two more tests check
 that a contig's output doesn't depend on what the context did before (a
-second pass, and each record on a fresh context). Anthus contigs carry about
-one gene each, so the meta golden test cannot see the recovery-pass scores
-(B); `make compare` does.
+second pass, each record on a fresh context, and `prodigal_find_genes` twice
+per sequence). Anthus contigs carry about one gene each, so the meta golden
+test sees little of metagenomic scoring; `make compare` covers more.
 
 **Known failures.** A golden test whose row in `test_golden`'s table names a
 defect and the phase that fixes it counts as passed while it fails, and fails
 the run once it passes, so that the marker gets removed. It also runs as an
 *isolated* twin that neutralises only the known defects and must pass, so a
 known failure cannot hide a new regression: A by setting the training GC by
-hand (with it, API training writes `ref_train.bin` byte for byte), C by
-masking the motif wherever the API reports `"Upstream"`. On ARM64 macOS,
-whose training writes different bytes, the training test checks the model by
-its predictions instead (`ref_trained.gff`, motifs masked).
+hand (with it, API training writes `ref_train.bin` byte for byte). On ARM64
+macOS, whose training writes different bytes, the training test checks the
+model by its predictions instead (`ref_trained.gff`).
 
 Under WASM (CI) the tests need `-sNODERAWFS=1` to see the fixtures and a
 stack of at least about 1.5 MB (`-sSTACK_SIZE=8MB`): `train_starts_nonsd`
@@ -127,13 +126,12 @@ alone uses 1.31 MB of stack, against WASM's 64 KiB default.
 only) with the same options over the corpus and a flag matrix, in meta mode,
 single mode, and single mode from a CLI-written training file, and diffs the
 two in the form of `tests/api_gff.h`. `ECOLI` adds E. coli and its fragments.
-The cases in the script's `expect_diff` differ today because of A, B and C
-and must keep differing, so the list stays current; P1 empties it. The
-single-mode and model cases also run as `-iso` twins (`api_dump --isolated`:
-the training GC set by hand and every motif masked), which must match today,
-so the flags stay checked while their plain cases are listed. For any
-other input, `tests/api_dump -p MODE [FLAGS] FASTA` and
-`tests/api_dump --from-cli -p MODE cli.gff` print the two sides.
+The cases in the script's `expect_diff` (single mode) differ today because
+of A and must keep differing, so the list stays current; P1 empties it. They
+also run as `single-iso` twins (`api_dump --isolated`: the training GC set by
+hand), which must match today, so the flags stay checked while their plain
+cases are listed. For any other input, `tests/api_dump -p MODE [FLAGS]
+FASTA` and `tests/api_dump --from-cli -p MODE cli.gff` print the two sides.
 
 ## Performance baselines
 

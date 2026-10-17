@@ -33,6 +33,19 @@ struct _gene {
   int end;                 /* Right end of the gene */
   int start_ndx;           /* Index to the start node in the nodes file */
   int stop_ndx;            /* Index to the stop node in the nodes file */
+
+  /* The gene as record_gene_data reports it, from the nodes that chose it.
+     The library returns these; the CLI prints the two strings below, which
+     are formatted from them. */
+  int strand;              /* 1 = forward, -1 = reverse */
+  int partial_left;        /* Runs off the left edge */
+  int partial_right;       /* Runs off the right edge */
+  int start_type;          /* 0 = ATG, 1 = GTG, 2 = TTG, 3 = Edge */
+  double cscore, sscore, rscore, uscore, tscore;
+  double confidence;
+  double gc_cont;
+  struct _rbs_text rbs;
+
   char gene_data[500];     /* String containing gene information */
   char score_data[500];    /* String containing scoring information */
 };

@@ -22,6 +22,17 @@ sequence could change the second result, because the nodes of the first
 call were not cleared (a gene could turn into an edge gene).
 * Library: prodigal_find_genes without a sequence set is now an error in
 metagenomic mode too (it returned no genes).
+* Library, metagenomic mode: the scores and confidence are now those of the
+bin that called each gene, as in the CLI's GFF attributes. They came from
+the recovery pass, without the intergenic adjustment (sscore differed for
+2,802 of the 4,319 genes of E. coli K-12, conf for 468).
+* Library: an upstream (non-SD) RBS motif is reported as the motif, as the
+CLI prints it (e.g. "TAA"), instead of "Upstream". The motif and spacer
+strings now live in the output and are valid until prodigal_genes_free or
+prodigal_genes_aos_free (they were static strings).
+* Library, metagenomic mode: prodigal_find_genes no longer copies the best
+bin's model (558 KB) into the context for every contig, so
+prodigal_export_training after it no longer returns that bin's model.
 * CI now covers v2.6.4-miint: every CLI output type in both modes against
 the upstream ground truth on Linux (x86-64, ARM64), macOS and Windows, and
 the CLI against an upstream c1e2d36 build across a flag matrix and corpus.

@@ -623,6 +623,9 @@ static void test_aos_matches_soa(void) {
             ASSERT_EQ_INT(soa->strand[i], aos->genes[i].strand);
             ASSERT_TRUE(soa->cscore[i] == aos->genes[i].cscore);
             ASSERT_TRUE(soa->confidence[i] == aos->genes[i].confidence);
+            /* The AOS owns its strings: its SOA is freed by now */
+            ASSERT_TRUE(strcmp(soa->rbs_motif[i], aos->genes[i].rbs_motif) == 0);
+            ASSERT_TRUE(strcmp(soa->rbs_spacer[i], aos->genes[i].rbs_spacer) == 0);
         }
     }
 
@@ -1049,25 +1052,15 @@ static void lines_free(lines_t *l) {
 }
 
 /* 1 if want and got are equal; otherwise prints [FAIL] with the number of
-   differing lines and the first difference, and returns 0. With mask_c, a
-   pair where got's motif is "Upstream" (defect C) is compared without the
-   motif. */
-static int lines_equal(const lines_t *want, const lines_t *got, const char *what,
-                       int mask_c) {
-    char w[API_GFF_LINE_MAX], g[API_GFF_LINE_MAX];
+   differing lines and the first difference, and returns 0. */
+static int lines_equal(const lines_t *want, const lines_t *got, const char *what) {
     int i, ndiff = 0, first = -1;
     if (want->n != got->n) {
         printf("[FAIL] %s: %d lines, expected %d\n", what, got->n, want->n);
         return 0;
     }
-    for (i = 0; i < want->n; i++) {
-        const char *a = want->v[i], *b = got->v[i];
-        if (mask_c && strstr(b, "rbs_motif=Upstream;") != NULL) {
-            api_mask_motif(strcpy(w, a)); a = w;   /* lines are < API_GFF_LINE_MAX */
-            api_mask_motif(strcpy(g, b)); b = g;
-        }
-        if (strcmp(a, b) != 0 && ndiff++ == 0) first = i;
-    }
+    for (i = 0; i < want->n; i++)
+        if (strcmp(want->v[i], got->v[i]) != 0 && ndiff++ == 0) first = i;
     if (ndiff == 0) return 1;
     printf("[FAIL] %s: %d of %d lines differ; first:\n      want %s\n      got  %s\n",
            what, ndiff, want->n, want->v[first], got->v[first]);
@@ -1086,7 +1079,7 @@ static prodigal_ctx_t *make_trained_ctx(const fasta_t *fa, int fix_gc) {
 
 /* Run all of fa on ctx and compare with the CLI's output in ref. */
 static int golden_run(prodigal_ctx_t *ctx, const fasta_t *fa, const char *ref,
-                      int meta, int mask_c) {
+                      int meta) {
     lines_t want = {0}, got = {0};
     int ok = 0;
     if (api_emit_cli_file(ref, meta, lines_emit, &want) != 0)
@@ -1094,7 +1087,7 @@ static int golden_run(prodigal_ctx_t *ctx, const fasta_t *fa, const char *ref,
     else if (api_emit_records(ctx, fa, 0, fa->n, meta, lines_emit, &got) != PRODIGAL_OK)
         printf("[FAIL] find_genes: %s\n", prodigal_last_error(ctx));
     else
-        ok = lines_equal(&want, &got, ref, mask_c);
+        ok = lines_equal(&want, &got, ref);
     lines_free(&want); lines_free(&got);
     return ok;
 }
@@ -1107,8 +1100,7 @@ static const int train_bytes_match = 1;
 #endif
 
 /* Is the model trained on ctx the reference? Byte for byte where training
-   writes the reference's bytes; elsewhere it must predict ref_trained.gff,
-   with motifs masked (C), since this test is about the model. */
+   writes the reference's bytes; elsewhere it must predict ref_trained.gff. */
 static int model_is_ref(prodigal_ctx_t *ctx, const fasta_t *fa) {
     void *got = NULL, *ref = NULL;
     size_t glen = 0, rlen = 0, i = 0;
@@ -1119,7 +1111,7 @@ static int model_is_ref(prodigal_ctx_t *ctx, const fasta_t *fa) {
     }
     if (!train_bytes_match) {
         prodigal_ctx_t *pred = make_model_ctx(got, glen);
-        ok = pred != NULL && golden_run(pred, fa, REF_DIR "ref_trained.gff", 0, 1);
+        ok = pred != NULL && golden_run(pred, fa, REF_DIR "ref_trained.gff", 0);
         prodigal_destroy(pred);
     } else if ((ref = load_ref_model(&rlen)) != NULL) {
         while (i < rlen && i < glen && ((char *)ref)[i] == ((char *)got)[i]) i++;
@@ -1134,8 +1126,7 @@ enum { META, API_TRAINED, REF_MODEL };
 
 /* One golden test on anthus_aco.fas: the genes found on a context made from
    src against the CLI's output in ref or, when ref is NULL, the model
-   trained on it against ref_train.bin. isolated neutralises defects A and
-   C. */
+   trained on it against ref_train.bin. isolated neutralises defect A. */
 static void golden(int src, const char *ref, int isolated) {
     fasta_t fa;
     prodigal_ctx_t *ctx = NULL;
@@ -1145,7 +1136,7 @@ static void golden(int src, const char *ref, int isolated) {
     if (src == META) ctx = make_ctx(1);
     else if (src == API_TRAINED) ctx = make_trained_ctx(&fa, isolated);
     else if ((blob = load_ref_model(&len)) != NULL) ctx = make_model_ctx(blob, len);
-    if (ctx != NULL && (ref != NULL ? golden_run(ctx, &fa, ref, src == META, isolated)
+    if (ctx != NULL && (ref != NULL ? golden_run(ctx, &fa, ref, src == META)
                                     : model_is_ref(ctx, &fa)))
         TEST_PASS();
     prodigal_destroy(ctx);
@@ -1179,10 +1170,9 @@ static void test_golden(void) {
         { "API training = ref_train.bin", API_TRAINED, NULL,
           "A, prodigal_train never sets tinf.gc (P1)" },
         { "single mode, API-trained = ref_single.gff", API_TRAINED,
-          REF_DIR "ref_single.gff",
-          "A, training GC; C, non-SD motifs read \"Upstream\" (P1)" },
+          REF_DIR "ref_single.gff", "A, prodigal_train never sets tinf.gc (P1)" },
         { "single mode from ref_train.bin = ref_trained.gff", REF_MODEL,
-          REF_DIR "ref_trained.gff", "C, non-SD motifs read \"Upstream\" (P1)" },
+          REF_DIR "ref_trained.gff", NULL },
     };
     char name[128];
     size_t i;
@@ -1231,9 +1221,9 @@ static void independence(int meta) {
             if (rc == PRODIGAL_OK) rc = api_emit_found(ctx, &fa, k, meta, lines_emit, &twice);
         }
         if (rc != PRODIGAL_OK) printf("[FAIL] find_genes failed (%d)\n", rc);
-        else if (lines_equal(&first, &again, "second pass on the same context", 0) &&
-                 lines_equal(&first, &solo, "each record on a fresh context", 0) &&
-                 lines_equal(&first, &twice, "find_genes twice per sequence", 0))
+        else if (lines_equal(&first, &again, "second pass on the same context") &&
+                 lines_equal(&first, &solo, "each record on a fresh context") &&
+                 lines_equal(&first, &twice, "find_genes twice per sequence"))
             TEST_PASS();
     }
     lines_free(&first); lines_free(&again); lines_free(&solo); lines_free(&twice);

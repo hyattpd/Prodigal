@@ -6,13 +6,13 @@
 
     usage: api_dump [--isolated] [-p single|meta] [-c] [-m] [-n] [-g TABLE]
                     [-t TRAINING] FASTA
-           api_dump --from-cli [--isolated] [-p single|meta] GFF
+           api_dump --from-cli [-p single|meta] GFF
 
     The options mean what they mean to the CLI. Single mode without -t trains
-    on all records, as the CLI does. --from-cli instead translates a CLI GFF
-    file into the same form. --isolated neutralises the known defects A and
-    C (docs/testing.md): training sets the GC by hand, and every motif prints
-    as "?". Only the public API (prodigal.h) is used.
+    on all records, as the CLI does; --isolated sets the training GC by hand
+    first, which neutralises the known defect A (docs/testing.md). --from-cli
+    instead translates a CLI GFF file into the same form. Only the public API
+    (prodigal.h) is used.
 *******************************************************************************/
 
 #include <stdio.h>
@@ -30,12 +30,7 @@ static void die(const char *what) {
     exit(1);
 }
 
-/* arg is non-NULL under --isolated. */
-static void put_line(const char *line, void *arg) {
-    char buf[API_GFF_LINE_MAX];
-    if (arg != NULL) { api_mask_motif(strcpy(buf, line)); line = buf; }
-    puts(line);
-}
+static void put_line(const char *line, void *arg) { (void)arg; puts(line); }
 
 static void load_model(const char *path) {
     size_t n;
@@ -69,8 +64,7 @@ int main(int argc, char **argv) {
     }
     if (in == NULL) { fprintf(stderr, "api_dump: no input\n"); return 2; }
     if (cli) {
-        if (api_emit_cli_file(in, meta, put_line, isolated ? &isolated : NULL) != 0)
-            die("cannot open GFF");
+        if (api_emit_cli_file(in, meta, put_line, NULL) != 0) die("cannot open GFF");
         return 0;
     }
 
@@ -82,8 +76,7 @@ int main(int argc, char **argv) {
         else if (api_train(ctx, &fa, isolated) != PRODIGAL_OK) die("train");
     }
 
-    if (api_emit_records(ctx, &fa, 0, fa.n, meta, put_line,
-                         isolated ? &isolated : NULL) != PRODIGAL_OK)
+    if (api_emit_records(ctx, &fa, 0, fa.n, meta, put_line, NULL) != PRODIGAL_OK)
         die("find_genes");
     fasta_free(&fa);
     prodigal_destroy(ctx);

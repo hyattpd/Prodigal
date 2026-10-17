@@ -88,14 +88,6 @@ static const char *api_cli_field(const char *line, const char *key) {
     return p ? p + strlen(key) : NULL;
 }
 
-/* Replace the value of rbs_motif= in line, if any, with "?". */
-static void api_mask_motif(char *line) {
-    char *p = (char *)api_cli_field(line, "rbs_motif="), *e;
-    if (p == NULL || (e = strchr(p, ';')) == NULL) return;
-    *p = '?';
-    memmove(p + 1, e, strlen(e) + 1);
-}
-
 /* Translate one line of a CLI GFF file into the form above; line is split in
    place. Returns 0 and fills out for a model or CDS line, -1 for anything
    else. */

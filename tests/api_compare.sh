@@ -5,8 +5,8 @@
 # API) with the same options and compares their output in the form of
 # tests/api_gff.h. Single mode is checked both training on the input, as the
 # CLI does, and (the "model" cases) predicting from a CLI-written training
-# file; the "-iso" cases also run with api_dump --isolated, which neutralises
-# the known defects A and C.
+# file; the "single-iso" cases run api_dump --isolated, which neutralises the
+# known defect A.
 #
 # Usage: tests/api_compare.sh
 # Environment:
@@ -24,8 +24,8 @@ D=$ROOT/tests/api_dump
 
 # Worker mode: one case. Writes RESULT (one line) into the case directory.
 # Arguments: CLI, case directory, input, mode (single, meta, or model: single
-# mode from a training file the CLI writes first; "-iso" appended adds
-# --isolated), then options for both.
+# mode from a training file the CLI writes first; "-iso" appended runs
+# api_dump --isolated), then options for both.
 if [ "${1:-}" = --case ]; then
   P=$2 dir=$3 in=$4 mode=$5 iso=; shift 5
   mkdir -p "$dir" && cd "$dir" || exit 1
@@ -41,7 +41,7 @@ if [ "${1:-}" = --case ]; then
     echo "FAIL $name: CLI failed: $(head -1 cli.err)" >RESULT
   elif ! "$D" $iso -p "$mode" "$@" "$in" >api.txt 2>api.err; then
     echo "FAIL $name: API failed: $(head -1 api.err)" >RESULT
-  elif ! "$D" --from-cli $iso -p "$mode" cli.gff >cli.txt 2>>api.err; then
+  elif ! "$D" --from-cli -p "$mode" cli.gff >cli.txt 2>>api.err; then
     echo "FAIL $name: cannot translate the CLI's GFF: $(tail -1 api.err)" >RESULT
   elif ! grep -q '^#' cli.txt; then
     echo "FAIL $name: no contigs in the CLI's GFF" >RESULT
@@ -65,14 +65,11 @@ mkdir -p "$O" || exit 2
 rm -rf "$O/cases" "$O/jobs" "$O/cases.list"
 corpus_setup "$O/corpus" || exit 2
 
-# Cases that differ today because of the library defects A-C
-# (docs/testing.md); P1 fixes them and empties the list. A listed case must
+# Cases that differ today because of the library defect A
+# (docs/testing.md); P1 fixes it and empties the list. A listed case must
 # keep differing, so the list stays current; every other case must match.
-# Single mode trains wrongly (A); meta reports recovery-pass scores (B,
-# anthus happens to agree); prediction from a model misreports non-SD motifs
-# (C, so E. coli agrees). The -iso cases are never listed.
-expect_diff=("*.single.*" "synthetic.meta.*" "big.meta.*" "ecoli.meta.*" "ecoli2k.meta.*"
-             "anthus.model" "synthetic.model" "big.model")
+# Single mode trains wrongly (A). The -iso cases are never listed.
+expect_diff=("*.single.*")
 
 add() {  # add <case> <input> <mode> <options...>
   local name=$1; shift
@@ -90,7 +87,6 @@ for entry in "${corpus[@]}"; do
     done
   done
   add "$label.model" "$in" model
-  add "$label.model-iso" "$in" model-iso
 done
 run_jobs "$O/jobs" "$SELF" --case
 

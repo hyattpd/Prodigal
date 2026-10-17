@@ -133,9 +133,12 @@ add_nodes → qsort → score_nodes(is_meta=0) → record_overlapping_starts(1)
   `MAX_GENES` (30,000) per contig. Genes beyond that are silently dropped by
   the library; the CLI warns.
 - `tweak_final_starts` may move a gene's start to a nearby alternative.
-- `record_gene_data` formats the GFF attribute strings (`gene_data` and
-  `score_data`, 500 bytes each, which is why `struct _gene` is 1,016 bytes)
-  **from the node scores at that moment**.
+- `record_gene_data` captures what is reported for each gene **from the
+  node scores at that moment** into `struct _gene`: strand, partial flags,
+  start type, the scores, confidence, `gc_cont`, and the RBS motif and
+  spacer text. The library's output (`extract_soa`) is copied from those
+  fields; the CLI prints the GFF attribute strings (`gene_data` and
+  `score_data`, 500 bytes each) that are formatted from them.
 
 ### Metagenomic mode (per contig)
 
@@ -154,11 +157,12 @@ add_nodes → qsort → score_nodes(is_meta=0) → record_overlapping_starts(1)
      `add_genes`, `tweak_final_starts`, `record_gene_data`. The genes and
      their attribute strings for the best bin are captured **inside the
      loop**.
-3. **Recovery pass:** rebuild and re-score the nodes with the best bin's
-   model, *without* `dprog` / `eliminate_bad_genes`. The CLI uses these
-   nodes for the `-s` start file, the GFF column-6 score, and the strand and
-   edge flags in `-a`/`-d`. Their `sscore` **lacks** the `intergenic_mod`
-   adjustment.
+3. **Recovery pass** (the CLI only, `pdg_score_nodes` after `pdg_meta`):
+   rebuild and re-score the nodes with the best bin's model, *without*
+   `dprog` / `eliminate_bad_genes`. The CLI uses these nodes for the `-s`
+   start file, the GFF column-6 score, and the strand and edge flags in
+   `-a`/`-d`. Their `sscore` **lacks** the `intergenic_mod` adjustment. The
+   library reads everything from `struct _gene` and skips this pass.
 
 Meta mode ignores `trans_table`, `start_weight` and `force_nonsd`; every bin
 carries its own model. That is true of both the CLI and the API.
@@ -226,11 +230,6 @@ Known divergences at `dd88690`, still open:
 - **Training GC.** `prodigal_set_training_sequences` computes `ctx->gc` but
   never sets `ctx->tinf.gc`, so API training runs with `gc = 0`. On E. coli
   the API calls 4,871 genes; the CLI calls 4,319.
-- **Meta scores.** `extract_soa` reads the recovery-pass nodes, so `sscore`
-  and `confidence` miss `intergenic_mod`. On E. coli, 2,802 of 4,319 genes
-  have a different `sscore` (`cscore` matches everywhere).
-- **Non-SD motif text.** `get_rbs_info` returns the literal `"Upstream"`
-  where the CLI prints the motif via `mer_text` (e.g. `TAA`).
 - **Missing from the API:**
   - protein translations (`-a`) and gene nucleotide sequences (`-d`);
   - the all-starts table (`-s`);
@@ -247,14 +246,14 @@ Known divergences at `dd88690`, still open:
 |---|---|---|
 | `MAX_SEQ` | 32,000,000 | Per-contig maximum. Also sizes `seq` and `rseq` (8 MB each) and `useq` (4 MB) at create time. |
 | `STT_NOD` | 100,000 | Initial node capacity (17.6 MB). For `slen > 800,000` the array is reallocated to `slen/8` nodes (22 B/bp) and never shrinks. |
-| `MAX_GENES` | 30,000 | `genes` array (30.5 MB). Per-contig gene cap; overflow is silently truncated. |
+| `MAX_GENES` | 30,000 | `genes` array (33.4 MB; `struct _gene` is 1,112 bytes). Per-contig gene cap; overflow is silently truncated. |
 | `MAX_MASKS` | 5,000 | Mask list (inline in the context). |
 | `MASK_SIZE` | 50 | Minimum N run to mask. |
 | `MAX_LINE` | 10,000 | Header length, CLI line length. |
 | `MIN_GENE` / `MIN_EDGE_GENE` | 90 / 60 | Minimum ORF length. |
 | `NUM_META` | 50 | Metagenomic bins: 50 × 558,392 B = 27.9 MB, lazily allocated on first meta `find_genes`. |
 
-- **Per context:** about 68 MB at `prodigal_create`, plus 27.9 MB in meta
+- **Per context:** about 71 MB at `prodigal_create`, plus 27.9 MB in meta
   mode, plus node growth for long contigs.
 - **Node capacity is not enforced.** Real genomes produce about 0.04–0.06
   nodes/bp, well under the 0.125/bp budget. Low-complexity input can exceed

@@ -197,144 +197,40 @@ void tweak_final_starts(struct _gene *genes, int ng, struct _node *nod,
 
 void record_gene_data(struct _gene *genes, int ng, struct _node *nod,
                       struct _training *tinf, int sctr) {
-
-  int i, ndx, sndx, partial_left, partial_right, st_type;
-  double rbs1, rbs2, confidence;
-  char sd_string[28][100], sd_spacer[28][20], qt[10];
+  int i;
   char type_string[4][5] = { "ATG", "GTG", "TTG" , "Edge" };
 
-  /* Initialize RBS string information for default SD */
-  strcpy(sd_string[0], "None");
-  strcpy(sd_spacer[0], "None");
-  strcpy(sd_string[1], "GGA/GAG/AGG");
-  strcpy(sd_spacer[1], "3-4bp");
-  strcpy(sd_string[2], "3Base/5BMM");
-  strcpy(sd_spacer[2], "13-15bp");
-  strcpy(sd_string[3], "4Base/6BMM");
-  strcpy(sd_spacer[3], "13-15bp");
-  strcpy(sd_string[4], "AGxAG");
-  strcpy(sd_spacer[4], "11-12bp");
-  strcpy(sd_string[5], "AGxAG");
-  strcpy(sd_spacer[5], "3-4bp");
-  strcpy(sd_string[6], "GGA/GAG/AGG");
-  strcpy(sd_spacer[6], "11-12bp");
-  strcpy(sd_string[7], "GGxGG");
-  strcpy(sd_spacer[7], "11-12bp");
-  strcpy(sd_string[8], "GGxGG");
-  strcpy(sd_spacer[8], "3-4bp");
-  strcpy(sd_string[9], "AGxAG");
-  strcpy(sd_spacer[9], "5-10bp");
-  strcpy(sd_string[10], "AGGAG(G)/GGAGG");
-  strcpy(sd_spacer[10], "13-15bp");
-  strcpy(sd_string[11], "AGGA/GGAG/GAGG");
-  strcpy(sd_spacer[11], "3-4bp");
-  strcpy(sd_string[12], "AGGA/GGAG/GAGG");
-  strcpy(sd_spacer[12], "11-12bp");
-  strcpy(sd_string[13], "GGA/GAG/AGG");
-  strcpy(sd_spacer[13], "5-10bp");
-  strcpy(sd_string[14], "GGxGG");
-  strcpy(sd_spacer[14], "5-10bp");
-  strcpy(sd_string[15], "AGGA");
-  strcpy(sd_spacer[15], "5-10bp");
-  strcpy(sd_string[16], "GGAG/GAGG");
-  strcpy(sd_spacer[16], "5-10bp");
-  strcpy(sd_string[17], "AGxAGG/AGGxGG");
-  strcpy(sd_spacer[17], "11-12bp");
-  strcpy(sd_string[18], "AGxAGG/AGGxGG");
-  strcpy(sd_spacer[18], "3-4bp");
-  strcpy(sd_string[19], "AGxAGG/AGGxGG");
-  strcpy(sd_spacer[19], "5-10bp");
-  strcpy(sd_string[20], "AGGAG/GGAGG");
-  strcpy(sd_spacer[20], "11-12bp");
-  strcpy(sd_string[21], "AGGAG");
-  strcpy(sd_spacer[21], "3-4bp");
-  strcpy(sd_string[22], "AGGAG");
-  strcpy(sd_spacer[22], "5-10bp");
-  strcpy(sd_string[23], "GGAGG");
-  strcpy(sd_spacer[23], "3-4bp");
-  strcpy(sd_string[24], "GGAGG");
-  strcpy(sd_spacer[24], "5-10bp");
-  strcpy(sd_string[25], "AGGAGG");
-  strcpy(sd_spacer[25], "11-12bp");
-  strcpy(sd_string[26], "AGGAGG");
-  strcpy(sd_spacer[26], "3-4bp");
-  strcpy(sd_string[27], "AGGAGG");
-  strcpy(sd_spacer[27], "5-10bp");
-
-  char buffer[500] = {0};
-
   for(i = 0; i < ng; i++) {
-    ndx = genes[i].start_ndx;
-    sndx = genes[i].stop_ndx;
+    struct _gene *g = &genes[i];
+    struct _node *st = &nod[g->start_ndx], *sp = &nod[g->stop_ndx];
 
     /* Record basic gene data */
-    if((nod[ndx].edge == 1 && nod[ndx].strand == 1) ||
-       (nod[sndx].edge == 1 && nod[ndx].strand == -1))
-      partial_left = 1;
-    else partial_left = 0;
-    if((nod[sndx].edge == 1 && nod[ndx].strand == 1) ||
-       (nod[ndx].edge == 1 && nod[ndx].strand == -1))
-      partial_right = 1;
-    else partial_right = 0;
-    if(nod[ndx].edge == 1) st_type = 3;
-    else st_type = nod[ndx].type;
-
-    sprintf(genes[i].gene_data, "ID=%d_%d;partial=%d%d;start_type=%s;", sctr, 
-            i+1, partial_left, partial_right, type_string[st_type]);
-
-    /* Record rbs data */
-    rbs1 = tinf->rbs_wt[nod[ndx].rbs[0]]*tinf->st_wt;
-    rbs2 = tinf->rbs_wt[nod[ndx].rbs[1]]*tinf->st_wt;
-    if(tinf->uses_sd == 1) {
-      if(rbs1 > rbs2) {
-        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%s",
-                sd_string[nod[ndx].rbs[0]],
-                sd_spacer[nod[ndx].rbs[0]]);
-        strcat(genes[i].gene_data, buffer);
-      } else {
-        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%s",
-                sd_string[nod[ndx].rbs[1]],
-                sd_spacer[nod[ndx].rbs[1]]);
-        strcat(genes[i].gene_data, buffer);
-      }
-    }
-    else {
-      mer_text(qt, nod[ndx].mot.len, nod[ndx].mot.ndx);
-      if(tinf->no_mot > -0.5 && rbs1 > rbs2 && rbs1 > nod[ndx].mot.score *
-         tinf->st_wt) {
-        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%s",
-                sd_string[nod[ndx].rbs[0]],
-                sd_spacer[nod[ndx].rbs[0]]);
-        strcat(genes[i].gene_data, buffer);
-      } else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && rbs2 > nod[ndx].mot.score *
-              tinf->st_wt) {
-        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%s",
-                sd_string[nod[ndx].rbs[1]],
-                sd_spacer[nod[ndx].rbs[1]]);
-        strcat(genes[i].gene_data, buffer);
-      } else if(nod[ndx].mot.len == 0) {
-        strcat(genes[i].gene_data, "rbs_motif=None;rbs_spacer=None");
-      } else {
-        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%dbp",
-                qt, nod[ndx].mot.spacer);
-        strcat(genes[i].gene_data, buffer);
-      }
-    }
-    sprintf(buffer, ";gc_cont=%.3f", nod[ndx].gc_cont);
-    strcat(genes[i].gene_data, buffer);
+    g->strand = st->strand;
+    g->partial_left = (st->edge == 1 && st->strand == 1) ||
+                      (sp->edge == 1 && st->strand == -1);
+    g->partial_right = (sp->edge == 1 && st->strand == 1) ||
+                       (st->edge == 1 && st->strand == -1);
+    g->start_type = (st->edge == 1) ? 3 : st->type;
+    pdg_rbs_text(&g->rbs, st, tinf);
+    g->gc_cont = st->gc_cont;
 
     /* Record score data */
-    confidence = calculate_confidence(nod[ndx].cscore + nod[ndx].sscore, 
-                                      tinf->st_wt);
-    sprintf(genes[i].score_data, 
-     "conf=%.2f;score=%.2f;cscore=%.2f;sscore=%.2f;rscore=%.2f;uscore=%.2f;",
-     confidence, nod[ndx].cscore+nod[ndx].sscore,nod[ndx].cscore, 
-     nod[ndx].sscore, nod[ndx].rscore, nod[ndx].uscore);
+    g->cscore = st->cscore;
+    g->sscore = st->sscore;
+    g->rscore = st->rscore;
+    g->uscore = st->uscore;
+    g->tscore = st->tscore;
+    g->confidence = calculate_confidence(st->cscore + st->sscore, tinf->st_wt);
 
-    sprintf(buffer, "tscore=%.2f;", nod[ndx].tscore);
-    strcat(genes[i].score_data, buffer);
+    sprintf(g->gene_data, "ID=%d_%d;partial=%d%d;start_type=%s;"
+            "rbs_motif=%s;rbs_spacer=%s;gc_cont=%.3f", sctr, i+1,
+            g->partial_left, g->partial_right, type_string[g->start_type],
+            g->rbs.motif, g->rbs.spacer, g->gc_cont);
+    sprintf(g->score_data, "conf=%.2f;score=%.2f;cscore=%.2f;sscore=%.2f;"
+            "rscore=%.2f;uscore=%.2f;tscore=%.2f;", g->confidence,
+            g->cscore + g->sscore, g->cscore, g->sscore, g->rscore,
+            g->uscore, g->tscore);
   }
-
 }
 
 /* Print the genes.  'Flag' indicates which format to use. */

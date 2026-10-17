@@ -69,9 +69,9 @@
  * --------------
  *   - SOA (prodigal_genes_soa_t): Structure-of-Arrays layout ideal for
  *     columnar / Apache Arrow consumers.  All numeric arrays are carved from
- *     a single 16-byte-aligned backing allocation (_base).  String pointers
- *     (rbs_motif, rbs_spacer) point to static constant strings owned by the
- *     library -- do not free them.
+ *     a single 16-byte-aligned backing allocation (_base).  The strings
+ *     (rbs_motif, rbs_spacer) live in it too: they are valid until
+ *     prodigal_genes_free() and are not freed on their own.
  *   - AOS (prodigal_genes_t): Array-of-Structures layout for convenient
  *     per-gene iteration.  Also backed by a single allocation.
  *
@@ -329,8 +329,13 @@ typedef struct {
  * arrays are carved from a single 16-byte-aligned backing allocation pointed
  * to by _base.  Call prodigal_genes_free() to release.
  *
- * String pointers (rbs_motif, rbs_spacer) point to static constant strings
- * owned by the library.  Do not free them.  They remain valid indefinitely.
+ * Every value is the one the CLI prints in its GFF attributes (partial=,
+ * start_type=, rbs_motif=, ..., tscore=): the values that chose the gene.
+ * In metagenomic mode the CLI's GFF column 6 differs from cscore + sscore
+ * (an upstream quirk, docs/upstream-behavior.md).
+ *
+ * The strings (rbs_motif, rbs_spacer) are stored in the same allocation:
+ * they are valid until prodigal_genes_free() and are not freed on their own.
  *
  * If n_genes == 0, all array pointers may be NULL and _base is NULL.
  */
@@ -353,8 +358,8 @@ typedef struct {
     double  *confidence;        /**< Confidence in [50, 100], length n_genes */
     double  *gc_cont;           /**< Per-gene GC content, length n_genes */
 
-    const char **rbs_motif;     /**< RBS motif name (static string, not freed), length n_genes */
-    const char **rbs_spacer;    /**< RBS spacer distance (static string, not freed), length n_genes */
+    const char **rbs_motif;     /**< RBS motif, as the CLI prints it (e.g. "AGGAG", "TAA", "None"), length n_genes */
+    const char **rbs_spacer;    /**< RBS spacer, as the CLI prints it (e.g. "5-10bp", "8bp", "None"), length n_genes */
 
     void    *_base;             /**< Single backing allocation (16-byte aligned).  Internal. */
 } prodigal_genes_soa_t;
@@ -378,8 +383,8 @@ typedef struct {
     double  tscore;
     double  confidence;
     double  gc_cont;
-    const char *rbs_motif;      /**< Static string, do not free */
-    const char *rbs_spacer;     /**< Static string, do not free */
+    const char *rbs_motif;      /**< Valid until prodigal_genes_aos_free() */
+    const char *rbs_spacer;     /**< Valid until prodigal_genes_aos_free() */
 } prodigal_gene_t;
 
 /**

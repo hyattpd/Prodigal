@@ -547,33 +547,6 @@ int prodigal_set_uses_sd(prodigal_ctx_t *ctx, int uses_sd) {
 }
 
 /*******************************************************************************
-    SD motif string tables (shared with record_gene_data in gene.c)
-*******************************************************************************/
-
-static const char *sd_string[28] = {
-    "None", "GGA/GAG/AGG", "3Base/5BMM", "4Base/6BMM",
-    "AGxAG", "AGxAG", "GGA/GAG/AGG", "GGxGG",
-    "GGxGG", "AGxAG", "AGGAG(G)/GGAGG", "AGGA/GGAG/GAGG",
-    "AGGA/GGAG/GAGG", "GGA/GAG/AGG", "GGxGG", "AGGA",
-    "GGAG/GAGG", "AGxAGG/AGGxGG", "AGxAGG/AGGxGG", "AGxAGG/AGGxGG",
-    "AGGAG/GGAGG", "AGGAG", "AGGAG", "GGAGG",
-    "GGAGG", "AGGAGG", "AGGAGG", "AGGAGG"
-};
-
-static const char *sd_spacer_str[28] = {
-    "None", "3-4bp", "13-15bp", "13-15bp",
-    "11-12bp", "3-4bp", "11-12bp", "11-12bp",
-    "3-4bp", "5-10bp", "13-15bp", "3-4bp",
-    "11-12bp", "5-10bp", "5-10bp", "5-10bp",
-    "5-10bp", "11-12bp", "3-4bp", "5-10bp",
-    "11-12bp", "3-4bp", "5-10bp", "3-4bp",
-    "5-10bp", "11-12bp", "3-4bp", "5-10bp"
-};
-
-/* type_string used by get_rbs_info and SOA extraction */
-/* static const char *type_string[4] = { "ATG", "GTG", "TTG", "Edge" }; */
-
-/*******************************************************************************
     The pipeline shared with the CLI (prodigal_internal.h)
 *******************************************************************************/
 
@@ -685,68 +658,19 @@ int pdg_meta(prodigal_ctx_t *ctx, int seqnum, pdg_meta_result_t *res) {
 }
 
 /*******************************************************************************
-    Internal: determine RBS motif and spacer for a gene
-*******************************************************************************/
-
-static void get_rbs_info(const struct _node *nod, int ndx,
-                         const struct _training *tinf,
-                         const char **motif_out, const char **spacer_out) {
-    double rbs1 = tinf->rbs_wt[nod[ndx].rbs[0]] * tinf->st_wt;
-    double rbs2 = tinf->rbs_wt[nod[ndx].rbs[1]] * tinf->st_wt;
-
-    if (tinf->uses_sd == 1) {
-        if (rbs1 > rbs2) {
-            *motif_out = sd_string[nod[ndx].rbs[0]];
-            *spacer_out = sd_spacer_str[nod[ndx].rbs[0]];
-        } else {
-            *motif_out = sd_string[nod[ndx].rbs[1]];
-            *spacer_out = sd_spacer_str[nod[ndx].rbs[1]];
-        }
-    } else {
-        if (tinf->no_mot > -0.5 && rbs1 > rbs2 &&
-            rbs1 > nod[ndx].mot.score * tinf->st_wt) {
-            *motif_out = sd_string[nod[ndx].rbs[0]];
-            *spacer_out = sd_spacer_str[nod[ndx].rbs[0]];
-        } else if (tinf->no_mot > -0.5 && rbs2 >= rbs1 &&
-                   rbs2 > nod[ndx].mot.score * tinf->st_wt) {
-            *motif_out = sd_string[nod[ndx].rbs[1]];
-            *spacer_out = sd_spacer_str[nod[ndx].rbs[1]];
-        } else if (nod[ndx].mot.len == 0) {
-            *motif_out = "None";
-            *spacer_out = "None";
-        } else {
-            /* Upstream motif: use a static buffer per-motif.
-               For the SOA output, we store the motif string directly.
-               Since mer_text writes to a buffer, we use a thread-local
-               approach. For simplicity, we point to the sd_string table
-               entry if possible, or a generic description. */
-            *motif_out = "Upstream";
-            {
-                static const char *spacer_bp[] = {
-                    "0bp","1bp","2bp","3bp","4bp","5bp","6bp","7bp",
-                    "8bp","9bp","10bp","11bp","12bp","13bp","14bp","15bp"
-                };
-                if (nod[ndx].mot.spacer >= 0 && nod[ndx].mot.spacer <= 15)
-                    *spacer_out = spacer_bp[nod[ndx].mot.spacer];
-                else
-                    *spacer_out = "None";
-            }
-        }
-    }
-}
-
-/*******************************************************************************
     SOA allocation and extraction
 *******************************************************************************/
 
 #define ALIGN16(x) (((x) + 15) & ~(size_t)15)
 
-static prodigal_genes_soa_t *extract_soa(prodigal_ctx_t *ctx, int ng) {
+/* The output for genes[0, ng), as record_gene_data captured them. */
+static prodigal_genes_soa_t *extract_soa(const struct _gene *genes, int ng) {
     prodigal_genes_soa_t *soa;
     size_t n = (size_t)(ng > 0 ? ng : 1);  /* at least 1 to avoid zero alloc */
     size_t offset = 0;
     char *base;
-    int i, ndx, sndx;
+    struct _rbs_text *text;
+    int i;
 
     /* Calculate total size with 16-byte alignment */
     size_t sz_begin    = ALIGN16(n * sizeof(int32_t));
@@ -764,10 +688,12 @@ static prodigal_genes_soa_t *extract_soa(prodigal_ctx_t *ctx, int ng) {
     size_t sz_gc       = ALIGN16(n * sizeof(double));
     size_t sz_motif    = ALIGN16(n * sizeof(const char *));
     size_t sz_spacer   = ALIGN16(n * sizeof(const char *));
+    size_t sz_text     = ALIGN16(n * sizeof(struct _rbs_text));
 
     size_t total = sz_begin + sz_end + sz_strand + sz_pleft + sz_pright +
                    sz_stype + sz_cscore + sz_sscore + sz_rscore + sz_uscore +
-                   sz_tscore + sz_conf + sz_gc + sz_motif + sz_spacer;
+                   sz_tscore + sz_conf + sz_gc + sz_motif + sz_spacer +
+                   sz_text;
 
     soa = (prodigal_genes_soa_t *)malloc(sizeof(prodigal_genes_soa_t));
     if (soa == NULL) return NULL;
@@ -794,8 +720,7 @@ static prodigal_genes_soa_t *extract_soa(prodigal_ctx_t *ctx, int ng) {
         free(soa);
         return NULL;
     }
-    memset(base, 0, total);
-    soa->_base = base;
+    soa->_base = base;   /* every element below ng is written */
 
     /* Carve out sub-arrays */
     offset = 0;
@@ -813,45 +738,27 @@ static prodigal_genes_soa_t *extract_soa(prodigal_ctx_t *ctx, int ng) {
     soa->confidence   = (double *)(base + offset);  offset += sz_conf;
     soa->gc_cont      = (double *)(base + offset);  offset += sz_gc;
     soa->rbs_motif    = (const char **)(base + offset); offset += sz_motif;
-    soa->rbs_spacer   = (const char **)(base + offset);
+    soa->rbs_spacer   = (const char **)(base + offset); offset += sz_spacer;
+    text              = (struct _rbs_text *)(base + offset);
 
-    /* Populate from genes and nodes */
     for (i = 0; i < ng; i++) {
-        ndx = ctx->genes[i].start_ndx;
-        sndx = ctx->genes[i].stop_ndx;
-
-        soa->begin[i] = ctx->genes[i].begin;
-        soa->end[i] = ctx->genes[i].end;
-        soa->strand[i] = ctx->nodes[ndx].strand;
-
-        /* Partial flags */
-        if ((ctx->nodes[ndx].edge == 1 && ctx->nodes[ndx].strand == 1) ||
-            (ctx->nodes[sndx].edge == 1 && ctx->nodes[ndx].strand == -1))
-            soa->partial_left[i] = 1;
-        if ((ctx->nodes[sndx].edge == 1 && ctx->nodes[ndx].strand == 1) ||
-            (ctx->nodes[ndx].edge == 1 && ctx->nodes[ndx].strand == -1))
-            soa->partial_right[i] = 1;
-
-        /* Start type */
-        if (ctx->nodes[ndx].edge == 1)
-            soa->start_type[i] = 3;
-        else
-            soa->start_type[i] = ctx->nodes[ndx].type;
-
-        /* Scores */
-        soa->cscore[i] = ctx->nodes[ndx].cscore;
-        soa->sscore[i] = ctx->nodes[ndx].sscore;
-        soa->rscore[i] = ctx->nodes[ndx].rscore;
-        soa->uscore[i] = ctx->nodes[ndx].uscore;
-        soa->tscore[i] = ctx->nodes[ndx].tscore;
-        soa->confidence[i] = calculate_confidence(
-            ctx->nodes[ndx].cscore + ctx->nodes[ndx].sscore,
-            ctx->tinf.st_wt);
-        soa->gc_cont[i] = ctx->nodes[ndx].gc_cont;
-
-        /* RBS info */
-        get_rbs_info(ctx->nodes, ndx, &ctx->tinf,
-                     &soa->rbs_motif[i], &soa->rbs_spacer[i]);
+        const struct _gene *g = &genes[i];
+        soa->begin[i] = g->begin;
+        soa->end[i] = g->end;
+        soa->strand[i] = g->strand;
+        soa->partial_left[i] = g->partial_left;
+        soa->partial_right[i] = g->partial_right;
+        soa->start_type[i] = g->start_type;
+        soa->cscore[i] = g->cscore;
+        soa->sscore[i] = g->sscore;
+        soa->rscore[i] = g->rscore;
+        soa->uscore[i] = g->uscore;
+        soa->tscore[i] = g->tscore;
+        soa->confidence[i] = g->confidence;
+        soa->gc_cont[i] = g->gc_cont;
+        text[i] = g->rbs;
+        soa->rbs_motif[i] = text[i].motif;
+        soa->rbs_spacer[i] = text[i].spacer;
     }
 
     return soa;
@@ -861,27 +768,26 @@ static prodigal_genes_soa_t *extract_soa(prodigal_ctx_t *ctx, int ng) {
     Gene finding — public API
 *******************************************************************************/
 
-static void fill_stats(prodigal_ctx_t *ctx, int ng, int nn,
-                       prodigal_stats_t *stats, int best_bin,
-                       const char *best_desc) {
+/* bin is the metagenomic bin that called the genes, -1 in single mode. */
+static void fill_stats(const prodigal_ctx_t *ctx, int ng, int nn, int bin,
+                       prodigal_stats_t *stats) {
+    const struct _training *tinf = (bin >= 0) ? ctx->meta[bin].tinf : &ctx->tinf;
     if (stats == NULL) return;
     memset(stats, 0, sizeof(*stats));
     stats->n_genes = ng;
     stats->n_nodes = nn;
     stats->gc_content = ctx->gc;
-    stats->translation_table = ctx->tinf.trans_table;
-    stats->uses_sd = ctx->tinf.uses_sd;
-    stats->best_meta_bin = best_bin;
-    if (best_desc != NULL) {
+    stats->translation_table = tinf->trans_table;
+    stats->uses_sd = tinf->uses_sd;
+    stats->best_meta_bin = bin;
+    if (bin >= 0)
         snprintf(stats->best_meta_desc, sizeof(stats->best_meta_desc),
-                 "%s", best_desc);
-    }
+                 "%s", ctx->meta[bin].desc);
 }
 
 int prodigal_find_genes(prodigal_ctx_t *ctx, prodigal_genes_soa_t **genes_out,
                         prodigal_stats_t *stats_out) {
     int rc, ng, nn, bin = -1;
-    const char *desc = NULL;
 
     if (ctx == NULL || genes_out == NULL) return PRODIGAL_ERR_INVALID_INPUT;
     *genes_out = NULL;
@@ -903,12 +809,6 @@ int prodigal_find_genes(prodigal_ctx_t *ctx, prodigal_genes_soa_t **genes_out,
         ng = res.n_genes;
         nn = res.n_nodes;
         bin = res.bin;
-        desc = ctx->meta[bin].desc;
-        /* The best bin's nodes, which extract_soa reads */
-        rc = pdg_score_nodes(ctx, ctx->meta[bin].tinf);
-        if (rc != PRODIGAL_OK) return rc;
-        /* Use best bin's training for SOA extraction */
-        memcpy(&ctx->tinf, ctx->meta[bin].tinf, sizeof(struct _training));
     } else {
         rc = pdg_score_nodes(ctx, &ctx->tinf);
         if (rc != PRODIGAL_OK) return rc;
@@ -916,13 +816,13 @@ int prodigal_find_genes(prodigal_ctx_t *ctx, prodigal_genes_soa_t **genes_out,
         nn = ctx->nn;
     }
 
-    *genes_out = extract_soa(ctx, ng);
+    *genes_out = extract_soa(ctx->genes, ng);
     if (*genes_out == NULL) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
                       "Failed to allocate SOA output");
         return PRODIGAL_ERR_NOMEM;
     }
-    fill_stats(ctx, ng, nn, stats_out, bin, desc);
+    fill_stats(ctx, ng, nn, bin, stats_out);
     return PRODIGAL_OK;
 }
 
@@ -932,6 +832,8 @@ int prodigal_find_genes_aos(prodigal_ctx_t *ctx, prodigal_genes_t **genes_out,
     prodigal_genes_t *aos;
     int rc, i;
 
+    if (genes_out == NULL) return PRODIGAL_ERR_INVALID_INPUT;
+    *genes_out = NULL;
     rc = prodigal_find_genes(ctx, &soa, stats_out);
     if (rc != PRODIGAL_OK) return rc;
 
@@ -939,19 +841,26 @@ int prodigal_find_genes_aos(prodigal_ctx_t *ctx, prodigal_genes_t **genes_out,
     aos = (prodigal_genes_t *)malloc(sizeof(prodigal_genes_t));
     if (aos == NULL) {
         prodigal_genes_free(soa);
+        PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM, "Failed to allocate AOS output");
         return PRODIGAL_ERR_NOMEM;
     }
     memset(aos, 0, sizeof(*aos));
     aos->n_genes = soa->n_genes;
 
     if (soa->n_genes > 0) {
-        aos->_base = malloc(soa->n_genes * sizeof(prodigal_gene_t));
+        struct _rbs_text *text;
+        /* The genes, then their motif and spacer text */
+        aos->_base = malloc(soa->n_genes * (sizeof(prodigal_gene_t) +
+                                            sizeof(struct _rbs_text)));
         if (aos->_base == NULL) {
             free(aos);
             prodigal_genes_free(soa);
+            PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
+                          "Failed to allocate AOS output");
             return PRODIGAL_ERR_NOMEM;
         }
         aos->genes = (prodigal_gene_t *)aos->_base;
+        text = (struct _rbs_text *)(aos->genes + soa->n_genes);
 
         for (i = 0; i < soa->n_genes; i++) {
             aos->genes[i].begin = soa->begin[i];
@@ -967,8 +876,9 @@ int prodigal_find_genes_aos(prodigal_ctx_t *ctx, prodigal_genes_t **genes_out,
             aos->genes[i].tscore = soa->tscore[i];
             aos->genes[i].confidence = soa->confidence[i];
             aos->genes[i].gc_cont = soa->gc_cont[i];
-            aos->genes[i].rbs_motif = soa->rbs_motif[i];
-            aos->genes[i].rbs_spacer = soa->rbs_spacer[i];
+            /* The SOA's strings came from a struct _rbs_text, so they fit */
+            aos->genes[i].rbs_motif = strcpy(text[i].motif, soa->rbs_motif[i]);
+            aos->genes[i].rbs_spacer = strcpy(text[i].spacer, soa->rbs_spacer[i]);
         }
     }
 
