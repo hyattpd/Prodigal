@@ -136,11 +136,3 @@ defect.
   ARM64 output equals x86-64 output. A default ARM64 build of upstream can
   differ in the last printed digit of some scores (`docs/testing.md`).
   `make oracle` builds the oracle with the same flag.
-
-- **Training progress on stderr** (since `fea252a`). Without `-q`, upstream
-  prints progress lines while training ("Looking for GC bias in different
-  frames…frame bias scores: …", "Building initial set of genes to train
-  from…" and so on). The fork's CLI trains through the library's
-  `prodigal_train`, which prints nothing, so in single mode and with `-t`
-  the fork prints only "Locating all potential starts and stops...done!".
-  Output files are unaffected. To be restored through the log callback.

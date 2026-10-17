@@ -64,6 +64,14 @@ void prodigal_config_init(prodigal_config_t *config) {
     Context lifecycle
 *******************************************************************************/
 
+static void free_meta(prodigal_ctx_t *ctx) {
+    int i;
+    if (ctx->meta == NULL) return;
+    for (i = 0; i < NUM_META; i++) pdg_free(ctx, ctx->meta[i].tinf);
+    pdg_free(ctx, ctx->meta);
+    ctx->meta = NULL;
+}
+
 prodigal_ctx_t *prodigal_create(const prodigal_config_t *config) {
     if (config == NULL) return NULL;
     if (config->struct_size != sizeof(prodigal_config_t)) return NULL;
@@ -107,7 +115,6 @@ prodigal_ctx_t *prodigal_create(const prodigal_config_t *config) {
 }
 
 void prodigal_destroy(prodigal_ctx_t *ctx) {
-    int i;
     if (ctx == NULL) return;
 
     pdg_free(ctx, ctx->seq);
@@ -116,13 +123,7 @@ void prodigal_destroy(prodigal_ctx_t *ctx) {
     pdg_free(ctx, ctx->nodes);
     pdg_free(ctx, ctx->genes);
 
-    if (ctx->meta != NULL) {
-        for (i = 0; i < NUM_META; i++) {
-            if (ctx->meta[i].tinf != NULL)
-                pdg_free(ctx, ctx->meta[i].tinf);
-        }
-        pdg_free(ctx, ctx->meta);
-    }
+    free_meta(ctx);
 
     free(ctx);  /* Context itself always uses system malloc */
 }
@@ -172,39 +173,16 @@ static void encode_stop_spacer(unsigned char *seq, int *bctr, int *len) {
     }
 }
 
-/* Reset sequence state in context and optionally realloc if needed */
-static int reset_sequence_state(prodigal_ctx_t *ctx, int needed_len) {
-    if (ctx->slen > 0) {
-        memset(ctx->seq, 0, (ctx->slen / 4 + 1) * sizeof(unsigned char));
-        memset(ctx->rseq, 0, (ctx->slen / 4 + 1) * sizeof(unsigned char));
-        memset(ctx->useq, 0, (ctx->slen / 8 + 1) * sizeof(unsigned char));
-        memset(ctx->nodes, 0, ctx->nn * sizeof(struct _node));
-    }
+void pdg_clear_sequence(prodigal_ctx_t *ctx) {
+    memset(ctx->seq, 0, (ctx->slen / 4 + 1) * sizeof(unsigned char));
+    memset(ctx->rseq, 0, (ctx->slen / 4 + 1) * sizeof(unsigned char));
+    memset(ctx->useq, 0, (ctx->slen / 8 + 1) * sizeof(unsigned char));
     ctx->slen = 0;
-    ctx->nn = 0;
     ctx->nmask = 0;
     ctx->gc = 0.0;
     ctx->cur_header[0] = '\0';
     ctx->error_msg[0] = '\0';
     ctx->error_code = PRODIGAL_OK;
-
-    /* Realloc node array if needed */
-    if (needed_len > ctx->max_slen && needed_len > STT_NOD * 8) {
-        struct _node *new_nodes = (struct _node *)pdg_alloc(ctx,
-            (needed_len / 8) * sizeof(struct _node));
-        if (new_nodes == NULL) {
-            PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
-                          "Failed to allocate nodes for sequence length %d",
-                          needed_len);
-            return PRODIGAL_ERR_NOMEM;
-        }
-        pdg_free(ctx, ctx->nodes);
-        ctx->nodes = new_nodes;
-        memset(ctx->nodes, 0, (needed_len / 8) * sizeof(struct _node));
-        ctx->max_slen = needed_len;
-    }
-
-    return PRODIGAL_OK;
 }
 
 /*******************************************************************************
@@ -216,7 +194,6 @@ int prodigal_set_sequence(prodigal_ctx_t *ctx, const char *seq, int32_t len,
     int bctr = 0, slen = 0, gc_cont = 0;
     int mask_beg = -1;
     int32_t i;
-    int rc;
 
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
     if (seq == NULL || len <= 0) {
@@ -230,8 +207,7 @@ int prodigal_set_sequence(prodigal_ctx_t *ctx, const char *seq, int32_t len,
         return PRODIGAL_ERR_INVALID_INPUT;
     }
 
-    rc = reset_sequence_state(ctx, len);
-    if (rc != PRODIGAL_OK) return rc;
+    pdg_clear_sequence(ctx);
 
     /* Encode each base */
     for (i = 0; i < len; i++) {
@@ -284,8 +260,6 @@ int prodigal_set_training_sequences(prodigal_ctx_t *ctx, const char **seqs,
     int bctr = 0, slen = 0, gc_cont = 0;
     int mask_beg = -1;
     int32_t s, i;
-    int total_len = 0;
-    int rc;
 
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
     if (seqs == NULL || lens == NULL || n_seqs <= 0) {
@@ -294,14 +268,7 @@ int prodigal_set_training_sequences(prodigal_ctx_t *ctx, const char **seqs,
         return PRODIGAL_ERR_INVALID_INPUT;
     }
 
-    /* Estimate total length including stop spacers */
-    for (s = 0; s < n_seqs; s++) total_len += lens[s];
-    total_len += 12 * n_seqs;  /* TTAATTAATTAA per sequence */
-
-    if (total_len >= MAX_SEQ) total_len = MAX_SEQ - 1;
-
-    rc = reset_sequence_state(ctx, total_len);
-    if (rc != PRODIGAL_OK) return rc;
+    pdg_clear_sequence(ctx);
 
     for (s = 0; s < n_seqs; s++) {
         /* Insert stop spacer between sequences (and after last) */
@@ -370,12 +337,48 @@ int prodigal_get_seq_info(const prodigal_ctx_t *ctx, prodigal_seq_info_t *info) 
 }
 
 /*******************************************************************************
+    Nodes
+*******************************************************************************/
+
+/* Make room for the nodes of the current sequence. A new array is zeroed. */
+static int reserve_nodes(prodigal_ctx_t *ctx) {
+    struct _node *nodes;
+    if (ctx->slen <= ctx->max_slen || ctx->slen <= STT_NOD * 8) return PRODIGAL_OK;
+    nodes = (struct _node *)pdg_calloc(ctx,
+        (size_t)(ctx->slen / 8) * sizeof(struct _node));
+    if (nodes == NULL) {
+        /* Upstream's message, which the CLI prints */
+        PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM, "Realloc failed on nodes");
+        return PRODIGAL_ERR_NOMEM;
+    }
+    pdg_free(ctx, ctx->nodes);
+    ctx->nodes = nodes;
+    ctx->nn = 0;
+    ctx->max_slen = ctx->slen;
+    return PRODIGAL_OK;
+}
+
+/* The sorted nodes of the current sequence under model tinf, in ctx->nodes.
+   add_nodes and the steps after it expect zeroed nodes (add_nodes sets edge
+   only when it is 1, and a stale elim drops a gene), so the previous list,
+   ctx->nodes[0, ctx->nn), is cleared first; everything past it is zero. */
+static int build_nodes(prodigal_ctx_t *ctx, struct _training *tinf) {
+    int rc = reserve_nodes(ctx);
+    if (rc != PRODIGAL_OK) return rc;
+    memset(ctx->nodes, 0, ctx->nn * sizeof(struct _node));
+    ctx->nn = add_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
+                        ctx->config.closed_ends, ctx->mlist, ctx->nmask, tinf);
+    qsort(ctx->nodes, ctx->nn, sizeof(struct _node), &compare_nodes);
+    return PRODIGAL_OK;
+}
+
+/*******************************************************************************
     Training
 *******************************************************************************/
 
-int prodigal_train(prodigal_ctx_t *ctx) {
+int pdg_train(prodigal_ctx_t *ctx, pdg_train_report_fn report) {
     int *gc_frame;
-    int ipath;
+    int ipath, rc;
 
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
     if (ctx->slen == 0) {
@@ -390,58 +393,43 @@ int prodigal_train(prodigal_ctx_t *ctx) {
         return PRODIGAL_ERR_SEQ_TOO_SHORT;
     }
 
-    PDG_LOG(ctx, "Finding all potential starts and stops...");
+#define REPORT(stage, done) do { \
+    if (report != NULL) report(ctx, (stage), (done)); \
+} while (0)
 
-    /* Realloc nodes if needed */
-    if (ctx->slen > ctx->max_slen && ctx->slen > STT_NOD * 8) {
-        struct _node *new_nodes = (struct _node *)pdg_alloc(ctx,
-            (ctx->slen / 8) * sizeof(struct _node));
-        if (new_nodes == NULL) {
-            PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
-                          "Failed to allocate nodes for training");
-            return PRODIGAL_ERR_NOMEM;
-        }
-        pdg_free(ctx, ctx->nodes);
-        ctx->nodes = new_nodes;
-        memset(ctx->nodes, 0, (ctx->slen / 8) * sizeof(struct _node));
-        ctx->max_slen = ctx->slen;
-    }
-
-    ctx->nn = add_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
-                        ctx->config.closed_ends, ctx->mlist, ctx->nmask,
-                        &ctx->tinf);
-    qsort(ctx->nodes, ctx->nn, sizeof(struct _node), &compare_nodes);
-
-    PDG_LOG(ctx, "%d nodes found", ctx->nn);
-    PDG_LOG(ctx, "Looking for GC bias in different frames...");
+    REPORT(PDG_TRAIN_NODES, 0);
+    rc = build_nodes(ctx, &ctx->tinf);
+    if (rc != PRODIGAL_OK) return rc;
+    REPORT(PDG_TRAIN_NODES, 1);
 
     /* GC frame bias */
+    REPORT(PDG_TRAIN_GC_BIAS, 0);
     gc_frame = calc_most_gc_frame(ctx->seq, ctx->slen);
     if (gc_frame == NULL) {
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
-                      "Failed to allocate GC frame array");
+        /* Upstream's message, which the CLI prints */
+        PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM, "Malloc failed on gc frame plot");
         return PRODIGAL_ERR_NOMEM;
     }
     record_gc_bias(gc_frame, ctx->nodes, ctx->nn, &ctx->tinf);
     free(gc_frame);
-
-    PDG_LOG(ctx, "Building initial gene set...");
+    REPORT(PDG_TRAIN_GC_BIAS, 1);
 
     /* Initial DP with GC bias only */
+    REPORT(PDG_TRAIN_INITIAL_GENES, 0);
     record_overlapping_starts(ctx->nodes, ctx->nn, &ctx->tinf, 0);
     ipath = dprog(ctx->nodes, ctx->nn, &ctx->tinf, 0);
-
-    PDG_LOG(ctx, "Creating coding model and scoring nodes...");
+    REPORT(PDG_TRAIN_INITIAL_GENES, 1);
 
     /* Dicodon statistics and coding scores */
+    REPORT(PDG_TRAIN_CODING, 0);
     calc_dicodon_gene(&ctx->tinf, ctx->seq, ctx->rseq, ctx->slen,
                       ctx->nodes, ipath);
     raw_coding_score(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
                      ctx->nn, &ctx->tinf);
-
-    PDG_LOG(ctx, "Examining upstream regions and training starts...");
+    REPORT(PDG_TRAIN_CODING, 1);
 
     /* RBS and start training */
+    REPORT(PDG_TRAIN_STARTS, 0);
     rbs_score(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes, ctx->nn, &ctx->tinf);
     train_starts_sd(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes, ctx->nn,
                     &ctx->tinf);
@@ -450,13 +438,31 @@ int prodigal_train(prodigal_ctx_t *ctx) {
     if (ctx->tinf.uses_sd == 0)
         train_starts_nonsd(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
                            ctx->nn, &ctx->tinf);
-
     ctx->trained = 1;
-
-    PDG_LOG(ctx, "Training complete (GC=%.2f, uses_sd=%d)",
-            ctx->tinf.gc, ctx->tinf.uses_sd);
+    REPORT(PDG_TRAIN_STARTS, 1);
+#undef REPORT
 
     return PRODIGAL_OK;
+}
+
+/* prodigal_train's report: the log callback's messages. */
+static void log_training(const prodigal_ctx_t *ctx, int stage, int done) {
+    static const char *const what[] = {
+        "Finding all potential starts and stops...",
+        "Looking for GC bias in different frames...",
+        "Building initial gene set...",
+        "Creating coding model and scoring nodes...",
+        "Examining upstream regions and training starts..."
+    };
+    if (!done) PDG_LOG(ctx, "%s", what[stage]);
+    else if (stage == PDG_TRAIN_NODES) PDG_LOG(ctx, "%d nodes found", ctx->nn);
+    else if (stage == PDG_TRAIN_STARTS)
+        PDG_LOG(ctx, "Training complete (GC=%.2f, uses_sd=%d)",
+                ctx->tinf.gc, ctx->tinf.uses_sd);
+}
+
+int prodigal_train(prodigal_ctx_t *ctx) {
+    return pdg_train(ctx, log_training);
 }
 
 int prodigal_load_training(prodigal_ctx_t *ctx, const void *data, size_t len) {
@@ -568,55 +574,114 @@ static const char *sd_spacer_str[28] = {
 /* static const char *type_string[4] = { "ATG", "GTG", "TTG", "Edge" }; */
 
 /*******************************************************************************
-    Internal: run gene-finding pipeline, populate ctx->genes and ctx->nn
-    Returns number of genes found, or negative on error.
+    The pipeline shared with the CLI (prodigal_internal.h)
 *******************************************************************************/
 
-static int run_gene_pipeline(prodigal_ctx_t *ctx) {
-    int ipath, ng;
+int pdg_score_nodes(prodigal_ctx_t *ctx, struct _training *tinf) {
+    int rc = build_nodes(ctx, tinf);
+    if (rc == PRODIGAL_OK)
+        score_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes, ctx->nn,
+                    tinf, ctx->config.closed_ends, ctx->config.meta_mode != 0);
+    return rc;
+}
 
-    if (ctx->slen == 0) {
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "No sequence loaded");
-        return -1;
-    }
+/* The genes on the DP path that ends at node ipath (-1: none), into
+   ctx->genes with their attributes under model tinf; returns how many. */
+static int keep_genes(prodigal_ctx_t *ctx, int ipath, struct _training *tinf,
+                      int seqnum) {
+    int ng;
+    eliminate_bad_genes(ctx->nodes, ipath, tinf);
+    ng = add_genes(ctx->genes, ctx->nodes, ipath);
+    tweak_final_starts(ctx->genes, ng, ctx->nodes, ctx->nn, tinf);
+    record_gene_data(ctx->genes, ng, ctx->nodes, tinf, seqnum);
+    return ng;
+}
 
-    /* Realloc nodes if needed */
-    if (ctx->slen > ctx->max_slen && ctx->slen > STT_NOD * 8) {
-        struct _node *new_nodes = (struct _node *)pdg_alloc(ctx,
-            (ctx->slen / 8) * sizeof(struct _node));
-        if (new_nodes == NULL) {
-            PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
-                          "Failed to allocate nodes");
-            return -1;
-        }
-        pdg_free(ctx, ctx->nodes);
-        ctx->nodes = new_nodes;
-        memset(ctx->nodes, 0, (ctx->slen / 8) * sizeof(struct _node));
-        ctx->max_slen = ctx->slen;
-    }
-
-    /* Find all start/stop nodes */
-    ctx->nn = add_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
-                        ctx->config.closed_ends, ctx->mlist, ctx->nmask,
-                        &ctx->tinf);
-    qsort(ctx->nodes, ctx->nn, sizeof(struct _node), &compare_nodes);
-
-    /* Score nodes */
-    score_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes, ctx->nn,
-                &ctx->tinf, ctx->config.closed_ends, ctx->config.meta_mode);
-
-    /* Dynamic programming */
+int pdg_single_genes(prodigal_ctx_t *ctx, int seqnum) {
+    int ipath;
     record_overlapping_starts(ctx->nodes, ctx->nn, &ctx->tinf, 1);
     ipath = dprog(ctx->nodes, ctx->nn, &ctx->tinf, 1);
+    return keep_genes(ctx, ipath, &ctx->tinf, seqnum);
+}
 
-    /* Eliminate bad genes and extract */
-    eliminate_bad_genes(ctx->nodes, ipath, &ctx->tinf);
-    ng = add_genes(ctx->genes, ctx->nodes, ipath);
-    tweak_final_starts(ctx->genes, ng, ctx->nodes, ctx->nn, &ctx->tinf);
-    record_gene_data(ctx->genes, ng, ctx->nodes, &ctx->tinf, 1);
+int pdg_meta_init(prodigal_ctx_t *ctx) {
+    int i;
+    if (ctx->meta != NULL) return PRODIGAL_OK;
+    ctx->meta = (struct _metagenomic_bin *)pdg_calloc(ctx,
+        NUM_META * sizeof(struct _metagenomic_bin));
+    if (ctx->meta == NULL) {
+        PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
+                      "Malloc failed on metagenomic bins.");
+        return PRODIGAL_ERR_NOMEM;
+    }
+    /* initialize_metagenomic_bins writes every byte of each model */
+    for (i = 0; i < NUM_META; i++) {
+        strcpy(ctx->meta[i].desc, "None");
+        ctx->meta[i].tinf = (struct _training *)pdg_alloc(ctx,
+            sizeof(struct _training));
+        if (ctx->meta[i].tinf == NULL) {
+            free_meta(ctx);
+            PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
+                          "Malloc failed on training structure.");
+            return PRODIGAL_ERR_NOMEM;
+        }
+    }
+    initialize_metagenomic_bins(ctx->meta);
+    return PRODIGAL_OK;
+}
 
-    return ng;
+int pdg_meta(prodigal_ctx_t *ctx, int seqnum, pdg_meta_result_t *res) {
+    double low, high, max_score = -100.0, path_score;
+    struct _training *tinf;
+    int i, ipath, rc;
+
+    res->n_genes = 0;
+    res->bin = 0;
+    res->n_nodes = 0;
+    rc = pdg_meta_init(ctx);
+    if (rc != PRODIGAL_OK) return rc;
+
+    /* The bins whose GC is near the sequence's; every GC has some */
+    low = 0.88495 * ctx->gc - 0.0102337;
+    if (low > 0.65) low = 0.65;
+    high = 0.86596 * ctx->gc + 0.1131991;
+    if (high < 0.35) high = 0.35;
+
+    for (i = 0; i < NUM_META; i++) {
+        tinf = ctx->meta[i].tinf;
+        if (ctx->config.progress_callback &&
+            ctx->config.progress_callback("metagenomic scoring",
+                (double)i / NUM_META, ctx->config.progress_user_data)) {
+            PDG_SET_ERROR(ctx, PRODIGAL_ERR_CANCELLED, "Cancelled");
+            return PRODIGAL_ERR_CANCELLED;
+        }
+
+        /* The nodes are rebuilt only when the translation table changes,
+           and before the GC window check, so a bin scores the nodes as the
+           bins before it left them (docs/upstream-behavior.md, quirk 1). */
+        if (i == 0 || tinf->trans_table != ctx->meta[i - 1].tinf->trans_table) {
+            rc = build_nodes(ctx, tinf);
+            if (rc != PRODIGAL_OK) return rc;
+        }
+        if (tinf->gc < low || tinf->gc > high) continue;
+
+        reset_node_scores(ctx->nodes, ctx->nn);
+        score_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes, ctx->nn,
+                    tinf, ctx->config.closed_ends, 1);
+        record_overlapping_starts(ctx->nodes, ctx->nn, tinf, 1);
+        ipath = dprog(ctx->nodes, ctx->nn, tinf, 1);
+
+        /* A bin without a gene path (ipath -1) scores 0.0, the empty path
+           (docs/upstream-behavior.md). */
+        path_score = (ipath >= 0) ? ctx->nodes[ipath].score : 0.0;
+        if (path_score > max_score) {
+            max_score = path_score;
+            res->bin = i;
+            res->n_nodes = ctx->nn;
+            res->n_genes = keep_genes(ctx, ipath, tinf, seqnum);
+        }
+    }
+    return PRODIGAL_OK;
 }
 
 /*******************************************************************************
@@ -796,12 +861,13 @@ static prodigal_genes_soa_t *extract_soa(prodigal_ctx_t *ctx, int ng) {
     Gene finding — public API
 *******************************************************************************/
 
-static void fill_stats(prodigal_ctx_t *ctx, int ng, prodigal_stats_t *stats,
-                       int best_bin, const char *best_desc) {
+static void fill_stats(prodigal_ctx_t *ctx, int ng, int nn,
+                       prodigal_stats_t *stats, int best_bin,
+                       const char *best_desc) {
     if (stats == NULL) return;
     memset(stats, 0, sizeof(*stats));
     stats->n_genes = ng;
-    stats->n_nodes = ctx->nn;
+    stats->n_nodes = nn;
     stats->gc_content = ctx->gc;
     stats->translation_table = ctx->tinf.trans_table;
     stats->uses_sd = ctx->tinf.uses_sd;
@@ -814,154 +880,49 @@ static void fill_stats(prodigal_ctx_t *ctx, int ng, prodigal_stats_t *stats,
 
 int prodigal_find_genes(prodigal_ctx_t *ctx, prodigal_genes_soa_t **genes_out,
                         prodigal_stats_t *stats_out) {
-    int ng = 0;
+    int rc, ng, nn, bin = -1;
+    const char *desc = NULL;
 
     if (ctx == NULL || genes_out == NULL) return PRODIGAL_ERR_INVALID_INPUT;
     *genes_out = NULL;
-
-    if (ctx->config.meta_mode) {
-        /* Metagenomic mode */
-        int i, max_phase = 0;
-        double max_score = -100.0, low, high;
-
-        /* Lazy init metagenomic bins */
-        if (!ctx->meta_initialized) {
-            ctx->meta = (struct _metagenomic_bin *)pdg_alloc(ctx,
-                NUM_META * sizeof(struct _metagenomic_bin));
-            if (ctx->meta == NULL) {
-                PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
-                              "Failed to allocate metagenomic bins");
-                return PRODIGAL_ERR_NOMEM;
-            }
-            for (i = 0; i < NUM_META; i++) {
-                memset(&ctx->meta[i], 0, sizeof(struct _metagenomic_bin));
-                strcpy(ctx->meta[i].desc, "None");
-                ctx->meta[i].tinf = (struct _training *)pdg_alloc(ctx,
-                    sizeof(struct _training));
-                if (ctx->meta[i].tinf == NULL) {
-                    PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
-                                  "Failed to allocate meta training");
-                    return PRODIGAL_ERR_NOMEM;
-                }
-                memset(ctx->meta[i].tinf, 0, sizeof(struct _training));
-            }
-            initialize_metagenomic_bins(ctx->meta);
-            ctx->meta_initialized = 1;
-        }
-
-        /* Realloc nodes if needed */
-        if (ctx->slen > ctx->max_slen && ctx->slen > STT_NOD * 8) {
-            struct _node *new_nodes = (struct _node *)pdg_alloc(ctx,
-                (ctx->slen / 8) * sizeof(struct _node));
-            if (new_nodes == NULL) {
-                PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
-                              "Failed to allocate nodes");
-                return PRODIGAL_ERR_NOMEM;
-            }
-            pdg_free(ctx, ctx->nodes);
-            ctx->nodes = new_nodes;
-            memset(ctx->nodes, 0, (ctx->slen / 8) * sizeof(struct _node));
-            ctx->max_slen = ctx->slen;
-        }
-
-        /* GC range filtering */
-        low = 0.88495 * ctx->gc - 0.0102337;
-        if (low > 0.65) low = 0.65;
-        high = 0.86596 * ctx->gc + 0.1131991;
-        if (high < 0.35) high = 0.35;
-
-        /* Try all metagenomic bins */
-        for (i = 0; i < NUM_META; i++) {
-            int ipath;
-            double path_score;
-
-            /* Progress callback */
-            if (ctx->config.progress_callback) {
-                int cancelled = ctx->config.progress_callback(
-                    "metagenomic scoring", (double)i / NUM_META,
-                    ctx->config.progress_user_data);
-                if (cancelled) {
-                    PDG_SET_ERROR(ctx, PRODIGAL_ERR_CANCELLED, "Cancelled");
-                    return PRODIGAL_ERR_CANCELLED;
-                }
-            }
-
-            if (i == 0 || ctx->meta[i].tinf->trans_table !=
-                ctx->meta[i-1].tinf->trans_table) {
-                memset(ctx->nodes, 0, ctx->nn * sizeof(struct _node));
-                ctx->nn = add_nodes(ctx->seq, ctx->rseq, ctx->slen,
-                                    ctx->nodes, ctx->config.closed_ends,
-                                    ctx->mlist, ctx->nmask,
-                                    ctx->meta[i].tinf);
-                qsort(ctx->nodes, ctx->nn, sizeof(struct _node),
-                      &compare_nodes);
-            }
-
-            if (ctx->meta[i].tinf->gc < low ||
-                ctx->meta[i].tinf->gc > high)
-                continue;
-
-            reset_node_scores(ctx->nodes, ctx->nn);
-            score_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes, ctx->nn,
-                        ctx->meta[i].tinf, ctx->config.closed_ends, 1);
-            record_overlapping_starts(ctx->nodes, ctx->nn,
-                                      ctx->meta[i].tinf, 1);
-            ipath = dprog(ctx->nodes, ctx->nn, ctx->meta[i].tinf, 1);
-
-            /* A bin without a gene path (ipath -1) scores 0.0, the empty
-               path, as in the CLI (docs/upstream-behavior.md). */
-            path_score = (ipath >= 0) ? ctx->nodes[ipath].score : 0.0;
-            if (path_score > max_score) {
-                max_phase = i;
-                max_score = path_score;
-                eliminate_bad_genes(ctx->nodes, ipath, ctx->meta[i].tinf);
-                ng = add_genes(ctx->genes, ctx->nodes, ipath);
-                tweak_final_starts(ctx->genes, ng, ctx->nodes, ctx->nn,
-                                   ctx->meta[i].tinf);
-                record_gene_data(ctx->genes, ng, ctx->nodes,
-                                 ctx->meta[i].tinf, 1);
-            }
-        }
-
-        /* Recover best-bin nodes for output */
-        memset(ctx->nodes, 0, ctx->nn * sizeof(struct _node));
-        ctx->nn = add_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
-                            ctx->config.closed_ends, ctx->mlist, ctx->nmask,
-                            ctx->meta[max_phase].tinf);
-        qsort(ctx->nodes, ctx->nn, sizeof(struct _node), &compare_nodes);
-        score_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes, ctx->nn,
-                    ctx->meta[max_phase].tinf, ctx->config.closed_ends, 1);
-
-        /* Use best bin's training for SOA extraction */
-        memcpy(&ctx->tinf, ctx->meta[max_phase].tinf,
-               sizeof(struct _training));
-
-        *genes_out = extract_soa(ctx, ng);
-        fill_stats(ctx, ng, stats_out, max_phase,
-                   ctx->meta[max_phase].desc);
-
-    } else {
-        /* Single genome mode */
-        if (!ctx->trained) {
-            PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                          "No training data loaded (call prodigal_train or "
-                          "prodigal_load_training first)");
-            return PRODIGAL_ERR_INVALID_INPUT;
-        }
-
-        ng = run_gene_pipeline(ctx);
-        if (ng < 0) return ctx->error_code;
-
-        *genes_out = extract_soa(ctx, ng);
-        fill_stats(ctx, ng, stats_out, -1, NULL);
+    if (!ctx->config.meta_mode && !ctx->trained) {
+        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
+                      "No training data loaded (call prodigal_train or "
+                      "prodigal_load_training first)");
+        return PRODIGAL_ERR_INVALID_INPUT;
+    }
+    if (ctx->slen == 0) {
+        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT, "No sequence loaded");
+        return PRODIGAL_ERR_INVALID_INPUT;
     }
 
+    if (ctx->config.meta_mode) {
+        pdg_meta_result_t res;
+        rc = pdg_meta(ctx, 1, &res);
+        if (rc != PRODIGAL_OK) return rc;
+        ng = res.n_genes;
+        nn = res.n_nodes;
+        bin = res.bin;
+        desc = ctx->meta[bin].desc;
+        /* The best bin's nodes, which extract_soa reads */
+        rc = pdg_score_nodes(ctx, ctx->meta[bin].tinf);
+        if (rc != PRODIGAL_OK) return rc;
+        /* Use best bin's training for SOA extraction */
+        memcpy(&ctx->tinf, ctx->meta[bin].tinf, sizeof(struct _training));
+    } else {
+        rc = pdg_score_nodes(ctx, &ctx->tinf);
+        if (rc != PRODIGAL_OK) return rc;
+        ng = pdg_single_genes(ctx, 1);
+        nn = ctx->nn;
+    }
+
+    *genes_out = extract_soa(ctx, ng);
     if (*genes_out == NULL) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
                       "Failed to allocate SOA output");
         return PRODIGAL_ERR_NOMEM;
     }
-
+    fill_stats(ctx, ng, nn, stats_out, bin, desc);
     return PRODIGAL_OK;
 }
 

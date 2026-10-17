@@ -21,11 +21,13 @@
 SHELL   = /bin/sh
 CC      = gcc
 
-CFLAGS  += -pedantic -Wall -O3 -DSUPPORT_GZIP_COMPRESSED
+CFLAGS  += -pedantic -Wall -O3
 # No fused multiply-add, so ARM64 builds compute exactly what x86-64 does
 # (docs/testing.md); "override" keeps it when CFLAGS is given on the command
 # line. tests/oracle_diff.sh builds the oracle the same way.
 override CFLAGS += -ffp-contract=off
+# The CLI reads gzip input; the library takes sequences from the caller.
+CLI_DEFS = -DSUPPORT_GZIP_COMPRESSED
 LFLAGS = -lm $(LDFLAGS) -lz
 
 TARGET  = prodigal
@@ -55,14 +57,14 @@ all: $(TARGET)
 
 # Objects depend on the compiler, its version and the flags, so changing any
 # of them rebuilds everything instead of mixing stale objects.
-BUILD_FLAGS := $(CC) $(shell $(CC) --version 2>/dev/null | head -1) $(CFLAGS)
+BUILD_FLAGS := $(CC) $(shell $(CC) --version 2>/dev/null | head -1) $(CFLAGS) $(CLI_DEFS)
 .build-flags: FORCE
 	@echo '$(BUILD_FLAGS)' | cmp -s - $@ || echo '$(BUILD_FLAGS)' >$@
 FORCE:
 
 # CLI objects: compiled WITHOUT PRODIGAL_NO_MAIN
 %.o: %.c $(HEADERS) .build-flags
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(CLI_DEFS) -c -o $@ $<
 
 # Library objects: compiled WITH PRODIGAL_NO_MAIN (suppresses stderr in core)
 %.lib.o: %.c $(HEADERS) .build-flags

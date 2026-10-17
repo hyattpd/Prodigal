@@ -708,6 +708,24 @@ static void test_context_reuse(void) {
     TEST_PASS();
 }
 
+static void test_find_genes_without_sequence(void) {
+    TEST_START("find_genes without a sequence is an error");
+    prodigal_genes_soa_t *genes = NULL;
+    prodigal_ctx_t *ctx = make_ctx(1);
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_EQ_INT(prodigal_find_genes(ctx, &genes, NULL), PRODIGAL_ERR_INVALID_INPUT);
+    ASSERT_TRUE(genes == NULL);
+    prodigal_destroy(ctx);
+
+    /* Single mode: training is checked first */
+    ctx = make_ctx(0);
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_EQ_INT(prodigal_find_genes(ctx, &genes, NULL), PRODIGAL_ERR_INVALID_INPUT);
+    ASSERT_TRUE(strstr(prodigal_last_error(ctx), "training") != NULL);
+    prodigal_destroy(ctx);
+    TEST_PASS();
+}
+
 static void test_error_recovery(void) {
     TEST_START("error recovery: bad input then good input");
 
@@ -743,9 +761,12 @@ static void test_error_recovery(void) {
 static size_t alloc_count = 0;
 static size_t free_count = 0;
 
+static size_t alloc_limit = (size_t)-1;   /* test_alloc fails past this */
+
 static void *test_alloc(size_t size, void *user_data) {
-    alloc_count++;
     (void)user_data;
+    if (alloc_count >= alloc_limit) return NULL;
+    alloc_count++;
     return malloc(size);
 }
 
@@ -755,20 +776,25 @@ static void test_free_fn(void *ptr, void *user_data) {
     free(ptr);
 }
 
-static void test_custom_allocator(void) {
-    TEST_START("custom allocator used for internal buffers");
-    alloc_count = 0;
-    free_count = 0;
-
-    fasta_t fa;
-    if (!load_anthus(&fa)) return;
-
+/* A metagenomic context on test_alloc/test_free_fn, with the counters reset
+   and no allocation limit. */
+static prodigal_ctx_t *make_counted_ctx(void) {
     prodigal_config_t config;
     prodigal_config_init(&config);
     config.meta_mode = 1;
     config.alloc_fn = test_alloc;
     config.free_fn = test_free_fn;
-    prodigal_ctx_t *ctx = prodigal_create(&config);
+    alloc_count = free_count = 0;
+    alloc_limit = (size_t)-1;
+    return prodigal_create(&config);
+}
+
+static void test_custom_allocator(void) {
+    TEST_START("custom allocator used for internal buffers");
+    fasta_t fa;
+    if (!load_anthus(&fa)) return;
+
+    prodigal_ctx_t *ctx = make_counted_ctx();
     ASSERT_TRUE(ctx != NULL);
     ASSERT_TRUE(alloc_count > 0);
 
@@ -781,6 +807,34 @@ static void test_custom_allocator(void) {
     prodigal_destroy(ctx);
     ASSERT_TRUE(free_count > 0);
 
+    fasta_free(&fa);
+    TEST_PASS();
+}
+
+static void test_meta_alloc_failure(void) {
+    TEST_START("meta: failed bin allocation, retry, no leak");
+    fasta_t fa;
+    if (!load_anthus(&fa)) return;
+
+    prodigal_ctx_t *ctx = make_counted_ctx();
+    ASSERT_TRUE(ctx != NULL);
+    size_t held = alloc_count - free_count;
+    ASSERT_EQ_INT(prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], fa.headers[0]),
+                  PRODIGAL_OK);
+
+    /* The bin array and 10 of the 50 bin models, then failure */
+    alloc_limit = alloc_count + 11;
+    prodigal_genes_soa_t *genes = NULL;
+    ASSERT_EQ_INT(prodigal_find_genes(ctx, &genes, NULL), PRODIGAL_ERR_NOMEM);
+    ASSERT_TRUE(genes == NULL);
+    ASSERT_TRUE(alloc_count - free_count == held);
+
+    alloc_limit = (size_t)-1;
+    ASSERT_EQ_INT(prodigal_find_genes(ctx, &genes, NULL), PRODIGAL_OK);
+    ASSERT_TRUE(genes != NULL && genes->n_genes > 0);
+    prodigal_genes_free(genes);
+    prodigal_destroy(ctx);
+    ASSERT_TRUE(alloc_count == free_count);
     fasta_free(&fa);
     TEST_PASS();
 }
@@ -1146,11 +1200,12 @@ static void test_golden(void) {
 }
 
 /* A contig's output must not depend on what the context did before: running
-   every record twice on one context, and each record on a fresh context,
-   must both give the first run's output. */
+   every record again on the same context, each record on a fresh context,
+   and prodigal_find_genes twice per prodigal_set_sequence must all give the
+   first run's output. */
 static void independence(int meta) {
     fasta_t fa;
-    lines_t first = {0}, again = {0}, solo = {0};
+    lines_t first = {0}, again = {0}, solo = {0}, twice = {0};
     prodigal_ctx_t *ctx = NULL;
     void *blob = NULL;
     size_t len = 0;
@@ -1168,12 +1223,20 @@ static void independence(int meta) {
                      : PRODIGAL_ERR_NOMEM;
             prodigal_destroy(one);
         }
+        for (k = 0; rc == PRODIGAL_OK && k < fa.n; k++) {
+            prodigal_genes_soa_t *g = NULL;
+            rc = prodigal_set_sequence(ctx, fa.seqs[k], fa.lens[k], fa.headers[k]);
+            if (rc == PRODIGAL_OK) rc = prodigal_find_genes(ctx, &g, NULL);
+            prodigal_genes_free(g);
+            if (rc == PRODIGAL_OK) rc = api_emit_found(ctx, &fa, k, meta, lines_emit, &twice);
+        }
         if (rc != PRODIGAL_OK) printf("[FAIL] find_genes failed (%d)\n", rc);
         else if (lines_equal(&first, &again, "second pass on the same context", 0) &&
-                 lines_equal(&first, &solo, "each record on a fresh context", 0))
+                 lines_equal(&first, &solo, "each record on a fresh context", 0) &&
+                 lines_equal(&first, &twice, "find_genes twice per sequence", 0))
             TEST_PASS();
     }
-    lines_free(&first); lines_free(&again); lines_free(&solo);
+    lines_free(&first); lines_free(&again); lines_free(&solo); lines_free(&twice);
     prodigal_destroy(ctx);
     free(blob);
     fasta_free(&fa);
@@ -1249,10 +1312,12 @@ int main(void) {
 
     printf("\nPhase 7: Context Reuse and Error Recovery\n");
     test_context_reuse();
+    test_find_genes_without_sequence();
     test_error_recovery();
 
     printf("\nPhase 8: Allocator Hooks\n");
     test_custom_allocator();
+    test_meta_alloc_failure();
 
     printf("\nPhase 9: Callbacks\n");
     test_log_callback();

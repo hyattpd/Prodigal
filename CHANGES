@@ -14,9 +14,14 @@ is unchanged; metagenomic mode runs about twice as fast.
 * Builds with -ffp-contract=off, so ARM64 computes exactly what x86-64 does.
 Without it a default ARM64 build fused multiply-adds and printed some start
 scores differently in the last digit (e.g. in the -s output).
-* Known deviation since 2.6.4: without -q, single mode and -t no longer
-print upstream's training progress lines on stderr (training goes through
-the library, which prints nothing). Output files are unaffected.
+* The CLI and the library now share one gene-finding pipeline
+(prodigal_internal.h). Without -q, training again prints upstream's progress
+lines on stderr (missing since 2.6.4).
+* Library, single genome mode: calling prodigal_find_genes twice on the same
+sequence could change the second result, because the nodes of the first
+call were not cleared (a gene could turn into an edge gene).
+* Library: prodigal_find_genes without a sequence set is now an error in
+metagenomic mode too (it returned no genes).
 * CI now covers v2.6.4-miint: every CLI output type in both modes against
 the upstream ground truth on Linux (x86-64, ARM64), macOS and Windows, and
 the CLI against an upstream c1e2d36 build across a flag matrix and corpus.

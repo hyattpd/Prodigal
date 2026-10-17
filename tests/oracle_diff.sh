@@ -84,8 +84,9 @@ if [ -z "$ORACLE" ]; then
     mkdir -p "$OD" && echo building >"$OD/.oracle-stamp" &&
       git archive "$OCOMMIT" | tar -x -f - -C "$OD" &&
       { [ -z "$patch" ] || patch -s -p1 -d "$OD" <"$patch"; } &&
-      { make -C "$OD" CC="$cc" CFLAGS=-O0 training.o &&
-        CFLAGS="$ocflags" make -C "$OD" CC="$cc"; } >"$OD/build.log" 2>&1 ||
+      ( unset MAKEFLAGS MFLAGS   # "make oracle CFLAGS=..." must not reach it
+        make -C "$OD" CC="$cc" CFLAGS=-O0 training.o &&
+        CFLAGS="$ocflags" make -C "$OD" CC="$cc" ) >"$OD/build.log" 2>&1 ||
       { echo "error: oracle build failed; see $OD/build.log" >&2; exit 2; }
     echo "$key" >"$OD/.oracle-stamp"
   fi
@@ -99,9 +100,7 @@ corpus_setup "$O/corpus" || exit 2
 # One job line per (case, binary), with $quiet appended (never a trailing
 # blank, see run_jobs). The case list, not the directories found afterwards,
 # drives the comparison, so a case that never ran fails. A case must succeed
-# on the oracle unless it matches a pattern in expect_error. Cases matching
-# expect_stderr_diff are known to differ on stderr and must keep differing,
-# so the pattern is removed once they match.
+# on the oracle unless it matches a pattern in expect_error.
 add() {  # add <case> <input> <args...>
   local name=$1; shift
   echo "$name" >>"$O/cases.list"
@@ -109,9 +108,6 @@ add() {  # add <case> <input> <args...>
   echo "$ORACLE $O/cases/$name/oracle $*${quiet:+ $quiet}" >>"$O/jobs.$phase"
 }
 expect_error=("trained.*.n")   # -n with a training file is a usage error
-# The fork's CLI trains through the silent library (docs/upstream-behavior.md,
-# "Fork deviations"); to be restored in P1.
-expect_stderr_diff=("loud.single" "loud.train")
 outs="-o out -a faa -d fna -s starts"
 flagsets=("" "-c" "-m" "-n" "-g 4" "-g 25")
 trainsets=("" "-c" "-m" "-n" "-g 4")
@@ -186,12 +182,6 @@ while read -r name; do
     if [ ! -f "$k" ]; then bad="$bad $f(missing)"; continue; fi
     case $f in
       *.bin) cmp -s "$o" "$k" || bad="$bad $f" ;;
-      stderr) diff_norm "$o" "$k" "$dir/$f.diff"; same=$?
-        if matches "$name" "${expect_stderr_diff[@]}"; then
-          [ $same != 0 ] || bad="$bad stderr(now-matches:update-expect_stderr_diff)"
-        else
-          [ $same = 0 ] || bad="$bad $f"
-        fi ;;
       *) diff_norm "$o" "$k" "$dir/$f.diff" || bad="$bad $f" ;;
     esac
   done

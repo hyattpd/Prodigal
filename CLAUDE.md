@@ -39,9 +39,8 @@ algorithm and keeps the upstream CLI (`main.c`) working.
    when you make it. Upstream quirks that look like bugs are listed in that
    file; do not "fix" them silently.
 
-As of `dd88690`, (1) holds and (2) does not. The CLI runs its own copy of the
-gene-finding pipeline, so CI, which only exercises the CLI, never tests the
-API path. See "Two pipelines" in `docs/internals.md`.
+The CLI and the API share one gene-finding pipeline ("One pipeline" in
+`docs/internals.md`); `make compare` checks (2) on every CI run.
 
 ## Build and test
 
@@ -81,8 +80,8 @@ x86-64/ARM64 and macOS, and `test_api` under WASM, for pushes and PRs to
 |---|---|
 | `prodigal.h` | Public API: config, SOA/AOS output structs, stats, error codes. Heavily commented. |
 | `prodigal_api.c` | API implementation: sequence encoding, training, both gene-finding modes, SOA extraction. |
-| `prodigal_internal.h` | `struct prodigal_ctx`, `pdg_alloc`/`pdg_free`, the `PDG_LOG`/`PDG_SET_ERROR` macros. |
-| `main.c` | Upstream CLI, adapted to hold its state in a `prodigal_ctx_t`. Whole file sits behind `#ifndef PRODIGAL_NO_MAIN`. |
+| `prodigal_internal.h` | `struct prodigal_ctx`, `pdg_alloc`/`pdg_calloc`/`pdg_free`, the `PDG_LOG`/`PDG_SET_ERROR` macros, and the `pdg_*` pipeline shared by the CLI and the API (defined in `prodigal_api.c`). |
+| `main.c` | Upstream CLI: input, progress text and printing around the shared `pdg_*` pipeline, with its state in a `prodigal_ctx_t`. Whole file sits behind `#ifndef PRODIGAL_NO_MAIN`. |
 | `node.c/.h` | Start/stop node creation, coding/RBS/upstream scoring, start training, `intergenic_mod`, `-s` start file. |
 | `dprog.c/.h` | Dynamic programming over nodes and `eliminate_bad_genes`. |
 | `gene.c/.h` | `add_genes`, `tweak_final_starts`, `record_gene_data` (GFF attribute strings), CLI printers, translations, `calculate_confidence`. |

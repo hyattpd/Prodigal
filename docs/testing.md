@@ -77,10 +77,8 @@ and clang) and macOS job. Build `./prodigal` with the same `CC` you pass to
 - Every case must succeed on the oracle, except the deliberate usage errors;
   agreeing on an error is not agreement on output.
 - Almost every case runs with `-q`. A few anthus cases run without it, with
-  the banner normalised: their stderr must match, except single mode and
-  `-t`, where the fork lacks upstream's training progress lines
-  (`upstream-behavior.md`, "Fork deviations"). Those two must keep
-  differing until that is fixed, then the exception goes.
+  the banner normalised, and their stderr (training progress included) must
+  match too.
 - **`ECOLI=<fasta>`** adds E. coli K-12 MG1655 (`NC_000913.3`, 4.64 Mbp; the
   maintainer has it at `~/dev/G000005845.fasta`) and its 2,320 2 kbp
   fragments: genome-scale training, and the `slen < 3000` metagenomic
@@ -156,9 +154,11 @@ roughly comparable.
 | E. coli 2 kbp fragments (2,320) | meta | 6.01 s, 88 MiB | 6.03 s, 92 MiB |
 | E. coli 2 kbp fragments | single, from model | 0.68 s, 49 MiB | 0.65 s, 53 MiB |
 
-The API's peak RSS includes its fixed per-context buffers (sequence
-bitmaps and the 30 MB gene array, about 50 MB), which P4 sizes from the
-input. Compare later measurements with this table on the same machine.
+The API's extra peak RSS came from zeroing the whole grown node array
+with `memset`, which commits every page. Since P1 the array is grown with
+`calloc` (`reserve_nodes`), and the API is within 3–5 MiB of the CLI (E.
+coli single from model 84 MiB, meta 138 MiB, single trained 152 MiB). Compare
+later measurements with this table on the same machine.
 
 ## Sanitizers and concurrency
 

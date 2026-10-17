@@ -37,13 +37,17 @@ void version();
 void usage(char *);
 void help();
 int copy_standard_input_to_file(char *, int);
+static void report_training(const prodigal_ctx_t *, int, int);
+static void pipeline_failed(prodigal_ctx_t *);
 
 int main(int argc, char *argv[]) {
 
-  int rv, nn, ng, i, ipath, do_training, output, max_phase;
+  int rv, ng, i, do_training, output;
   int user_tt, num_seq, quiet;
   int piped, fnum;
-  double max_score, path_score, gc, low, high;
+  char *desc;
+  struct _training *tinf;
+  pdg_meta_result_t meta;
   char *train_file, *start_file, *trans_file, *nuc_file;
   char *input_file, *output_file, input_copy[MAX_LINE];
   char cur_header[MAX_LINE], new_header[MAX_LINE], short_header[MAX_LINE];
@@ -59,9 +63,8 @@ int main(int argc, char *argv[]) {
   /* Initialize config with defaults */
   prodigal_config_init(&config);
 
-  nn = 0; ipath = 0; ng = 0;
+  ng = 0;
   user_tt = 0; num_seq = 0; quiet = 0;
-  max_phase = 0; max_score = -100.0;
   train_file = NULL; do_training = 0;
   start_file = NULL; trans_file = NULL; nuc_file = NULL;
   start_ptr = stdout; trans_ptr = stdout; nuc_ptr = stdout;
@@ -307,19 +310,9 @@ int main(int argc, char *argv[]) {
               ctx->tinf.gc*100.0);
     }
 
-    /* Use library training pipeline */
-    if(quiet == 0) {
-      fprintf(stderr, "Locating all potential starts and stops...");
-    }
-    rv = prodigal_train(ctx);
-    if(rv != PRODIGAL_OK) {
-      fprintf(stderr, "\nError: training failed: %s\n",
-              prodigal_last_error(ctx));
-      exit(11);
-    }
-    if(quiet == 0) {
-      fprintf(stderr, "done!\n");
-    }
+    /* Train with the library, printing upstream's progress text */
+    if(pdg_train(ctx, quiet == 0 ? report_training : NULL) != PRODIGAL_OK)
+      pipeline_failed(ctx);
 
     /* If training specified, write the training file and exit. */
     if(do_training == 1) {
@@ -345,12 +338,7 @@ int main(int argc, char *argv[]) {
       exit(13);
     }
 
-    /* Reset sequence/dynamic programming variables */
-    memset(ctx->seq, 0, (ctx->slen/4+1)*sizeof(unsigned char));
-    memset(ctx->rseq, 0, (ctx->slen/4+1)*sizeof(unsigned char));
-    memset(ctx->useq, 0, (ctx->slen/8+1)*sizeof(unsigned char));
-    memset(ctx->nodes, 0, ctx->nn*sizeof(struct _node));
-    ctx->nn = 0; ctx->slen = 0; ipath = 0; ctx->nmask = 0;
+    pdg_clear_sequence(ctx);
   }
 
   /* Initialize the training files for a metagenomic request */
@@ -359,25 +347,10 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Request:  Metagenomic, Phase:  Training\n");
       fprintf(stderr, "Initializing training files...");
     }
-    /* Allocate and initialize metagenomic bins */
-    ctx->meta = (struct _metagenomic_bin *)malloc(
-        NUM_META * sizeof(struct _metagenomic_bin));
-    if(ctx->meta == NULL) {
-      fprintf(stderr, "\nError: Malloc failed on metagenomic bins.\n\n");
+    if(pdg_meta_init(ctx) != PRODIGAL_OK) {
+      fprintf(stderr, "\nError: %s\n\n", prodigal_last_error(ctx));
       exit(1);
     }
-    for(i = 0; i < NUM_META; i++) {
-      memset(&ctx->meta[i], 0, sizeof(struct _metagenomic_bin));
-      strcpy(ctx->meta[i].desc, "None");
-      ctx->meta[i].tinf = (struct _training *)malloc(sizeof(struct _training));
-      if(ctx->meta[i].tinf == NULL) {
-        fprintf(stderr, "\nError: Malloc failed on training structure.\n\n");
-        exit(1);
-      }
-      memset(ctx->meta[i].tinf, 0, sizeof(struct _training));
-    }
-    initialize_metagenomic_bins(ctx->meta);
-    ctx->meta_initialized = 1;
     if(quiet == 0) {
       fprintf(stderr, "done!\n");
       fprintf(stderr, "-------------------------------------\n");
@@ -395,7 +368,7 @@ int main(int argc, char *argv[]) {
   sprintf(cur_header, "Prodigal_Seq_1");
   sprintf(new_header, "Prodigal_Seq_2");
   while((ctx->slen = next_seq_multi(input_ptr, ctx->seq, ctx->useq, &num_seq,
-         &gc, config.mask_regions, ctx->mlist, &ctx->nmask, cur_header,
+         &ctx->gc, config.mask_regions, ctx->mlist, &ctx->nmask, cur_header,
          new_header)) != -1) {
     rcom_seq(ctx->seq, ctx->rseq, ctx->useq, ctx->slen);
     if(ctx->slen == 0) {
@@ -409,137 +382,51 @@ int main(int argc, char *argv[]) {
               ctx->slen);
     }
 
-    /* Reallocate memory if this is the biggest sequence we've seen */
-    if(ctx->slen > ctx->max_slen && ctx->slen > STT_NOD*8) {
-      ctx->nodes = (struct _node *)realloc(ctx->nodes,
-                   (int)(ctx->slen/8)*sizeof(struct _node));
-      if(ctx->nodes == NULL) {
-        fprintf(stderr, "Realloc failed on nodes\n\n");
-        exit(11);
-      }
-      ctx->max_slen = ctx->slen;
-    }
-
     /* Calculate short header for this sequence */
     calc_short_header(cur_header, short_header, num_seq);
 
     if(config.meta_mode == 0) { /* Single Genome Version */
-
-      nn = add_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
-                     config.closed_ends, ctx->mlist, ctx->nmask, &ctx->tinf);
-      qsort(ctx->nodes, nn, sizeof(struct _node), &compare_nodes);
-
-      score_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes, nn, &ctx->tinf,
-                  config.closed_ends, config.meta_mode);
+      tinf = &ctx->tinf;
+      desc = NULL;
+      if(pdg_score_nodes(ctx, tinf) != PRODIGAL_OK) pipeline_failed(ctx);
       if(start_ptr != stdout)
-        write_start_file(start_ptr, ctx->nodes, nn, &ctx->tinf, num_seq,
+        write_start_file(start_ptr, ctx->nodes, ctx->nn, tinf, num_seq,
                          ctx->slen, 0, NULL, VERSION, cur_header);
-      record_overlapping_starts(ctx->nodes, nn, &ctx->tinf, 1);
-      ipath = dprog(ctx->nodes, nn, &ctx->tinf, 1);
-      eliminate_bad_genes(ctx->nodes, ipath, &ctx->tinf);
-      ng = add_genes(ctx->genes, ctx->nodes, ipath);
-      tweak_final_starts(ctx->genes, ng, ctx->nodes, nn, &ctx->tinf);
-      record_gene_data(ctx->genes, ng, ctx->nodes, &ctx->tinf, num_seq);
-      if(quiet == 0) {
-        fprintf(stderr, "done!\n");
-      }
-
-      /* Output the genes */
-      print_genes(output_ptr, ctx->genes, ng, ctx->nodes, ctx->slen, output,
-                  num_seq, 0, NULL, &ctx->tinf, cur_header, short_header,
-                  VERSION);
-      fflush(output_ptr);
-      if(trans_ptr != stdout)
-        write_translations(trans_ptr, ctx->genes, ng, ctx->nodes, ctx->seq,
-                           ctx->rseq, ctx->useq, ctx->slen, &ctx->tinf,
-                           num_seq, short_header);
-      if(nuc_ptr != stdout)
-        write_nucleotide_seqs(nuc_ptr, ctx->genes, ng, ctx->nodes, ctx->seq,
-                              ctx->rseq, ctx->useq, ctx->slen, &ctx->tinf,
-                              num_seq, short_header);
+      ng = pdg_single_genes(ctx, num_seq);
     }
 
     else { /* Metagenomic Version */
-
-      low = 0.88495*gc - 0.0102337;
-      if(low > 0.65) low = 0.65;
-      high = 0.86596*gc + .1131991;
-      if(high < 0.35) high = 0.35;
-
-      max_score = -100.0;
-      for(i = 0; i < NUM_META; i++) {
-        if(i == 0 || ctx->meta[i].tinf->trans_table !=
-           ctx->meta[i-1].tinf->trans_table) {
-          memset(ctx->nodes, 0, nn*sizeof(struct _node));
-          nn = add_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
-                         config.closed_ends, ctx->mlist, ctx->nmask,
-                         ctx->meta[i].tinf);
-          qsort(ctx->nodes, nn, sizeof(struct _node), &compare_nodes);
-        }
-        if(ctx->meta[i].tinf->gc < low || ctx->meta[i].tinf->gc > high)
-          continue;
-        reset_node_scores(ctx->nodes, nn);
-        score_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes, nn,
-                    ctx->meta[i].tinf, config.closed_ends, config.meta_mode);
-        record_overlapping_starts(ctx->nodes, nn, ctx->meta[i].tinf, 1);
-        ipath = dprog(ctx->nodes, nn, ctx->meta[i].tinf, 1);
-        /* dprog returns -1 when it finds no gene path; upstream then reads
-           nodes[-1].score, which is undefined (it crashes on macOS). The
-           empty path scores 0.0 in dprog, where every node starts at 0, and
-           that is also what upstream's read returns on glibc; see
-           docs/upstream-behavior.md. */
-        path_score = (ipath >= 0) ? ctx->nodes[ipath].score : 0.0;
-        if(path_score > max_score) {
-          max_phase = i;
-          max_score = path_score;
-          eliminate_bad_genes(ctx->nodes, ipath, ctx->meta[i].tinf);
-          ng = add_genes(ctx->genes, ctx->nodes, ipath);
-          tweak_final_starts(ctx->genes, ng, ctx->nodes, nn,
-                             ctx->meta[i].tinf);
-          record_gene_data(ctx->genes, ng, ctx->nodes, ctx->meta[i].tinf,
-                           num_seq);
-        }
-      }
-
-      /* Recover the nodes for the best of the runs */
-      memset(ctx->nodes, 0, nn*sizeof(struct _node));
-      nn = add_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
-                     config.closed_ends, ctx->mlist, ctx->nmask,
-                     ctx->meta[max_phase].tinf);
-      qsort(ctx->nodes, nn, sizeof(struct _node), &compare_nodes);
-      score_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes, nn,
-                  ctx->meta[max_phase].tinf, config.closed_ends,
-                  config.meta_mode);
+      /* Every bin, then the best bin's nodes on their own, which column 6
+         and the start file are printed from */
+      if(pdg_meta(ctx, num_seq, &meta) != PRODIGAL_OK) pipeline_failed(ctx);
+      ng = meta.n_genes;
+      tinf = ctx->meta[meta.bin].tinf;
+      desc = ctx->meta[meta.bin].desc;
+      if(pdg_score_nodes(ctx, tinf) != PRODIGAL_OK) pipeline_failed(ctx);
       if(start_ptr != stdout)
-        write_start_file(start_ptr, ctx->nodes, nn, ctx->meta[max_phase].tinf,
-                         num_seq, ctx->slen, 1, ctx->meta[max_phase].desc,
-                         VERSION, cur_header);
-
-      if(quiet == 0) {
-        fprintf(stderr, "done!\n");
-      }
-
-      /* Output the genes */
-      print_genes(output_ptr, ctx->genes, ng, ctx->nodes, ctx->slen, output,
-                  num_seq, 1, ctx->meta[max_phase].desc,
-                  ctx->meta[max_phase].tinf, cur_header, short_header, VERSION);
-      fflush(output_ptr);
-      if(trans_ptr != stdout)
-        write_translations(trans_ptr, ctx->genes, ng, ctx->nodes, ctx->seq,
-                           ctx->rseq, ctx->useq, ctx->slen,
-                           ctx->meta[max_phase].tinf, num_seq, short_header);
-      if(nuc_ptr != stdout)
-        write_nucleotide_seqs(nuc_ptr, ctx->genes, ng, ctx->nodes, ctx->seq,
-                              ctx->rseq, ctx->useq, ctx->slen,
-                              ctx->meta[max_phase].tinf, num_seq, short_header);
+        write_start_file(start_ptr, ctx->nodes, ctx->nn, tinf, num_seq,
+                         ctx->slen, 1, desc, VERSION, cur_header);
     }
 
-    /* Reset all the sequence/dynamic programming variables */
-    memset(ctx->seq, 0, (ctx->slen/4+1)*sizeof(unsigned char));
-    memset(ctx->rseq, 0, (ctx->slen/4+1)*sizeof(unsigned char));
-    memset(ctx->useq, 0, (ctx->slen/8+1)*sizeof(unsigned char));
-    memset(ctx->nodes, 0, nn*sizeof(struct _node));
-    nn = 0; ctx->slen = 0; ipath = 0; ctx->nmask = 0;
+    if(quiet == 0) {
+      fprintf(stderr, "done!\n");
+    }
+
+    /* Output the genes */
+    print_genes(output_ptr, ctx->genes, ng, ctx->nodes, ctx->slen, output,
+                num_seq, config.meta_mode, desc, tinf, cur_header,
+                short_header, VERSION);
+    fflush(output_ptr);
+    if(trans_ptr != stdout)
+      write_translations(trans_ptr, ctx->genes, ng, ctx->nodes, ctx->seq,
+                         ctx->rseq, ctx->useq, ctx->slen, tinf, num_seq,
+                         short_header);
+    if(nuc_ptr != stdout)
+      write_nucleotide_seqs(nuc_ptr, ctx->genes, ng, ctx->nodes, ctx->seq,
+                            ctx->rseq, ctx->useq, ctx->slen, tinf, num_seq,
+                            short_header);
+
+    pdg_clear_sequence(ctx);
     strcpy(cur_header, new_header);
     sprintf(new_header, "Prodigal_Seq_%d\n", num_seq+1);
   }
@@ -620,6 +507,31 @@ void help() {
   fprintf(stderr, "              the specified training file.\n");
   fprintf(stderr, "         -v:  Print version number and exit.\n\n");
   exit(0);
+}
+
+/* pdg_train's report: upstream's progress text around each stage. */
+static void report_training(const prodigal_ctx_t *ctx, int stage, int done) {
+  static const char *const what[] = {
+    "Locating all potential starts and stops...",
+    "Looking for GC bias in different frames...",
+    "Building initial set of genes to train from...",
+    "Creating coding model and scoring nodes...",
+    "Examining upstream regions and training starts..."
+  };
+
+  if(done == 0) fprintf(stderr, "%s", what[stage]);
+  else if(stage == PDG_TRAIN_NODES) fprintf(stderr, "%d nodes\n", ctx->nn);
+  else if(stage == PDG_TRAIN_GC_BIAS)
+    fprintf(stderr, "frame bias scores: %.2f %.2f %.2f\n", ctx->tinf.bias[0],
+            ctx->tinf.bias[1], ctx->tinf.bias[2]);
+  else fprintf(stderr, "done!\n");
+}
+
+/* Training or gene finding failed for lack of memory; the library's
+   message is upstream's. */
+static void pipeline_failed(prodigal_ctx_t *ctx) {
+  fprintf(stderr, "%s\n\n", prodigal_last_error(ctx));
+  exit(11);
 }
 
 /* For piped input, we make a copy of stdin so we can rewind the file. */

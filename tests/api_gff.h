@@ -149,32 +149,42 @@ static int api_train(prodigal_ctx_t *ctx, const fasta_t *fa, int fix_gc) {
 
 typedef void (*api_emit_fn)(const char *line, void *arg);
 
-/* Find genes in records [first, last) of fa on ctx and emit each record's
-   model line and gene lines; meta selects metagenomic formatting. Returns
-   PRODIGAL_OK or the failing call's error code. */
+/* Find genes in the sequence set on ctx, record k of fa, and emit its model
+   line and gene lines; meta selects metagenomic formatting. Returns
+   PRODIGAL_OK or prodigal_find_genes's error code. */
+static int api_emit_found(prodigal_ctx_t *ctx, const fasta_t *fa, int32_t k,
+                          int meta, api_emit_fn emit, void *arg) {
+    char seqid[API_GFF_LINE_MAX], line[API_GFF_LINE_MAX];
+    prodigal_genes_soa_t *g = NULL;
+    prodigal_stats_t stats;
+    prodigal_seq_info_t info;
+    int32_t j;
+    int rc = prodigal_find_genes(ctx, &g, &stats);
+    if (rc != PRODIGAL_OK) return rc;
+    prodigal_get_seq_info(ctx, &info);
+    api_model_line(line, sizeof(line), k + 1, info.length,
+                   meta ? stats.best_meta_desc : "-",
+                   stats.translation_table, stats.uses_sd);
+    emit(line, arg);
+    api_seqid(seqid, sizeof(seqid), fa->headers[k], k + 1);
+    for (j = 0; j < g->n_genes; j++) {
+        api_gff_line(line, sizeof(line), g, j, seqid, k + 1, meta);
+        emit(line, arg);
+    }
+    prodigal_genes_free(g);
+    return PRODIGAL_OK;
+}
+
+/* api_emit_found for records [first, last) of fa, each set on ctx first.
+   Returns PRODIGAL_OK or the failing call's error code. */
 static int api_emit_records(prodigal_ctx_t *ctx, const fasta_t *fa,
                             int32_t first, int32_t last, int meta,
                             api_emit_fn emit, void *arg) {
-    char seqid[API_GFF_LINE_MAX], line[API_GFF_LINE_MAX];
-    int32_t k, j;
+    int32_t k;
     for (k = first; k < last; k++) {
-        prodigal_genes_soa_t *g = NULL;
-        prodigal_stats_t stats;
-        prodigal_seq_info_t info;
         int rc = prodigal_set_sequence(ctx, fa->seqs[k], fa->lens[k], fa->headers[k]);
-        if (rc == PRODIGAL_OK) rc = prodigal_find_genes(ctx, &g, &stats);
+        if (rc == PRODIGAL_OK) rc = api_emit_found(ctx, fa, k, meta, emit, arg);
         if (rc != PRODIGAL_OK) return rc;
-        prodigal_get_seq_info(ctx, &info);
-        api_model_line(line, sizeof(line), k + 1, info.length,
-                       meta ? stats.best_meta_desc : "-",
-                       stats.translation_table, stats.uses_sd);
-        emit(line, arg);
-        api_seqid(seqid, sizeof(seqid), fa->headers[k], k + 1);
-        for (j = 0; j < g->n_genes; j++) {
-            api_gff_line(line, sizeof(line), g, j, seqid, k + 1, meta);
-            emit(line, arg);
-        }
-        prodigal_genes_free(g);
     }
     return PRODIGAL_OK;
 }

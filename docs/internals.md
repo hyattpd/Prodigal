@@ -23,7 +23,7 @@ Each sequence lives in three bitmaps inside the context (`seq`, `rseq`,
   `is_n(useq, slen-1-j)`.
 
 Input filtering is the same in the CLI readers (`sequence.c:70`, `:181`) and
-in the API (`prodigal_api.c:239`, `:316`):
+in the API (`prodigal_set_sequence`, `prodigal_set_training_sequences`):
 
 - Characters outside `'A'..'z'` are skipped and do not advance the position.
   That includes `-`, `.`, `*`, digits and whitespace, so coordinates refer to
@@ -95,8 +95,9 @@ include this adjustment.**
 
 ## Training (single-genome mode)
 
-`prodigal_train` (`prodigal_api.c:376`) runs on the concatenated training
-sequence. It requires at least 20,000 bp; the CLI warns below 100,000 bp.
+`pdg_train` (`prodigal_api.c`; `prodigal_train` and the CLI call it) runs
+on the concatenated training sequence. It requires at least 20,000 bp; the
+CLI warns below 100,000 bp.
 
 1. `add_nodes`, sort.
 2. `calc_most_gc_frame`, then `record_gc_bias`, which sets `tinf->bias[3]`.
@@ -112,7 +113,7 @@ sequence. It requires at least 20,000 bp; the CLI warns below 100,000 bp.
 
 `tinf->gc` **must be set before step 1**, because `raw_coding_score` and the
 `ups_comp` log conversion read it. The CLI sets it in `read_seq_training`
-(`main.c:282`). The model (`struct _training`, 558,392 bytes) is
+(called from `main.c`). The model (`struct _training`, 558,392 bytes) is
 pointer-free, so `-t` / `prodigal_export_training` simply `fwrite`/`memcpy`
 it. The binary layout depends on the architecture's padding.
 
@@ -120,7 +121,7 @@ it. The binary layout depends on the architecture's padding.
 
 ### Single-genome mode (per contig)
 
-`main.c:428-442`, or `run_gene_pipeline` in `prodigal_api.c:575`:
+`pdg_score_nodes`, then `pdg_single_genes` (`prodigal_api.c`):
 
 ```
 add_nodes → qsort → score_nodes(is_meta=0) → record_overlapping_starts(1)
@@ -138,7 +139,7 @@ add_nodes → qsort → score_nodes(is_meta=0) → record_overlapping_starts(1)
 
 ### Metagenomic mode (per contig)
 
-`main.c:464-510`, or `prodigal_api.c:868-942`:
+`pdg_meta` (`prodigal_api.c`):
 
 1. GC window from the contig's GC:
    - `low = 0.88495*gc - 0.0102337` (at most 0.65)
@@ -195,26 +196,37 @@ in reverse complement for `-` genes:
 `write_nucleotide_seqs` prints A/C/G/T, with `N` for any ambiguous base
 (IUPAC codes are not preserved). Lines wrap at 70.
 
-## Two pipelines (the main source of API/CLI divergence)
+## One pipeline
 
-The CLI does **not** call `prodigal_find_genes`. `main.c` drives gene finding
-itself through the context's internals and prints from `ctx->genes` and
-`ctx->nodes`. It shares only `prodigal_create` / `prodigal_train` /
-`prodigal_destroy` with the library.
+The CLI and the library run the same gene-finding code, declared in
+`prodigal_internal.h` and defined in `prodigal_api.c` (so GPL-boundary's
+`build.rs` needs no new file):
 
-The library has its own copy of the per-contig pipeline
-(`run_gene_pipeline` and the meta loop). It builds its output in
-`extract_soa` by reading **node** fields, and `get_rbs_info` is a separate
-copy of the motif logic in `record_gene_data`. CI only runs the CLI, so the
-library path is checked solely by `test_api.c`, whose meta check compares
-coordinates and strand only.
+- `pdg_train`: training, in stages with a report hook (`prodigal_train`
+  logs from it; the CLI prints upstream's progress text);
+- `pdg_score_nodes`, then `pdg_single_genes`: single genome mode, split so
+  that the CLI can write its start file (`-s`) between scoring and DP;
+- `pdg_meta`: metagenomic mode, every bin whose GC window holds the contig,
+  keeping the best bin's genes.
 
-Known divergences at `dd88690`:
+`main.c` adds only what is the CLI's own: reading input, the progress text,
+the start file, and printing from `ctx->genes` and `ctx->nodes`. In
+metagenomic mode it calls `pdg_score_nodes` after `pdg_meta` with the best
+bin's model (the recovery pass); GFF column 6 and the `-s` table come from
+those nodes (`upstream-behavior.md`, quirk 2). The library's out-of-memory
+messages are upstream's, so the CLI prints them as they are.
+
+Node array invariant: every node past `ctx->nn` is zero. `build_nodes`
+clears the previous list before `add_nodes` (which sets `edge` only when it
+is 1, and a stale `elim` would drop a gene), and `reserve_nodes` grows the
+array zeroed. Nothing else writes nodes outside `[0, ctx->nn)`.
+
+Known divergences at `dd88690`, still open:
 
 - **Training GC.** `prodigal_set_training_sequences` computes `ctx->gc` but
   never sets `ctx->tinf.gc`, so API training runs with `gc = 0`. On E. coli
   the API calls 4,871 genes; the CLI calls 4,319.
-- **Meta scores.** `extract_soa` runs after the recovery pass, so `sscore`
+- **Meta scores.** `extract_soa` reads the recovery-pass nodes, so `sscore`
   and `confidence` miss `intergenic_mod`. On E. coli, 2,802 of 4,319 genes
   have a different `sscore` (`cscore` matches everywhere).
 - **Non-SD motif text.** `get_rbs_info` returns the literal `"Upstream"`
@@ -248,9 +260,6 @@ Known divergences at `dd88690`:
   nodes/bp, well under the 0.125/bp budget. Low-complexity input can exceed
   it: `"ATG" × 110000` overflows the heap in `add_nodes` in both the CLI and
   the API.
-- **Hot spot:** each time a meta bin improves on the best score, the API
-  `memset`s the whole 30.5 MB `genes` array (`prodigal_api.c:615`, `:915`).
-  The CLI does not.
 
 ## Build integration
 
