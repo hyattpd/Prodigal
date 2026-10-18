@@ -44,6 +44,7 @@ CORE_SOURCES = bitmap.c dprog.c gene.c metagenomic.c node.c sequence.c training.
 API_SOURCES  = prodigal_api.c
 CLI_SOURCE   = main.c
 TEST_SOURCE  = test_api.c
+DUMP_SOURCE  = tests/api_dump.c
 TEST_HEADERS = tests/api_gff.h tests/fasta.h
 
 HEADERS = $(shell echo *.h)
@@ -103,8 +104,8 @@ test: test_api
 
 # Library API vs the CLI on the same build (tests/api_compare.sh); set ECOLI
 # for the genome-scale cases
-tests/api_dump: tests/api_dump.c $(TEST_HEADERS) libprodigal.a
-	$(CC) $(CFLAGS) -o $@ tests/api_dump.c -L. -lprodigal $(LFLAGS)
+tests/api_dump: $(DUMP_SOURCE) $(TEST_HEADERS) libprodigal.a
+	$(CC) $(CFLAGS) -o $@ $(DUMP_SOURCE) -L. -lprodigal $(LFLAGS)
 
 compare: $(TARGET) tests/api_dump
 	tests/api_compare.sh
@@ -113,6 +114,23 @@ compare: $(TARGET) tests/api_dump
 # --no-binary through (see docs/testing.md)
 regress: $(TARGET)
 	tests/cli_regress.sh $(REGRESS_FLAGS)
+
+# Every source compiles as strict C99 plus POSIX (fileno, pid_t,
+# posix_memalign) without a warning, in both configurations: the CLI's and
+# the library's. -O2 so the optimizer's warnings (maybe-uninitialized) show;
+# training.c (constant tables, the same in both configurations) once at -O0,
+# since -O2 takes about 40 s on it.
+STRICT = $(CC) -std=c99 -pedantic -Wall -Werror -D_POSIX_C_SOURCE=200809L \
+         -I. -c -o /dev/null
+STRICT_SOURCES = $(filter-out training.c,$(CORE_SOURCES)) $(API_SOURCES)
+pedantic:
+	@$(STRICT) -O0 training.c || exit 1; \
+	for f in $(STRICT_SOURCES) $(CLI_SOURCE); do \
+	  $(STRICT) -O2 $(CLI_DEFS) $$f || exit 1; \
+	done; \
+	for f in $(STRICT_SOURCES) $(TEST_SOURCE) $(DUMP_SOURCE); do \
+	  $(STRICT) -O2 -DPRODIGAL_NO_MAIN $$f || exit 1; \
+	done; echo "strict C99: no warnings"
 
 # CLI vs an upstream c1e2d36 build across a flag matrix and corpus; set ECOLI
 # to an E. coli FASTA for the genome-scale cases (see docs/testing.md)
@@ -132,4 +150,5 @@ clean:
 distclean: clean
 	-rm -f $(TARGET) libprodigal.a libprodigal.so test_api tests/api_dump .build-flags
 
-.PHONY: all install uninstall clean distclean test regress oracle compare FORCE
+.PHONY: all install uninstall clean distclean test regress oracle compare \
+        pedantic FORCE

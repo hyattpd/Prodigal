@@ -33,9 +33,9 @@
 
 #ifndef PRODIGAL_NO_MAIN
 
-void version();
+void version(void);
 void usage(char *);
-void help();
+void help(void);
 int copy_standard_input_to_file(char *, int);
 static void report_training(const prodigal_ctx_t *, int, int);
 static void pipeline_failed(prodigal_ctx_t *);
@@ -74,7 +74,7 @@ int main(int argc, char *argv[]) {
 
   /* Filename for input copy if needed */
   pid = getpid();
-  sprintf(input_copy, "tmp.prodigal.stdin.%d", pid);
+  sprintf(input_copy, "tmp.prodigal.stdin.%d", (int)pid);
 
   /* Parse the command line arguments */
   for(i = 1; i < argc; i++) {
@@ -448,7 +448,7 @@ int main(int argc, char *argv[]) {
   exit(0);
 }
 
-void version() {
+void version(void) {
   fprintf(stderr, "\nProdigal V%s: %s\n\n", VERSION, DATE);
   exit(0);
 }
@@ -465,7 +465,7 @@ void usage(char *msg) {
   exit(15);
 }
 
-void help() {
+void help(void) {
   fprintf(stderr, "\nUsage:  prodigal [-a trans_file] [-c] [-d nuc_file]");
   fprintf(stderr, " [-f output_type]\n");
   fprintf(stderr, "                 [-g tr_table] [-h] [-i input_file] [-m]");

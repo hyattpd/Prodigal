@@ -74,7 +74,7 @@ char amino_letter(int);
 int rframe(int, int);
 int max_fr(int, int, int);
 
-int *calc_most_gc_frame(unsigned char *, int);
+int *calc_most_gc_frame(struct prodigal_ctx *, unsigned char *, int);
 
 int mer_ndx(int, unsigned char *, int);
 void mer_text(char *, int, int);

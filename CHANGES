@@ -1,5 +1,19 @@
 VERSION 2.6.5 (unreleased)
 
+* Library: new prodigal_config_validate says why a config is rejected.
+* Library: prodigal_create also rejects a start weight that is not finite
+and > 0, and a free_fn without an alloc_fn.
+* Library: prodigal_set_start_weight and prodigal_set_gc reject NaN, and
+prodigal_set_start_weight an infinite weight.
+* Library: prodigal_export_training returns an error when the context has
+no model.
+* Library: prodigal_load_training also rejects a model whose GC is outside
+[0, 1], whose start weight is not finite and > 0, or whose SD flag is not
+0 or 1, and leaves the context unchanged.
+* Training no longer leaks when the GC frame plot's allocation fails (now
+one block, through the custom allocator), and the hexamer background
+behind the coding model no longer allocates (upstream did not check that
+malloc).
 * Contigs with 30,000 or more genes are no longer truncated at 30,000 (the
 CLI warned "max # of genes exceeded, truncating"; the library dropped them
 silently): the gene array grows. Output is unchanged on smaller contigs.

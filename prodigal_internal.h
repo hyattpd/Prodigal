@@ -94,17 +94,19 @@ static inline void pdg_free(prodigal_ctx_t *ctx, void *ptr) {
         free(ptr);
 }
 
-#define PDG_LOG(ctx, fmt, ...) do { \
+/* The format is the first of the variadic arguments, so a message without
+   arguments is standard C99 (no GNU ##__VA_ARGS__). */
+#define PDG_LOG(ctx, ...) do { \
     if ((ctx)->config.log_callback) { \
         char _pdg_buf[512]; \
-        snprintf(_pdg_buf, sizeof(_pdg_buf), fmt, ##__VA_ARGS__); \
+        snprintf(_pdg_buf, sizeof(_pdg_buf), __VA_ARGS__); \
         (ctx)->config.log_callback(_pdg_buf, (ctx)->config.log_user_data); \
     } \
 } while(0)
 
-#define PDG_SET_ERROR(ctx, code, fmt, ...) do { \
+#define PDG_SET_ERROR(ctx, code, ...) do { \
     (ctx)->error_code = (code); \
-    snprintf((ctx)->error_msg, sizeof((ctx)->error_msg), fmt, ##__VA_ARGS__); \
+    snprintf((ctx)->error_msg, sizeof((ctx)->error_msg), __VA_ARGS__); \
 } while(0)
 
 /*******************************************************************************

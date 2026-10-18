@@ -100,7 +100,12 @@ oracle. Change one only by explicit decision: record it here and in
     It needs an ORF spanning more than 500 nodes, which typical genomes
     rarely have. Kept: the wider scan can change the chosen path, so a fix
     changes output.
-11. **Training input over the length limit is truncated** (CLI). When the
+11. **Low-complexity training input gives a NaN.** Training on
+    low-complexity input (30 kbp of one base, N included, or of a short
+    repeat such as ACGT) leaves `no_mot` NaN in the model. The CLI writes
+    and loads such a model, and so does the library, which therefore
+    doesn't reject non-finite values when it loads one.
+12. **Training input over the length limit is truncated** (CLI). When the
     training input reaches 31,990,000 bases, the CLI warns and trains on
     what it has read (`read_seq_training`). The library returns an error
     instead. (Upstream's other caps, 30,000 genes per contig and 5,000
@@ -130,7 +135,7 @@ defect.
   The library's meta loop applies the same rule (until 2.6.5 it skipped
   no-path bins, so a contig on which no bin had a path reported bin 0).
 - **The last training spacer could overflow (fixed in 2.6.5).** When the
-  CLI cut multi-record training input at the limit (quirk 11) on a line
+  CLI cut multi-record training input at the limit (quirk 12) on a line
   long enough to end within 12 bases of `MAX_SEQ` (unwrapped sequence), it
   then added the trailing 12-base spacer past the end of its 2-bit buffers,
   up to 3 bytes, and `rcom_seq` read and wrote as far (ASan:
@@ -143,9 +148,10 @@ defect.
   `slen/8` (at least `STT_NOD`) it is sized for, e.g. `"ATG" × 110000`: heap
   corruption. The array now grows (`internals.md`, "Limits and memory"), so
   output is unchanged wherever upstream didn't overflow.
-- **Unchecked allocations:** `calc_mer_bg` does not check its `malloc`
-  (`sequence.c:645`), and `calc_most_gc_frame` leaks on partial allocation
-  failure (`sequence.c:576-580`).
+- **Unchecked allocations (fixed in 2.6.5).** `calc_mer_bg` did not check
+  its `malloc`; it now counts in its output array and allocates nothing.
+  `calc_most_gc_frame` leaked on a partial allocation failure; it now makes
+  one allocation, through the context's allocator.
 
 ## Fork deviations (CLI)
 

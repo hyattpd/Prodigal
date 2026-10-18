@@ -25,6 +25,9 @@ static int is_valid_trans_table(int tt) {
     return 1;
 }
 
+static int is_valid_start_weight(double w) { return w > 0.0 && isfinite(w); }
+static int is_valid_gc(double gc) { return gc >= 0.0 && gc <= 1.0; } /* not NaN */
+
 /*******************************************************************************
     Error reporting
 *******************************************************************************/
@@ -82,10 +85,29 @@ static void reset_model(prodigal_ctx_t *ctx) {
     ctx->tinf.st_wt = ctx->config.start_weight;
 }
 
+int prodigal_config_validate(const prodigal_config_t *config, char *msg,
+                             size_t msg_len) {
+    char buf[128] = "";
+    if (config == NULL)
+        snprintf(buf, sizeof(buf), "config is NULL");
+    else if (config->struct_size != sizeof(prodigal_config_t))
+        snprintf(buf, sizeof(buf), "struct_size is %zu, this library's is %zu "
+                 "(header and library differ)", config->struct_size,
+                 sizeof(prodigal_config_t));
+    else if (!is_valid_trans_table(config->trans_table))
+        snprintf(buf, sizeof(buf), "invalid translation table %d",
+                 config->trans_table);
+    else if (!is_valid_start_weight(config->start_weight))
+        snprintf(buf, sizeof(buf), "start weight must be finite and > 0 "
+                 "(got %g)", config->start_weight);
+    else if (config->free_fn != NULL && config->alloc_fn == NULL)
+        snprintf(buf, sizeof(buf), "free_fn without alloc_fn");
+    if (msg != NULL && msg_len > 0) snprintf(msg, msg_len, "%s", buf);
+    return buf[0] == '\0' ? PRODIGAL_OK : PRODIGAL_ERR_INVALID_CONFIG;
+}
+
 prodigal_ctx_t *prodigal_create(const prodigal_config_t *config) {
-    if (config == NULL) return NULL;
-    if (config->struct_size != sizeof(prodigal_config_t)) return NULL;
-    if (!is_valid_trans_table(config->trans_table)) return NULL;
+    if (prodigal_config_validate(config, NULL, 0) != PRODIGAL_OK) return NULL;
 
     prodigal_ctx_t *ctx = (prodigal_ctx_t *)malloc(sizeof(prodigal_ctx_t));
     if (ctx == NULL) return NULL;
@@ -403,14 +425,14 @@ int pdg_train(prodigal_ctx_t *ctx, pdg_train_report_fn report) {
 
     /* GC frame bias */
     REPORT(PDG_TRAIN_GC_BIAS, 0);
-    gc_frame = calc_most_gc_frame(ctx->seq, ctx->slen);
+    gc_frame = calc_most_gc_frame(ctx, ctx->seq, ctx->slen);
     if (gc_frame == NULL) {
         /* Upstream's message, which the CLI prints */
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM, "Malloc failed on gc frame plot");
         return PRODIGAL_ERR_NOMEM;
     }
     record_gc_bias(gc_frame, ctx->nodes, ctx->nn, &ctx->tinf);
-    free(gc_frame);
+    pdg_free(ctx, gc_frame);
     REPORT(PDG_TRAIN_GC_BIAS, 1);
 
     /* Initial DP with GC bias only */
@@ -465,7 +487,8 @@ int prodigal_train(prodigal_ctx_t *ctx) {
 }
 
 int prodigal_load_training(prodigal_ctx_t *ctx, const void *data, size_t len) {
-    int table;
+    int table, uses_sd;
+    double gc, st_wt;
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
     if (data == NULL || len != sizeof(struct _training)) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
@@ -475,24 +498,41 @@ int prodigal_load_training(prodigal_ctx_t *ctx, const void *data, size_t len) {
     }
 
     /* Check before copying, so a rejected blob changes nothing (the blob
-       need not be aligned) */
-    memcpy(&table, (const char *)data + offsetof(struct _training, trans_table),
-           sizeof(table));
-    if (!is_valid_trans_table(table)) {
+       need not be aligned). Only the fields training sets from the config
+       and counts: other doubles can be NaN (upstream-behavior.md, quirk
+       11). */
+#define FIELD(f, v) memcpy(&(v), (const char *)data + \
+                           offsetof(struct _training, f), sizeof(v))
+    FIELD(trans_table, table);
+    FIELD(gc, gc);
+    FIELD(st_wt, st_wt);
+    FIELD(uses_sd, uses_sd);
+#undef FIELD
+    if (!is_valid_trans_table(table))
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
                       "Training data has invalid translation table %d", table);
-        return PRODIGAL_ERR_INVALID_INPUT;
+    else if (!is_valid_gc(gc))
+        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
+                      "Training data has GC %g, outside [0, 1]", gc);
+    else if (!is_valid_start_weight(st_wt))
+        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
+                      "Training data has start weight %g, not finite and > 0",
+                      st_wt);
+    else if (uses_sd != 0 && uses_sd != 1)
+        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
+                      "Training data has SD flag %d, not 0 or 1", uses_sd);
+    else {
+        memcpy(&ctx->tinf, data, sizeof(struct _training));
+        ctx->trained = 1;
+        return PRODIGAL_OK;
     }
-
-    memcpy(&ctx->tinf, data, sizeof(struct _training));
-    ctx->trained = 1;
-    return PRODIGAL_OK;
+    return PRODIGAL_ERR_INVALID_INPUT;
 }
 
 int prodigal_export_training(const prodigal_ctx_t *ctx, void **data_out,
                              size_t *len_out) {
     void *buf;
-    if (ctx == NULL || data_out == NULL || len_out == NULL)
+    if (ctx == NULL || data_out == NULL || len_out == NULL || !ctx->trained)
         return PRODIGAL_ERR_INVALID_INPUT;
 
     buf = malloc(sizeof(struct _training));
@@ -521,9 +561,9 @@ int prodigal_set_translation_table(prodigal_ctx_t *ctx, int table) {
 
 int prodigal_set_start_weight(prodigal_ctx_t *ctx, double weight) {
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
-    if (weight <= 0.0) {
+    if (!is_valid_start_weight(weight)) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "Start weight must be > 0 (got %.2f)", weight);
+                      "Start weight must be finite and > 0 (got %g)", weight);
         return PRODIGAL_ERR_INVALID_INPUT;
     }
     ctx->config.start_weight = ctx->tinf.st_wt = weight;
@@ -532,9 +572,9 @@ int prodigal_set_start_weight(prodigal_ctx_t *ctx, double weight) {
 
 int prodigal_set_gc(prodigal_ctx_t *ctx, double gc) {
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
-    if (gc < 0.0 || gc > 1.0) {
+    if (!is_valid_gc(gc)) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "GC must be in [0, 1] (got %.4f)", gc);
+                      "GC must be in [0, 1] (got %g)", gc);
         return PRODIGAL_ERR_INVALID_INPUT;
     }
     ctx->tinf.gc = gc;

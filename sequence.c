@@ -522,15 +522,15 @@ int max_fr(int n1, int n2, int n3) {
   position in the sequence.
 *******************************************************************************/
 
-int *calc_most_gc_frame(unsigned char *seq, int slen) {
+int *calc_most_gc_frame(prodigal_ctx_t *ctx, unsigned char *seq, int slen) {
   int i, j, *fwd, *bwd, *tot;
   int win, *gp;
 
-  gp = (int *)malloc(slen*sizeof(double));
-  fwd = (int *)malloc(slen*sizeof(int));
-  bwd = (int *)malloc(slen*sizeof(int));
-  tot = (int *)malloc(slen*sizeof(int));
-  if(fwd == NULL || bwd == NULL || gp == NULL || tot == NULL) return NULL;
+  /* One block through the context's allocator: gp, which the caller frees
+     with pdg_free, then the working arrays.  NULL if out of memory. */
+  gp = (int *)pdg_alloc(ctx, 4*(size_t)slen*sizeof(int));
+  if(gp == NULL) return NULL;
+  fwd = gp + slen; bwd = fwd + slen; tot = bwd + slen;
   for(i = 0; i < slen; i++) { fwd[i] = 0; bwd[i] = 0; tot[i] = 0; gp[i] = -1; }
 
   for(i = 0; i < 3; i++) {
@@ -546,12 +546,10 @@ int *calc_most_gc_frame(unsigned char *seq, int slen) {
     if(i - WINDOW/2 >= 0) tot[i] -= fwd[i-WINDOW/2];
     if(i + WINDOW/2 < slen) tot[i] -= bwd[i+WINDOW/2];
   }
-  free(fwd); free(bwd);
   for(i = 0; i < slen-2; i+=3) {
     win = max_fr(tot[i], tot[i+1], tot[i+2]);
     for(j = 0; j < 3; j++) gp[i+j] = win;
   }
-  free(tot);
   return gp;
 }
 
@@ -589,21 +587,20 @@ void mer_text(char *qt, int len, int ndx) {
 }
 
 /* Builds a 'len'-mer background for whole sequence */
+/* Counts in bg itself (doubles hold the counts exactly), so nothing is
+   allocated; same values as upstream's int counts. */
 void calc_mer_bg(int len, unsigned char *seq, unsigned char *rseq, int slen,
                  double *bg) {
   int i, glob = 0, size = 1;
-  int *counts;
 
   for(i = 1; i <= len; i++) size *= 4;
-  counts = (int *)malloc(size * sizeof(int));
-  for(i = 0; i < size; i++) counts[i] = 0;
+  for(i = 0; i < size; i++) bg[i] = 0.0;
   for(i = 0; i < slen-len+1; i++) {
-    counts[mer_ndx(len, seq, i)]++;
-    counts[mer_ndx(len, rseq, i)]++;
+    bg[mer_ndx(len, seq, i)] += 1.0;
+    bg[mer_ndx(len, rseq, i)] += 1.0;
     glob+=2;
   }
-  for(i = 0; i < size; i++) bg[i] = (double)((counts[i]*1.0)/(glob*1.0));
-  free(counts);
+  for(i = 0; i < size; i++) bg[i] /= (glob*1.0);
 }
 
 /*******************************************************************************

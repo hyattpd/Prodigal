@@ -69,8 +69,9 @@ make distclean          # removes objects, binaries and libs
 ### CI
 
 `.github/workflows/ci.yml` runs `make test` and `make regress` on Linux
-x86-64 and ARM64 (gcc, clang), macOS and Windows, `make compare` and
-`make oracle` on Linux x86-64/ARM64 and macOS, `test_api` under WASM, and
+x86-64 and ARM64 (gcc, clang), macOS and Windows, `make pedantic` on
+Linux, `make compare` and `make oracle` on Linux x86-64/ARM64 and macOS,
+`test_api` under WASM, and
 `make test`, `make compare` and the oracle comparison under ASan + UBSan
 (the `sanitizers` job; some failures show only there), for pushes and PRs
 to `v2.6.4-miint`.
@@ -97,7 +98,8 @@ to `v2.6.4-miint`.
 
 ## Conventions
 
-- **Language:** C99, compiled with `-pedantic -Wall -O3`. Match the
+- **Language:** C99, compiled with `-pedantic -Wall -O3`; `make pedantic`
+  checks strict C99 (`-std=c99 -Werror`). Match the
   surrounding style: the upstream core uses 2-space K&R, while
   `prodigal_api.c`, `prodigal.h` and `test_api.c` use 4-space.
 - **No I/O or exits in library code.** No `printf` or `fprintf` to stdout or

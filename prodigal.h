@@ -439,14 +439,30 @@ PRODIGAL_API void prodigal_config_init(prodigal_config_t *config);
  * Allocates all internal buffers.  The config is snapshotted; the caller may
  * modify or discard it after this call.
  *
- * Returns NULL on failure (bad config, OOM, invalid translation table).
- * When NULL is returned, the caller cannot distinguish the cause via
- * last_error (no context exists).  Recheck inputs manually if needed.
+ * Returns NULL on failure: a config prodigal_config_validate() rejects, or
+ * out of memory.  No context exists then to carry an error message; call
+ * prodigal_config_validate() for the reason.
  *
  * @param config  Pointer to initialized config.  Must not be NULL.
  * @return New context, or NULL on failure.
  */
 PRODIGAL_API prodigal_ctx_t *prodigal_create(const prodigal_config_t *config);
+
+/**
+ * Check a config the way prodigal_create() does, and say what is wrong.
+ *
+ * Rejected: NULL, a struct_size other than this library's
+ * sizeof(prodigal_config_t), an invalid translation table, a start weight
+ * that is not finite and > 0, and free_fn without alloc_fn.
+ *
+ * @param config   Config to check.  May be NULL (rejected).
+ * @param msg      Receives the reason, or "" if the config is valid; may be
+ *                 NULL.  Truncated to msg_len bytes, NUL included.
+ * @param msg_len  Size of msg in bytes.
+ * @return PRODIGAL_OK or PRODIGAL_ERR_INVALID_CONFIG.
+ */
+PRODIGAL_API int prodigal_config_validate(const prodigal_config_t *config,
+                                          char *msg, size_t msg_len);
 
 /**
  * Destroy a context and free all associated memory.
@@ -560,7 +576,10 @@ PRODIGAL_API int prodigal_train(prodigal_ctx_t *ctx);
  * The blob must be exactly sizeof(struct _training) bytes, as produced by
  * prodigal_export_training() or the CLI's -t flag.  Binary format is
  * architecture-specific (not portable across endianness or struct padding).
- * A rejected blob leaves the context unchanged.
+ * Rejected, leaving the context unchanged: a wrong size, an invalid
+ * translation table, a GC outside [0, 1], a start weight that is not
+ * finite and > 0, and an SD flag other than 0 or 1.  Other values are not
+ * checked: they can be NaN (docs/upstream-behavior.md, quirk 11).
  *
  * @param ctx   Context.
  * @param data  Pointer to training data blob.
@@ -576,10 +595,13 @@ PRODIGAL_API int prodigal_load_training(prodigal_ctx_t *ctx,
  * The caller receives a malloc'd buffer that must be freed with free().
  * The blob is binary-compatible with Prodigal's -t training file format.
  *
- * @param ctx       Context with training data (from train() or load()).
+ * @param ctx       Context with a model, from prodigal_train() or
+ *                  prodigal_load_training().
  * @param data_out  Receives pointer to malloc'd blob.
  * @param len_out   Receives size of blob in bytes.
- * @return PRODIGAL_OK or error code.
+ * @return PRODIGAL_OK, PRODIGAL_ERR_NOMEM, or PRODIGAL_ERR_INVALID_INPUT
+ *         when an argument is NULL or the context has no model (no
+ *         message: the context is const).
  */
 PRODIGAL_API int prodigal_export_training(const prodigal_ctx_t *ctx,
                                           void **data_out, size_t *len_out);
@@ -602,7 +624,7 @@ PRODIGAL_API int prodigal_set_translation_table(prodigal_ctx_t *ctx, int table);
 
 /**
  * Set the start score weight.
- * @param weight  Must be > 0.  Default: 4.35.
+ * @param weight  Must be finite and > 0.  Default: 4.35.
  * @return PRODIGAL_OK or PRODIGAL_ERR_INVALID_INPUT.
  */
 PRODIGAL_API int prodigal_set_start_weight(prodigal_ctx_t *ctx, double weight);

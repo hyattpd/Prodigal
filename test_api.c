@@ -84,6 +84,17 @@ static prodigal_ctx_t *make_model_ctx(const void *blob, size_t len) {
     return ctx;
 }
 
+/* f = one record, taking ownership of seq (len characters, NUL-terminated). */
+static void fasta_one(fasta_t *f, const char *header, char *seq, int32_t len) {
+    f->n = 1;
+    f->seqs = (char **)xrealloc(NULL, sizeof(char *));
+    f->headers = (char **)xrealloc(NULL, sizeof(char *));
+    f->lens = (int32_t *)xrealloc(NULL, sizeof(int32_t));
+    f->seqs[0] = seq;
+    f->headers[0] = dupstr(header);
+    f->lens[0] = len;
+}
+
 /*******************************************************************************
     Phase 1.1: Error Codes
 *******************************************************************************/
@@ -211,6 +222,51 @@ static void test_create_invalid_trans_table(void) {
             return;
         }
     }
+    TEST_PASS();
+}
+
+static void test_free_fn(void *ptr, void *user_data);
+
+static void test_config_validate(void) {
+    TEST_START("config_validate explains what create rejects");
+    prodigal_config_t c;
+    char msg[256];
+    double bad_wt[] = { 0.0, -1.0, NAN, INFINITY };
+    size_t i;
+    ASSERT_EQ_INT(prodigal_config_validate(NULL, msg, sizeof(msg)),
+                  PRODIGAL_ERR_INVALID_CONFIG);
+    prodigal_config_init(&c);
+    ASSERT_EQ_INT(prodigal_config_validate(&c, msg, sizeof(msg)), PRODIGAL_OK);
+    ASSERT_TRUE(msg[0] == '\0');
+    ASSERT_EQ_INT(prodigal_config_validate(&c, NULL, 0), PRODIGAL_OK);
+
+    c.struct_size = 0;
+    ASSERT_EQ_INT(prodigal_config_validate(&c, msg, sizeof(msg)),
+                  PRODIGAL_ERR_INVALID_CONFIG);
+    ASSERT_TRUE(strstr(msg, "struct_size") != NULL);
+
+    prodigal_config_init(&c);
+    c.trans_table = 7;
+    ASSERT_EQ_INT(prodigal_config_validate(&c, msg, sizeof(msg)),
+                  PRODIGAL_ERR_INVALID_CONFIG);
+    ASSERT_TRUE(strstr(msg, "translation table") != NULL);
+
+    for (i = 0; i < sizeof(bad_wt) / sizeof(bad_wt[0]); i++) {
+        prodigal_config_init(&c);
+        c.meta_mode = (int)(i % 2);   /* either mode: a meta context trains too */
+        c.start_weight = bad_wt[i];
+        ASSERT_EQ_INT(prodigal_config_validate(&c, msg, sizeof(msg)),
+                      PRODIGAL_ERR_INVALID_CONFIG);
+        ASSERT_TRUE(strstr(msg, "start weight") != NULL);
+        ASSERT_TRUE(prodigal_create(&c) == NULL);
+    }
+
+    /* free_fn alone would free with it what malloc allocated */
+    prodigal_config_init(&c);
+    c.free_fn = test_free_fn;
+    ASSERT_EQ_INT(prodigal_config_validate(&c, msg, sizeof(msg)),
+                  PRODIGAL_ERR_INVALID_CONFIG);
+    ASSERT_TRUE(strstr(msg, "free_fn without alloc_fn") != NULL);
     TEST_PASS();
 }
 
@@ -487,18 +543,64 @@ static void test_training_load_invalid(void) {
     rc = prodigal_load_training(ctx, NULL, 0);
     ASSERT_EQ_INT(rc, PRODIGAL_ERR_INVALID_INPUT);
 
+    /* Fields training sets from the config and counts must be in range */
     void *bad = malloc(tlen);
+    struct _training *b = (struct _training *)bad;
+    int k;
     ASSERT_TRUE(bad != NULL);
-    memcpy(bad, tdata, tlen);
-    ((struct _training *)bad)->trans_table = 7;
-    ASSERT_EQ_INT(prodigal_load_training(ctx, bad, tlen), PRODIGAL_ERR_INVALID_INPUT);
-
+    for (k = 0; k < 9; k++) {
+        memcpy(bad, tdata, tlen);
+        switch (k) {
+        case 0: b->trans_table = 7; break;
+        case 1: b->gc = 1.5; break;
+        case 2: b->gc = -0.1; break;
+        case 3: b->gc = NAN; break;
+        case 4: b->st_wt = 0.0; break;
+        case 5: b->st_wt = -1.0; break;
+        case 6: b->st_wt = NAN; break;
+        case 7: b->st_wt = INFINITY; break;
+        default: b->uses_sd = 2; break;
+        }
+        if (prodigal_load_training(ctx, bad, tlen) != PRODIGAL_ERR_INVALID_INPUT) {
+            printf("[FAIL] bad model %d accepted\n", k);
+            return;
+        }
+    }
     ASSERT_EQ_INT(prodigal_export_training(ctx, &exported, &elen), PRODIGAL_OK);
     ASSERT_TRUE(elen == tlen && memcmp(exported, tdata, tlen) == 0);
 
     free(exported);
     free(bad);
     free(tdata);
+    prodigal_destroy(ctx);
+    TEST_PASS();
+}
+
+static void test_export_needs_model(void) {
+    TEST_START("export needs a model; a degenerate one round-trips");
+    void *exported = NULL;
+    size_t elen = 0;
+    fasta_t fa;
+    prodigal_ctx_t *ctx = make_ctx(0), *loaded = NULL;
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_EQ_INT(prodigal_export_training(ctx, &exported, &elen),
+                  PRODIGAL_ERR_INVALID_INPUT);
+
+    /* Training on one base leaves no_mot NaN (upstream quirk 11); the
+       model still loads */
+    char *seq = (char *)xrealloc(NULL, 30001);
+    memset(seq, 'A', 30000);
+    seq[30000] = '\0';
+    fasta_one(&fa, "all_a", seq, 30000);
+    ASSERT_EQ_INT(api_train(ctx, &fa), PRODIGAL_OK);
+    ASSERT_EQ_INT(prodigal_export_training(ctx, &exported, &elen), PRODIGAL_OK);
+    ASSERT_TRUE(isnan(((struct _training *)exported)->no_mot));
+    loaded = make_model_ctx(exported, elen);
+    ASSERT_TRUE(loaded != NULL);
+
+    prodigal_destroy(loaded);
+    free(exported);
+    fasta_free(&fa);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -856,6 +958,24 @@ static void test_meta_alloc_failure(void) {
     TEST_PASS();
 }
 
+static void test_gc_frame_alloc_failure(void) {
+    TEST_START("training: failed GC frame plot allocation is a clean error");
+    fasta_t fa;
+    if (!load_anthus(&fa)) return;
+    prodigal_ctx_t *ctx = make_counted_ctx(0);
+    ASSERT_TRUE(ctx != NULL);
+    /* On anthus the plot is training's first allocation */
+    alloc_limit = alloc_count;
+    ASSERT_EQ_INT(api_train(ctx, &fa), PRODIGAL_ERR_NOMEM);
+    ASSERT_TRUE(strstr(prodigal_last_error(ctx), "gc frame") != NULL);
+    alloc_limit = (size_t)-1;
+    ASSERT_EQ_INT(api_train(ctx, &fa), PRODIGAL_OK);
+    prodigal_destroy(ctx);
+    ASSERT_TRUE(alloc_count == free_count);
+    fasta_free(&fa);
+    TEST_PASS();
+}
+
 static void test_failed_training_leaves_no_model(void) {
     TEST_START("failed training leaves no model, not a damaged one");
     fasta_t fa;
@@ -1071,8 +1191,11 @@ static void test_training_setters(void) {
     /* Invalid setters change nothing */
     ASSERT_EQ_INT(prodigal_set_translation_table(ctx, 7), PRODIGAL_ERR_INVALID_INPUT);
     ASSERT_EQ_INT(prodigal_set_start_weight(ctx, -1.0), PRODIGAL_ERR_INVALID_INPUT);
+    ASSERT_EQ_INT(prodigal_set_start_weight(ctx, NAN), PRODIGAL_ERR_INVALID_INPUT);
+    ASSERT_EQ_INT(prodigal_set_start_weight(ctx, INFINITY), PRODIGAL_ERR_INVALID_INPUT);
     ASSERT_EQ_INT(prodigal_set_gc(ctx, 2.0), PRODIGAL_ERR_INVALID_INPUT);
     ASSERT_EQ_INT(prodigal_set_gc(ctx, -0.1), PRODIGAL_ERR_INVALID_INPUT);
+    ASSERT_EQ_INT(prodigal_set_gc(ctx, NAN), PRODIGAL_ERR_INVALID_INPUT);
 
     /* The exported model is the loaded one with those four fields set */
     struct _training *want = (struct _training *)tdata;
@@ -1572,6 +1695,7 @@ int main(void) {
     test_destroy_null();
     test_create_invalid_trans_table();
     test_create_valid_trans_tables();
+    test_config_validate();
     test_create_meta_mode();
     test_last_error_on_fresh_context();
     test_last_error_null_context();
@@ -1593,6 +1717,7 @@ int main(void) {
     printf("\nPhase 3.1: Training Serialization\n");
     test_training_load_roundtrip();
     test_training_load_invalid();
+    test_export_needs_model();
 
     printf("\nPhase 3.2: Training Pipeline\n");
     test_train_from_sequences();
@@ -1616,6 +1741,7 @@ int main(void) {
     test_custom_allocator();
     test_meta_alloc_failure();
     test_failed_training_leaves_no_model();
+    test_gc_frame_alloc_failure();
 
     printf("\nPhase 9: Callbacks\n");
     test_log_callback();
