@@ -8,13 +8,12 @@
 #include <math.h>
 #include <stdint.h>
 #include "prodigal.h"
+#include "node.h"   /* STT_NOD, and struct _training: the model blob's layout */
 #include "tests/api_gff.h"
 #include "tests/fasta.h"
 
 static int tests_run = 0;
 static int tests_passed = 0;
-static int tests_xfailed = 0;
-static int fixtures_missing = 0;
 
 #define TEST_START(name) do { \
     tests_run++; \
@@ -48,10 +47,9 @@ static int fixtures_missing = 0;
 
 #define REF_DIR "testdata/ground_truth/"
 
-/* A missing fixture fails the test, and is never a known failure. */
+/* A missing fixture fails the test. */
 static void missing_fixture(const char *what) {
     printf("[FAIL] missing fixture %s (run from the repo root)\n", what);
-    fixtures_missing++;
 }
 
 static int load_anthus(fasta_t *fa) {
@@ -472,10 +470,12 @@ static void test_training_load_roundtrip(void) {
 }
 
 static void test_training_load_invalid(void) {
-    TEST_START("training load rejects wrong size");
-    prodigal_config_t config;
-    prodigal_config_init(&config);
-    prodigal_ctx_t *ctx = prodigal_create(&config);
+    TEST_START("training load rejects a bad blob and keeps the model");
+    size_t tlen, elen;
+    void *tdata = load_ref_model(&tlen), *exported = NULL;
+    if (tdata == NULL) return;
+    prodigal_ctx_t *ctx = make_model_ctx(tdata, tlen);
+    ASSERT_TRUE(ctx != NULL);
 
     char dummy[16] = {0};
     int rc = prodigal_load_training(ctx, dummy, sizeof(dummy));
@@ -485,6 +485,18 @@ static void test_training_load_invalid(void) {
     rc = prodigal_load_training(ctx, NULL, 0);
     ASSERT_EQ_INT(rc, PRODIGAL_ERR_INVALID_INPUT);
 
+    void *bad = malloc(tlen);
+    ASSERT_TRUE(bad != NULL);
+    memcpy(bad, tdata, tlen);
+    ((struct _training *)bad)->trans_table = 7;
+    ASSERT_EQ_INT(prodigal_load_training(ctx, bad, tlen), PRODIGAL_ERR_INVALID_INPUT);
+
+    ASSERT_EQ_INT(prodigal_export_training(ctx, &exported, &elen), PRODIGAL_OK);
+    ASSERT_TRUE(elen == tlen && memcmp(exported, tdata, tlen) == 0);
+
+    free(exported);
+    free(bad);
+    free(tdata);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -779,12 +791,12 @@ static void test_free_fn(void *ptr, void *user_data) {
     free(ptr);
 }
 
-/* A metagenomic context on test_alloc/test_free_fn, with the counters reset
-   and no allocation limit. */
-static prodigal_ctx_t *make_counted_ctx(void) {
+/* A context on test_alloc/test_free_fn, with the counters reset and no
+   allocation limit. */
+static prodigal_ctx_t *make_counted_ctx(int meta) {
     prodigal_config_t config;
     prodigal_config_init(&config);
-    config.meta_mode = 1;
+    config.meta_mode = meta;
     config.alloc_fn = test_alloc;
     config.free_fn = test_free_fn;
     alloc_count = free_count = 0;
@@ -797,7 +809,7 @@ static void test_custom_allocator(void) {
     fasta_t fa;
     if (!load_anthus(&fa)) return;
 
-    prodigal_ctx_t *ctx = make_counted_ctx();
+    prodigal_ctx_t *ctx = make_counted_ctx(1);
     ASSERT_TRUE(ctx != NULL);
     ASSERT_TRUE(alloc_count > 0);
 
@@ -819,7 +831,7 @@ static void test_meta_alloc_failure(void) {
     fasta_t fa;
     if (!load_anthus(&fa)) return;
 
-    prodigal_ctx_t *ctx = make_counted_ctx();
+    prodigal_ctx_t *ctx = make_counted_ctx(1);
     ASSERT_TRUE(ctx != NULL);
     size_t held = alloc_count - free_count;
     ASSERT_EQ_INT(prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], fa.headers[0]),
@@ -838,6 +850,44 @@ static void test_meta_alloc_failure(void) {
     prodigal_genes_free(genes);
     prodigal_destroy(ctx);
     ASSERT_TRUE(alloc_count == free_count);
+    fasta_free(&fa);
+    TEST_PASS();
+}
+
+static void test_failed_training_leaves_no_model(void) {
+    TEST_START("failed training leaves no model, not a damaged one");
+    fasta_t fa;
+    size_t tlen;
+    void *tdata = load_ref_model(&tlen);
+    if (tdata == NULL || !load_anthus(&fa)) return;
+
+    prodigal_ctx_t *ctx = make_counted_ctx(0);
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_EQ_INT(prodigal_load_training(ctx, tdata, tlen), PRODIGAL_OK);
+
+    /* Too long for the initial node array, so training's first step
+       (reserve_nodes) allocates, and fails */
+    int32_t len = STT_NOD * 8 + 1;
+    char *big = (char *)malloc(len);
+    ASSERT_TRUE(big != NULL);
+    memset(big, 'A', len);
+    const char *seqs[1] = { big };
+    ASSERT_EQ_INT(prodigal_set_training_sequences(ctx, seqs, NULL, &len, 1),
+                  PRODIGAL_OK);
+    alloc_limit = alloc_count;
+    ASSERT_EQ_INT(prodigal_train(ctx), PRODIGAL_ERR_NOMEM);
+    alloc_limit = (size_t)-1;
+
+    prodigal_genes_soa_t *genes = NULL;
+    ASSERT_EQ_INT(prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], fa.headers[0]),
+                  PRODIGAL_OK);
+    ASSERT_EQ_INT(prodigal_find_genes(ctx, &genes, NULL), PRODIGAL_ERR_INVALID_INPUT);
+    ASSERT_EQ_INT(prodigal_load_training(ctx, tdata, tlen), PRODIGAL_OK);
+    ASSERT_EQ_INT(prodigal_find_genes(ctx, &genes, NULL), PRODIGAL_OK);
+    prodigal_genes_free(genes);
+    prodigal_destroy(ctx);
+    free(big);
+    free(tdata);
     fasta_free(&fa);
     TEST_PASS();
 }
@@ -1003,10 +1053,12 @@ static void test_soa_alignment(void) {
 *******************************************************************************/
 
 static void test_training_setters(void) {
-    TEST_START("training parameter setters work correctly");
-    prodigal_config_t config;
-    prodigal_config_init(&config);
-    prodigal_ctx_t *ctx = prodigal_create(&config);
+    TEST_START("training setters change only their field of a loaded model");
+    size_t tlen, elen;
+    void *tdata = load_ref_model(&tlen), *exported = NULL;
+    if (tdata == NULL) return;
+    prodigal_ctx_t *ctx = make_model_ctx(tdata, tlen);
+    ASSERT_TRUE(ctx != NULL);
 
     /* Valid setters */
     ASSERT_EQ_INT(prodigal_set_translation_table(ctx, 4), PRODIGAL_OK);
@@ -1014,12 +1066,23 @@ static void test_training_setters(void) {
     ASSERT_EQ_INT(prodigal_set_gc(ctx, 0.45), PRODIGAL_OK);
     ASSERT_EQ_INT(prodigal_set_uses_sd(ctx, 0), PRODIGAL_OK);
 
-    /* Invalid setters */
+    /* Invalid setters change nothing */
     ASSERT_EQ_INT(prodigal_set_translation_table(ctx, 7), PRODIGAL_ERR_INVALID_INPUT);
     ASSERT_EQ_INT(prodigal_set_start_weight(ctx, -1.0), PRODIGAL_ERR_INVALID_INPUT);
     ASSERT_EQ_INT(prodigal_set_gc(ctx, 2.0), PRODIGAL_ERR_INVALID_INPUT);
     ASSERT_EQ_INT(prodigal_set_gc(ctx, -0.1), PRODIGAL_ERR_INVALID_INPUT);
 
+    /* The exported model is the loaded one with those four fields set */
+    struct _training *want = (struct _training *)tdata;
+    want->trans_table = 4;
+    want->st_wt = 3.0;
+    want->gc = 0.45;
+    want->uses_sd = 0;
+    ASSERT_EQ_INT(prodigal_export_training(ctx, &exported, &elen), PRODIGAL_OK);
+    ASSERT_TRUE(elen == tlen && memcmp(exported, want, tlen) == 0);
+
+    free(exported);
+    free(tdata);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -1028,9 +1091,7 @@ static void test_training_setters(void) {
     Phase 14: API ≡ CLI golden tests
 
     The library's output, in the form of tests/api_gff.h, must equal the
-    CLI's ground truth line for line. A known failure runs again as an
-    "isolated" twin that neutralises only the known defects and must pass
-    (docs/testing.md).
+    CLI's ground truth line for line.
 *******************************************************************************/
 
 typedef struct { char **v; int n, cap; } lines_t;
@@ -1067,16 +1128,6 @@ static int lines_equal(const lines_t *want, const lines_t *got, const char *what
     return 0;
 }
 
-/* Single-mode context trained through the API on all of fa (api_train). */
-static prodigal_ctx_t *make_trained_ctx(const fasta_t *fa, int fix_gc) {
-    prodigal_ctx_t *ctx = make_ctx(0);
-    if (ctx != NULL && api_train(ctx, fa, fix_gc) != PRODIGAL_OK) {
-        printf("[FAIL] training: %s\n", prodigal_last_error(ctx));
-        prodigal_destroy(ctx); ctx = NULL;
-    }
-    return ctx;
-}
-
 /* Run all of fa on ctx and compare with the CLI's output in ref. */
 static int golden_run(prodigal_ctx_t *ctx, const fasta_t *fa, const char *ref,
                       int meta) {
@@ -1099,9 +1150,10 @@ static const int train_bytes_match = 0;
 static const int train_bytes_match = 1;
 #endif
 
-/* Is the model trained on ctx the reference? Byte for byte where training
-   writes the reference's bytes; elsewhere it must predict ref_trained.gff. */
-static int model_is_ref(prodigal_ctx_t *ctx, const fasta_t *fa) {
+/* Is the model trained on ctx the reference? The fields training copies or
+   counts must match on every platform, and every byte where training
+   writes the reference's bytes (not ARM64 macOS). */
+static int model_is_ref(prodigal_ctx_t *ctx) {
     void *got = NULL, *ref = NULL;
     size_t glen = 0, rlen = 0, i = 0;
     int ok = 0;
@@ -1109,83 +1161,86 @@ static int model_is_ref(prodigal_ctx_t *ctx, const fasta_t *fa) {
         printf("[FAIL] export: %s\n", prodigal_last_error(ctx));
         return 0;
     }
-    if (!train_bytes_match) {
-        prodigal_ctx_t *pred = make_model_ctx(got, glen);
-        ok = pred != NULL && golden_run(pred, fa, REF_DIR "ref_trained.gff", 0);
-        prodigal_destroy(pred);
-    } else if ((ref = load_ref_model(&rlen)) != NULL) {
-        while (i < rlen && i < glen && ((char *)ref)[i] == ((char *)got)[i]) i++;
-        ok = glen == rlen && i == rlen;
-        if (!ok) printf("[FAIL] %zu vs %zu bytes, first difference at byte %zu\n", glen, rlen, i);
+    if ((ref = load_ref_model(&rlen)) != NULL) {
+        const struct _training *g = (const struct _training *)got;
+        const struct _training *r = (const struct _training *)ref;
+        if (glen != rlen) {
+            printf("[FAIL] model is %zu bytes, expected %zu\n", glen, rlen);
+        } else if (g->gc != r->gc || g->trans_table != r->trans_table ||
+                   g->st_wt != r->st_wt || g->uses_sd != r->uses_sd) {
+            printf("[FAIL] model gc %g table %d st_wt %g uses_sd %d, "
+                   "expected %g %d %g %d\n", g->gc, g->trans_table, g->st_wt,
+                   g->uses_sd, r->gc, r->trans_table, r->st_wt, r->uses_sd);
+        } else if (train_bytes_match) {
+            while (i < rlen && ((char *)ref)[i] == ((char *)got)[i]) i++;
+            ok = i == rlen;
+            if (!ok) printf("[FAIL] model differs from byte %zu\n", i);
+        } else {
+            ok = 1;
+        }
     }
     free(got); free(ref);
     return ok;
 }
 
-enum { META, API_TRAINED, REF_MODEL };
+/* Context sources: OTHER_MODEL is ref_train.bin with other parameters
+   (table 4, start weight 3, GC 0.9), which training must not keep. */
+enum { META, SINGLE, REF_MODEL, OTHER_MODEL };
 
-/* One golden test on anthus_aco.fas: the genes found on a context made from
-   src against the CLI's output in ref or, when ref is NULL, the model
-   trained on it against ref_train.bin. isolated neutralises defect A. */
-static void golden(int src, const char *ref, int isolated) {
+/* One golden test on anthus_aco.fas: make a context from src, train it
+   `trainings` times on all of anthus (then its model must be
+   ref_train.bin), and compare the genes it finds with the CLI's in ref. */
+static void golden(int src, int trainings, const char *ref) {
     fasta_t fa;
     prodigal_ctx_t *ctx = NULL;
     void *blob = NULL;
     size_t len;
+    int i;
     if (!load_anthus(&fa)) return;
-    if (src == META) ctx = make_ctx(1);
-    else if (src == API_TRAINED) ctx = make_trained_ctx(&fa, isolated);
-    else if ((blob = load_ref_model(&len)) != NULL) ctx = make_model_ctx(blob, len);
-    if (ctx != NULL && (ref != NULL ? golden_run(ctx, &fa, ref, src == META)
-                                    : model_is_ref(ctx, &fa)))
+    if (src == META || src == SINGLE) {
+        ctx = make_ctx(src == META);
+    } else if ((blob = load_ref_model(&len)) != NULL) {
+        if (src == OTHER_MODEL) {
+            struct _training *m = (struct _training *)blob;
+            m->trans_table = 4;
+            m->st_wt = 3.0;
+            m->gc = 0.9;
+        }
+        ctx = make_model_ctx(blob, len);
+    }
+    for (i = 0; ctx != NULL && i < trainings; i++)
+        if (api_train(ctx, &fa) != PRODIGAL_OK) {
+            printf("[FAIL] training: %s\n", prodigal_last_error(ctx));
+            prodigal_destroy(ctx);
+            ctx = NULL;
+        }
+    if (ctx != NULL && (trainings == 0 || model_is_ref(ctx)) &&
+        golden_run(ctx, &fa, ref, src == META))
         TEST_PASS();
     prodigal_destroy(ctx);
     free(blob);
     fasta_free(&fa);
 }
 
-/* Settle a test that is known to fail, given tests_passed and
-   fixtures_missing from before it ran; reason names the defect and the plan
-   phase that fixes it. While it fails it counts as passed; once it passes
-   the run fails, so that the marker gets removed. */
-static void settle_xfail(int passed, int missing, const char *reason) {
-    if (fixtures_missing > missing) return;
-    if (tests_passed > passed) {
-        tests_passed--;
-        printf("    ^ XPASS: passes now; remove its XFAIL marker (%s)\n", reason);
-    } else {
-        tests_passed++;
-        tests_xfailed++;
-        printf("    ^ XFAIL, known: %s\n", reason);
-    }
-}
-
 static void test_golden(void) {
     static const struct {
-        const char *name;
-        int src;
-        const char *ref, *xfail;
+        const char *name; int src, trainings; const char *ref;
     } t[] = {
-        { "meta mode = ref_meta.gff, every field", META, REF_DIR "ref_meta.gff", NULL },
-        { "API training = ref_train.bin", API_TRAINED, NULL,
-          "A, prodigal_train never sets tinf.gc (P1)" },
-        { "single mode, API-trained = ref_single.gff", API_TRAINED,
-          REF_DIR "ref_single.gff", "A, prodigal_train never sets tinf.gc (P1)" },
-        { "single mode from ref_train.bin = ref_trained.gff", REF_MODEL,
-          REF_DIR "ref_trained.gff", NULL },
+        { "meta mode = ref_meta.gff, every field", META, 0, REF_DIR "ref_meta.gff" },
+        { "API training = ref_train.bin, genes = ref_single.gff", SINGLE, 1,
+          REF_DIR "ref_single.gff" },
+        { "training twice: the same", SINGLE, 2, REF_DIR "ref_single.gff" },
+        { "other model loaded, then training: the same", OTHER_MODEL, 1,
+          REF_DIR "ref_single.gff" },
+        { "single mode from ref_train.bin = ref_trained.gff", REF_MODEL, 0,
+          REF_DIR "ref_trained.gff" },
     };
     char name[128];
     size_t i;
     for (i = 0; i < sizeof(t) / sizeof(t[0]); i++) {
-        int passed = tests_passed, missing = fixtures_missing;
         snprintf(name, sizeof(name), "golden: %s", t[i].name);
         TEST_START(name);
-        golden(t[i].src, t[i].ref, 0);
-        if (t[i].xfail == NULL) continue;
-        settle_xfail(passed, missing, t[i].xfail);
-        snprintf(name, sizeof(name), "golden: %s, isolated", t[i].name);
-        TEST_START(name);
-        golden(t[i].src, t[i].ref, 1);
+        golden(t[i].src, t[i].trainings, t[i].ref);
     }
 }
 
@@ -1308,6 +1363,7 @@ int main(void) {
     printf("\nPhase 8: Allocator Hooks\n");
     test_custom_allocator();
     test_meta_alloc_failure();
+    test_failed_training_leaves_no_model();
 
     printf("\nPhase 9: Callbacks\n");
     test_log_callback();
@@ -1328,7 +1384,6 @@ int main(void) {
     test_independence_meta();
     test_independence_single();
 
-    printf("\n=== Results: %d/%d passed, %d of them known failures (XFAIL) ===\n",
-           tests_passed, tests_run, tests_xfailed);
+    printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
 }

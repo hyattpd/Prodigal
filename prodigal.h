@@ -518,6 +518,18 @@ PRODIGAL_API int prodigal_get_seq_info(const prodigal_ctx_t *ctx,
  * node creation, GC bias analysis, initial dynamic programming, dicodon
  * statistics, RBS scoring, and start codon weight training.
  *
+ * Training starts from a fresh model: the translation table and start
+ * weight are the context's (the config's, or the last value given to
+ * prodigal_set_translation_table() or prodigal_set_start_weight()), the GC
+ * is the training sequence's, and nothing else carries over from a model
+ * trained, loaded or adjusted before.  If training fails after checking
+ * the sequence, the context has no model until it is trained again or a
+ * model is loaded.
+ *
+ * For the same input and options, the model equals the training file the
+ * CLI writes with -t, provided the input is within the limits listed under
+ * "Input limits" in docs/internals.md.
+ *
  * After training, call prodigal_set_sequence() + prodigal_find_genes()
  * for each contig.  Alternatively, export the model with
  * prodigal_export_training() for later reuse.
@@ -535,6 +547,7 @@ PRODIGAL_API int prodigal_train(prodigal_ctx_t *ctx);
  * The blob must be exactly sizeof(struct _training) bytes, as produced by
  * prodigal_export_training() or the CLI's -t flag.  Binary format is
  * architecture-specific (not portable across endianness or struct padding).
+ * A rejected blob leaves the context unchanged.
  *
  * @param ctx   Context.
  * @param data  Pointer to training data blob.
@@ -560,8 +573,10 @@ PRODIGAL_API int prodigal_export_training(const prodigal_ctx_t *ctx,
 
 /** @name Training parameter setters
  *  Fine-grained control over individual training parameters.  These modify
- *  the internal training struct directly.  Useful for experimentation or
- *  for tweaking a loaded model.
+ *  the current model directly.  Useful for experimentation or for tweaking
+ *  a loaded model.  The translation table and start weight also apply to
+ *  later training; prodigal_train() replaces the GC and SD usage, so set
+ *  those after training or loading.
  */
 /**@{*/
 

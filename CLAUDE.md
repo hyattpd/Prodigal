@@ -55,8 +55,7 @@ make distclean          # removes objects, binaries and libs
 ```
 
 - `test_api` opens `anthus_aco.fas` and `testdata/ground_truth/*` by relative
-  path, so run it from the repo root. A missing fixture is a failure; known
-  failures are marked in `test_golden`'s table (see `docs/testing.md`).
+  path, so run it from the repo root. A missing fixture is a failure.
 - If a result looks wrong, start with `make distclean && make test`. Stale
   objects in the working tree once made `test_version_constants` fail (the
   Makefile now rebuilds when the compiler or flags change).

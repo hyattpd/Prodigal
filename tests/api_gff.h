@@ -126,15 +126,11 @@ static int api_gff_from_cli(char *line, int blank_score, api_cli_state_t *st,
     return 0;
 }
 
-/* Train ctx on all of fa, as the CLI does in single mode. fix_gc first sets
-   the training GC by hand, which neutralises defect A (docs/testing.md).
-   Returns PRODIGAL_OK or the failing call's error code. */
-static int api_train(prodigal_ctx_t *ctx, const fasta_t *fa, int fix_gc) {
-    prodigal_seq_info_t info;
+/* Train ctx on all of fa, as the CLI does in single mode. Returns
+   PRODIGAL_OK or the failing call's error code. */
+static int api_train(prodigal_ctx_t *ctx, const fasta_t *fa) {
     int rc = prodigal_set_training_sequences(ctx, (const char **)fa->seqs,
                  (const char **)fa->headers, fa->lens, fa->n);
-    if (rc == PRODIGAL_OK && fix_gc) rc = prodigal_get_seq_info(ctx, &info);
-    if (rc == PRODIGAL_OK && fix_gc) rc = prodigal_set_gc(ctx, info.gc_content);
     if (rc == PRODIGAL_OK) rc = prodigal_train(ctx);
     return rc;
 }

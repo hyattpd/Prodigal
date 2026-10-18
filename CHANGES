@@ -15,13 +15,26 @@ is unchanged; metagenomic mode runs about twice as fast.
 Without it a default ARM64 build fused multiply-adds and printed some start
 scores differently in the last digit (e.g. in the -s output).
 * The CLI and the library now share one gene-finding pipeline
-(prodigal_internal.h). Without -q, training again prints upstream's progress
-lines on stderr (missing since 2.6.4).
+(prodigal_internal.h). With the library fixes below, the library's genes and
+every value it reports equal the CLI's GFF in both modes (make compare, in
+CI). Without -q, training again prints upstream's progress lines on stderr
+(missing since 2.6.4).
 * Library, single genome mode: calling prodigal_find_genes twice on the same
 sequence could change the second result, because the nodes of the first
 call were not cleared (a gene could turn into an edge gene).
 * Library: prodigal_find_genes without a sequence set is now an error in
 metagenomic mode too (it returned no genes).
+* Library, single genome mode: prodigal_train now sets the model's GC from the
+training sequence, as the CLI does; it trained with GC 0 and called 4,871
+genes on E. coli K-12 where the CLI calls 4,319. prodigal_train also starts
+from a fresh model, as the CLI does: training a context twice, or after
+loading a model, built on the old model. Its translation table and start
+weight are the config's or the last ones set with
+prodigal_set_translation_table / prodigal_set_start_weight, never a loaded
+model's. For input within the documented limits, the model now equals the
+CLI's -t file byte for byte. A failed training leaves the context without a
+model (find_genes fails), not with a damaged one, and prodigal_load_training
+checks a blob before replacing the model, so a rejected one changes nothing.
 * Library, metagenomic mode: the scores and confidence are now those of the
 bin that called each gene, as in the CLI's GFF attributes. They came from
 the recovery pass, without the intergenic adjustment (sscore differed for

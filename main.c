@@ -283,7 +283,7 @@ int main(int argc, char *argv[]) {
 
     /* Read sequences directly into context buffers using existing FILE* I/O */
     ctx->slen = read_seq_training(input_ptr, ctx->seq, ctx->useq,
-                                  &(ctx->tinf.gc), config.mask_regions,
+                                  &ctx->gc, config.mask_regions,
                                   ctx->mlist, &ctx->nmask);
     if(ctx->slen == 0) {
       fprintf(stderr, "\n\nSequence read failed (file must be Fasta, ");
@@ -304,10 +304,9 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "-p meta option.\n\n");
     }
     rcom_seq(ctx->seq, ctx->rseq, ctx->useq, ctx->slen);
-    ctx->gc = ctx->tinf.gc;
     if(quiet == 0) {
       fprintf(stderr, "%d bp seq created, %.2f pct GC\n", ctx->slen,
-              ctx->tinf.gc*100.0);
+              ctx->gc*100.0);
     }
 
     /* Train with the library, printing upstream's progress text */

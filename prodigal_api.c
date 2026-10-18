@@ -3,6 +3,7 @@
     Library API implementation.
 *******************************************************************************/
 
+#include <stddef.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -72,6 +73,14 @@ static void free_meta(prodigal_ctx_t *ctx) {
     ctx->meta = NULL;
 }
 
+/* A fresh model with the context's training parameters, which the config
+   holds (the setters update it). */
+static void reset_model(prodigal_ctx_t *ctx) {
+    memset(&ctx->tinf, 0, sizeof(ctx->tinf));
+    ctx->tinf.trans_table = ctx->config.trans_table;
+    ctx->tinf.st_wt = ctx->config.start_weight;
+}
+
 prodigal_ctx_t *prodigal_create(const prodigal_config_t *config) {
     if (config == NULL) return NULL;
     if (config->struct_size != sizeof(prodigal_config_t)) return NULL;
@@ -83,11 +92,7 @@ prodigal_ctx_t *prodigal_create(const prodigal_config_t *config) {
 
     /* Snapshot config */
     ctx->config = *config;
-
-    /* Initialize training defaults */
-    memset(&ctx->tinf, 0, sizeof(struct _training));
-    ctx->tinf.st_wt = config->start_weight;
-    ctx->tinf.trans_table = config->trans_table;
+    reset_model(ctx);
 
     /* Allocate sequence buffers */
     ctx->seq = (unsigned char *)pdg_alloc(ctx, MAX_SEQ / 4 * sizeof(unsigned char));
@@ -392,6 +397,12 @@ int pdg_train(prodigal_ctx_t *ctx, pdg_train_report_fn report) {
                       ctx->slen);
         return PRODIGAL_ERR_SEQ_TOO_SHORT;
     }
+    /* Start from a fresh model, as the CLI does, with the training
+       sequence's GC (the steps below read it). Until training succeeds
+       there is no model. */
+    reset_model(ctx);
+    ctx->tinf.gc = ctx->gc;
+    ctx->trained = 0;
 
 #define REPORT(stage, done) do { \
     if (report != NULL) report(ctx, (stage), (done)); \
@@ -466,6 +477,7 @@ int prodigal_train(prodigal_ctx_t *ctx) {
 }
 
 int prodigal_load_training(prodigal_ctx_t *ctx, const void *data, size_t len) {
+    int table;
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
     if (data == NULL || len != sizeof(struct _training)) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
@@ -474,16 +486,17 @@ int prodigal_load_training(prodigal_ctx_t *ctx, const void *data, size_t len) {
         return PRODIGAL_ERR_INVALID_INPUT;
     }
 
-    memcpy(&ctx->tinf, data, sizeof(struct _training));
-
-    /* Basic sanity checks */
-    if (!is_valid_trans_table(ctx->tinf.trans_table)) {
+    /* Check before copying, so a rejected blob changes nothing (the blob
+       need not be aligned) */
+    memcpy(&table, (const char *)data + offsetof(struct _training, trans_table),
+           sizeof(table));
+    if (!is_valid_trans_table(table)) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "Training data has invalid translation table %d",
-                      ctx->tinf.trans_table);
+                      "Training data has invalid translation table %d", table);
         return PRODIGAL_ERR_INVALID_INPUT;
     }
 
+    memcpy(&ctx->tinf, data, sizeof(struct _training));
     ctx->trained = 1;
     return PRODIGAL_OK;
 }
@@ -514,7 +527,7 @@ int prodigal_set_translation_table(prodigal_ctx_t *ctx, int table) {
                       "Invalid translation table %d", table);
         return PRODIGAL_ERR_INVALID_INPUT;
     }
-    ctx->tinf.trans_table = table;
+    ctx->config.trans_table = ctx->tinf.trans_table = table;
     return PRODIGAL_OK;
 }
 
@@ -525,7 +538,7 @@ int prodigal_set_start_weight(prodigal_ctx_t *ctx, double weight) {
                       "Start weight must be > 0 (got %.2f)", weight);
         return PRODIGAL_ERR_INVALID_INPUT;
     }
-    ctx->tinf.st_wt = weight;
+    ctx->config.start_weight = ctx->tinf.st_wt = weight;
     return PRODIGAL_OK;
 }
 

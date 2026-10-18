@@ -4,15 +4,15 @@
     (tests/api_gff.h), so the library can be diffed against the CLI
     (tests/api_compare.sh).
 
-    usage: api_dump [--isolated] [-p single|meta] [-c] [-m] [-n] [-g TABLE]
-                    [-t TRAINING] FASTA
+    usage: api_dump [-p single|meta] [-c] [-m] [-n] [-g TABLE] [-t TRAINING]
+                    [--write-model FILE] FASTA
            api_dump --from-cli [-p single|meta] GFF
 
     The options mean what they mean to the CLI. Single mode without -t trains
-    on all records, as the CLI does; --isolated sets the training GC by hand
-    first, which neutralises the known defect A (docs/testing.md). --from-cli
-    instead translates a CLI GFF file into the same form. Only the public API
-    (prodigal.h) is used.
+    on all records, as the CLI does; --write-model also writes that model to
+    FILE, which then equals the CLI's -t file. --from-cli instead translates
+    a CLI GFF file into the same form. Only the public API (prodigal.h) is
+    used.
 *******************************************************************************/
 
 #include <stdio.h>
@@ -40,16 +40,26 @@ static void load_model(const char *path) {
     free(buf);
 }
 
+static void write_model(const char *path) {
+    size_t n;
+    void *buf;
+    FILE *f;
+    if (prodigal_export_training(ctx, &buf, &n) != PRODIGAL_OK) die("export_training");
+    if ((f = fopen(path, "wb")) == NULL || fwrite(buf, 1, n, f) != n ||
+        fclose(f) != 0)
+        die("cannot write the model");
+    free(buf);
+}
+
 int main(int argc, char **argv) {
     prodigal_config_t cfg;
-    const char *train_path = NULL, *in = NULL;
-    int meta = 0, cli = 0, isolated = 0, i;
+    const char *train_path = NULL, *model_out = NULL, *in = NULL;
+    int meta = 0, cli = 0, i;
     fasta_t fa;
 
     prodigal_config_init(&cfg);
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--from-cli") == 0) cli = 1;
-        else if (strcmp(argv[i], "--isolated") == 0) isolated = 1;
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc)
             meta = strcmp(argv[++i], "meta") == 0;
         else if (strcmp(argv[i], "-c") == 0) cfg.closed_ends = 1;
@@ -59,6 +69,8 @@ int main(int argc, char **argv) {
             cfg.trans_table = atoi(argv[++i]);
         else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc)
             train_path = argv[++i];
+        else if (strcmp(argv[i], "--write-model") == 0 && i + 1 < argc)
+            model_out = argv[++i];
         else if (argv[i][0] != '-' && in == NULL) in = argv[i];
         else { fprintf(stderr, "api_dump: bad argument %s\n", argv[i]); return 2; }
     }
@@ -73,7 +85,8 @@ int main(int argc, char **argv) {
     if ((ctx = prodigal_create(&cfg)) == NULL) die("prodigal_create failed");
     if (!meta) {
         if (train_path != NULL) load_model(train_path);
-        else if (api_train(ctx, &fa, isolated) != PRODIGAL_OK) die("train");
+        else if (api_train(ctx, &fa) != PRODIGAL_OK) die("train");
+        else if (model_out != NULL) write_model(model_out);
     }
 
     if (api_emit_records(ctx, &fa, 0, fa.n, meta, put_line, NULL) != PRODIGAL_OK)

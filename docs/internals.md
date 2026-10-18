@@ -1,7 +1,7 @@
 # Prodigal internals
 
 How the algorithm and the library are put together, written for someone
-changing the code. Line references are to `v2.6.4-miint` at `dd88690`.
+changing the code. Line references are to `v2.6.4-miint` at `6e96ba8`.
 
 ## Sequence encoding
 
@@ -89,7 +89,7 @@ is the operon/overlap bonus or the strand-switch penalty. It then marks genes
 with `cscore + sscore < 0` for elimination. **The scores the CLI reports
 include this adjustment.**
 
-`calculate_confidence(score, st_wt)` (`gene.c:524`) is
+`calculate_confidence(score, st_wt)` (`gene.c:420`) is
 `logistic(score / st_wt) * 100`, clamped to `[50, 99.99]`, where
 `score = cscore + sscore`.
 
@@ -111,11 +111,16 @@ CLI warns below 100,000 bp.
    `train_starts_nonsd` (`mot_wt`, `no_mot`, `type_wt`, `ups_comp`). Its
    stack frame is 1.31 MB.
 
-`tinf->gc` **must be set before step 1**, because `raw_coding_score` and the
-`ups_comp` log conversion read it. The CLI sets it in `read_seq_training`
-(called from `main.c`). The model (`struct _training`, 558,392 bytes) is
-pointer-free, so `-t` / `prodigal_export_training` simply `fwrite`/`memcpy`
-it. The binary layout depends on the architecture's padding.
+Before step 1, `pdg_train` resets the model (`reset_model`: zero, then
+`trans_table` and `st_wt` from `ctx->config`, which the setters update) and
+sets `tinf->gc` to the training sequence's GC (`ctx->gc`);
+`raw_coding_score` and the `ups_comp` log conversion read it. The CLI reads
+`ctx->gc` with `read_seq_training`; the API computes it in
+`prodigal_set_training_sequences` and `prodigal_set_sequence`. Until
+training succeeds `ctx->trained` is 0, so a failed training leaves no model.
+The model (`struct _training`, 558,392 bytes) is pointer-free, so `-t` /
+`prodigal_export_training` simply `fwrite`/`memcpy` it. The binary layout
+depends on the architecture's padding.
 
 ## Gene finding
 
@@ -175,7 +180,7 @@ carries its own model. That is true of both the CLI and the API.
 - Forward: `begin = start.ndx+1`, `end = stop.ndx+3`.
 - Reverse: `begin = stop.ndx-1`, `end = start.ndx+1`.
 
-Partial flags (`gene.c:271`):
+Partial flags (`gene.c:209`):
 
 - `partial_left` is set when a forward gene's start is an edge node, or a
   reverse gene's stop is.
@@ -184,7 +189,7 @@ Partial flags (`gene.c:271`):
 
 ### Translation and gene sequences (CLI `-a` / `-d`)
 
-`write_translations` (`gene.c:450`) walks the codons from `begin` to `end`,
+`write_translations` (`gene.c:346`) walks the codons from `begin` to `end`,
 in reverse complement for `-` genes:
 
 - **First codon:** `M` when it is a valid start for the table and the gene is
@@ -225,11 +230,9 @@ clears the previous list before `add_nodes` (which sets `edge` only when it
 is 1, and a stale `elim` would drop a gene), and `reserve_nodes` grows the
 array zeroed. Nothing else writes nodes outside `[0, ctx->nn)`.
 
-Known divergences at `dd88690`, still open:
+`make compare` checks that the API's output equals the CLI's over the corpus
+and a flag matrix. Still different:
 
-- **Training GC.** `prodigal_set_training_sequences` computes `ctx->gc` but
-  never sets `ctx->tinf.gc`, so API training runs with `gc = 0`. On E. coli
-  the API calls 4,871 genes; the CLI calls 4,319.
 - **Missing from the API:**
   - protein translations (`-a`) and gene nucleotide sequences (`-d`);
   - the all-starts table (`-s`);

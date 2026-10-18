@@ -95,26 +95,24 @@ patched and the unpatched oracle.
 
 `test_api.c` is a self-contained runner; run it from the repo root. A
 failing assert `return`s from that test, and the exit code is non-zero
-unless every test passed. A missing fixture is a failure, never a known one.
+unless every test passed. A missing fixture is a failure.
 
 **Golden tests (phase 14): API ≡ CLI ground truth.** The library's output,
 in the form of `tests/api_gff.h`, is compared line by line with the anthus
 references: meta mode with `ref_meta.gff`; training through the API with
-`ref_train.bin` byte for byte, and its predictions with `ref_single.gff`;
-prediction from `ref_train.bin` with `ref_trained.gff`. Two more tests check
-that a contig's output doesn't depend on what the context did before (a
-second pass, each record on a fresh context, and `prodigal_find_genes` twice
-per sequence). Anthus contigs carry about one gene each, so the meta golden
-test sees little of metagenomic scoring; `make compare` covers more.
+`ref_train.bin` byte for byte and its predictions with `ref_single.gff`,
+also when the context was trained before or had another model loaded;
+prediction from `ref_train.bin` with `ref_trained.gff`. Two more tests
+check that a contig's output doesn't depend on what the context did before
+(a second pass, each record on a fresh context, and `prodigal_find_genes`
+twice per sequence). Anthus contigs carry about one gene each, so the meta
+golden test sees little of metagenomic scoring; `make compare` covers more.
 
-**Known failures.** A golden test whose row in `test_golden`'s table names a
-defect and the phase that fixes it counts as passed while it fails, and fails
-the run once it passes, so that the marker gets removed. It also runs as an
-*isolated* twin that neutralises only the known defects and must pass, so a
-known failure cannot hide a new regression: A by setting the training GC by
-hand (with it, API training writes `ref_train.bin` byte for byte). On ARM64
-macOS, whose training writes different bytes, the training test checks the
-model by its predictions instead (`ref_trained.gff`).
+On ARM64 macOS, whose training writes different bytes, the training tests
+compare only the model fields training copies or counts (`gc`,
+`trans_table`, `st_wt`, `uses_sd`), which every platform checks, and the
+predictions. `make compare` still checks the bytes there, against the CLI
+of the same build.
 
 Under WASM (CI) the tests need `-sNODERAWFS=1` to see the fixtures and a
 stack of at least about 1.5 MB (`-sSTACK_SIZE=8MB`): `train_starts_nonsd`
@@ -125,13 +123,11 @@ alone uses 1.31 MB of stack, against WASM's 64 KiB default.
 `tests/api_compare.sh` runs the CLI and `tests/api_dump` (the public API
 only) with the same options over the corpus and a flag matrix, in meta mode,
 single mode, and single mode from a CLI-written training file, and diffs the
-two in the form of `tests/api_gff.h`. `ECOLI` adds E. coli and its fragments.
-The cases in the script's `expect_diff` (single mode) differ today because
-of A and must keep differing, so the list stays current; P1 empties it. They
-also run as `single-iso` twins (`api_dump --isolated`: the training GC set by
-hand), which must match today, so the flags stay checked while their plain
-cases are listed. For any other input, `tests/api_dump -p MODE [FLAGS]
-FASTA` and `tests/api_dump --from-cli -p MODE cli.gff` print the two sides.
+two in the form of `tests/api_gff.h`; every case must be identical. In the
+single mode cases the model the API trains (`api_dump --write-model`) must
+also equal the CLI's `-t` file byte for byte. `ECOLI` adds E. coli and its
+fragments. For any other input, `tests/api_dump -p MODE [FLAGS] FASTA` and
+`tests/api_dump --from-cli -p MODE cli.gff` print the two sides.
 
 ## Performance baselines
 
@@ -140,8 +136,8 @@ public API, printing the same GFF lines), median of 3 runs on 2026-10-17:
 AMD Ryzen 9 9950X3D, Debian, gcc 14.2, `make` defaults (`-O3`), one thread,
 output to a file. Measured at `6617375`, so the library no longer clears its
 gene array per call. "From model" predicts from a training file the CLI
-wrote for E. coli. Until P1 fixes defect A, the API's own single-mode
-training builds a different model (more genes), so the first row is only
+wrote for E. coli. At `6617375` the API's own single-mode training still
+built a different model (more genes; fixed since), so the first row is only
 roughly comparable.
 
 | Input | Mode | CLI | API |
@@ -152,11 +148,11 @@ roughly comparable.
 | E. coli 2 kbp fragments (2,320) | meta | 6.01 s, 88 MiB | 6.03 s, 92 MiB |
 | E. coli 2 kbp fragments | single, from model | 0.68 s, 49 MiB | 0.65 s, 53 MiB |
 
-The API's extra peak RSS came from zeroing the whole grown node array
-with `memset`, which commits every page. Since P1 the array is grown with
+The API's extra peak RSS came from zeroing the whole grown node array with
+`memset`, which commits every page. Since `c572679` the array is grown with
 `calloc` (`reserve_nodes`), and the API is within 3–5 MiB of the CLI (E.
-coli single from model 84 MiB, meta 138 MiB, single trained 152 MiB). Compare
-later measurements with this table on the same machine.
+coli single from model 84 MiB, meta 138 MiB, single trained 152 MiB).
+Compare later measurements with this table on the same machine.
 
 ## Sanitizers and concurrency
 
