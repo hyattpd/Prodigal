@@ -68,7 +68,8 @@ and compares exit status, stderr and every output file. How it builds and
 caches the oracle, the matrix, and the pass rules are in the script; the
 corpus is in `tests/make_corpus.sh`. Failed cases leave `.diff` files under
 `tests/out/oracle/cases/`. CI runs it in every Linux (x86-64 and ARM64, gcc
-and clang) and macOS job. Build `./prodigal` with the same `CC` you pass to
+and clang) and macOS job, and in the `sanitizers` job against a CLI built
+with ASan + UBSan. Build `./prodigal` with the same `CC` you pass to
 `make oracle`.
 
 - The oracle carries `tests/oracle-c1e2d36.patch`, which defines upstream's
@@ -84,8 +85,9 @@ and clang) and macOS job. Build `./prodigal` with the same `CC` you pass to
   fragments: genome-scale training, and the `slen < 3000` metagenomic
   penalties across many contigs. Upstream calls 4,319 genes in both modes on
   the genome and 6,039 (meta) on the fragments.
-- Long low-complexity input (`ATG` repeats over ~300 kbp) overflows the node
-  array and is left out; it is a memory-safety test, not a comparison.
+- Low-complexity input (`lowcomplex.fa`: `CAT` and `ATG` repeats with more
+  nodes than the node array is first sized for) is left out: upstream
+  overflows the array on it. `make compare` and the library tests run it.
 
 On 2026-10-16: 150/150 cases identical with `ECOLI` set (about 50 s at
 `JOBS=24`, including the oracle build), 98/98 without, against both the
@@ -107,6 +109,8 @@ check that a contig's output doesn't depend on what the context did before
 (a second pass, each record on a fresh context, and `prodigal_find_genes`
 twice per sequence). Anthus contigs carry about one gene each, so the meta
 golden test sees little of metagenomic scoring; `make compare` covers more.
+The low-complexity tests run an `ATG` repeat whose nodes don't fit the node
+array: growing it must give what the grown array gives (Phase 15).
 
 On ARM64 macOS, whose training writes different bytes, the training tests
 compare only the model fields training copies or counts (`gc`,
@@ -172,8 +176,10 @@ gcc -O1 -g -fsanitize=thread -DPRODIGAL_NO_MAIN $CORE harness.c -o h_tsan -lm -l
   single mode on short contigs, and repeated runs on one context (no leaks).
 - TSan was clean with 4 concurrent contexts, and results were deterministic
   across threads.
-- The known ASan failure is the `add_nodes` overflow on long `ATG` repeats
-  (see `internals.md`, "Limits and memory").
+- CI's `sanitizers` job (clang, ASan + UBSan, aborting on any report; steps
+  in `ci.yml`) runs the library tests, the API vs CLI comparison and the
+  oracle comparison. Some failures show only there, e.g. the AOS strings
+  outliving the SOA.
 - **Stack:** use `-fstack-usage` to watch frame sizes. Consumers run the
   library on 2 MiB threads, and `train_starts_nonsd` is already 1.31 MB.
 

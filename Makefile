@@ -26,6 +26,12 @@ CFLAGS  += -pedantic -Wall -O3
 # (docs/testing.md); "override" keeps it when CFLAGS is given on the command
 # line. tests/oracle_diff.sh builds the oracle the same way.
 override CFLAGS += -ffp-contract=off
+# training.c's 50 initialize_metagenome_N each build a 558 KB model on the
+# stack from 25 MB of constants: instrumented, that takes minutes to compile
+# and checks nothing useful, so its objects drop the sanitizer flags (the
+# link keeps them).
+training.o training.lib.o training.pic.o: override CFLAGS := $(filter-out -fsanitize% -fno-sanitize%,$(CFLAGS))
+
 # The CLI reads gzip input; the library takes sequences from the caller.
 CLI_DEFS = -DSUPPORT_GZIP_COMPRESSED
 LFLAGS = -lm $(LDFLAGS) -lz

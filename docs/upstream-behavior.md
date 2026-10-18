@@ -54,7 +54,7 @@ oracle. Change one only by explicit decision: record it here and in
 `CHANGES`, and regenerate the ground truth.
 
 1. **`score_nodes` mutates node structure.** Starts within 3 bp of a contig
-   end become edge nodes (`node.c:459-466`: `edge = 1`, scores reset).
+   end become edge nodes (in `score_nodes`: `edge = 1`, scores reset).
    `reset_node_scores` does not restore `edge`, and in meta mode the nodes
    are rebuilt only when the translation table changes between consecutive
    bins. Later bins therefore score those nodes as pre-existing edge nodes,
@@ -86,7 +86,21 @@ oracle. Change one only by explicit decision: record it here and in
    bins brings its own translation table (11 or 4), SD usage and start
    weight. The best bin's model is the one that applies to the contig's
    output and translations.
-10. **Per-contig caps:**
+10. **`dprog`'s giant-ORF exception scans from the first node.** `dprog`
+    scores each node's connections to the 500 nodes before it
+    (`MAX_NODE_DIST`), except for a reverse-strand start, or a
+    forward-strand stop, whose own stop lies further back. For those the
+    loop meant to find that stop, `while(min >= 0 && nod[i].ndx !=
+    nod[i].stop_val) min--`, tests `nod[i]` instead of `nod[min]`, so it
+    runs to -1 and the node is scored against every node before it. One
+    long reverse ORF with many starts therefore takes quadratic time: a
+    330 kbp `CAT` repeat (110,000 starts in one ORF) takes 67 s in meta mode
+    and 17 s in single mode, against about 2 s for the `ATG` repeat, whose
+    one long ORF is forward and has one stop (2026-10-18, Ryzen 9 9950X3D).
+    It needs an ORF spanning more than 500 nodes, which typical genomes
+    rarely have. Kept: the wider scan can change the chosen path, so a fix
+    changes output.
+11. **Per-contig caps:**
     - more than 30,000 genes in one contig: truncated (CLI warns);
     - training input over `MAX_SEQ`: truncated (CLI warns);
     - more than 5,000 masks: the CLI exits.
@@ -114,10 +128,11 @@ defect.
   23/23 `-g 4`).
   The library's meta loop applies the same rule (until 2.6.5 it skipped
   no-path bins, so a contig on which no bin had a path reported bin 0).
-- **Unbounded `add_nodes`** (`node.c:28`) overflows the node array on
-  low-complexity input whose node density exceeds the capacity, e.g.
-  `"ATG" × 110000`. The result is heap corruption. The fix is bounded
-  growth or a clean error, not truncation that alters results.
+- **Unbounded `add_nodes` (fixed in 2.6.5).** `add_nodes` (`node.c`) wrote
+  past the node array on low-complexity input with more nodes than the
+  `slen/8` (at least `STT_NOD`) it is sized for, e.g. `"ATG" × 110000`: heap
+  corruption. The array now grows (`internals.md`, "Limits and memory"), so
+  output is unchanged wherever upstream didn't overflow.
 - **An empty record ends the CLI's input** (CLI only). `next_seq_multi`
   returns -1, its end-of-input value, for a record with no sequence
   (`sequence.c:219`). In either mode, a FASTA header with no sequence lines

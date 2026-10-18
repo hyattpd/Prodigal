@@ -79,7 +79,7 @@ struct _node {
 };
 
 int add_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
-              mask *, int, struct _training *);
+              int, mask *, int, struct _training *);
 void reset_node_scores(struct _node *, int);
 int compare_nodes(const void *, const void *);
 int stopcmp_nodes(const void *, const void *);

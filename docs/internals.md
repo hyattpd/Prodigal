@@ -46,7 +46,7 @@ over the concatenation, spacers included.
 A **node** (`struct _node`, `node.h`, 176 bytes) is a potential start or stop
 codon on one strand.
 
-`add_nodes` (`node.c:28`) scans each strand from the 3' end. In every frame
+`add_nodes` (`node.c`) scans each strand from the 3' end. In every frame
 it records each stop, and each start (ATG/GTG/TTG, as allowed by
 `is_start(trans_table)`) that is at least `MIN_GENE` (90 bp) from its stop,
 or `MIN_EDGE_GENE` (60 bp) for genes that run off an edge. Fields:
@@ -64,12 +64,12 @@ or `MIN_EDGE_GENE` (60 bp) for genes that run off an edge. Fields:
 | `traceb`, `tracef`, `score`, `ov_mark`, `star_ptr[3]`, `elim` | Dynamic programming state. |
 
 Nodes are sorted with `compare_nodes` (`ndx` ascending, `+` strand first).
-`add_nodes` has **no capacity bound**: the caller must size `nodes` for the
-worst case. See "Limits and memory".
+`add_nodes` takes the array's capacity and returns -1 when the nodes don't
+fit; see "Limits and memory".
 
 ## Scoring
 
-`score_nodes` (`node.c:375`) runs `calc_orf_gc`, then `raw_coding_score`
+`score_nodes` (`node.c`) runs `calc_orf_gc`, then `raw_coding_score`
 (6-mer log-odds plus a length factor), then RBS scoring. That is either
 `rbs_score` (SD) or `find_best_upstream_motif` (non-SD). Finally it combines
 everything per start:
@@ -228,7 +228,9 @@ messages are upstream's, so the CLI prints them as they are.
 Node array invariant: every node past `ctx->nn` is zero. `build_nodes`
 clears the previous list before `add_nodes` (which sets `edge` only when it
 is 1, and a stale `elim` would drop a gene), and `reserve_nodes` grows the
-array zeroed. Nothing else writes nodes outside `[0, ctx->nn)`.
+array zeroed. If the nodes don't fit and the array can't grow, `add_nodes`
+has filled it, so `build_nodes` clears it all before returning the error.
+Nothing else writes nodes outside `[0, ctx->nn)`.
 
 `make compare` checks that the API's output equals the CLI's over the corpus
 and a flag matrix. Still different:
@@ -248,7 +250,7 @@ and a flag matrix. Still different:
 | Constant | Value | Where it bites |
 |---|---|---|
 | `MAX_SEQ` | 32,000,000 | Per-contig maximum. Also sizes `seq` and `rseq` (8 MB each) and `useq` (4 MB) at create time. |
-| `STT_NOD` | 100,000 | Initial node capacity (17.6 MB). For `slen > 800,000` the array is reallocated to `slen/8` nodes (22 B/bp) and never shrinks. |
+| `STT_NOD` | 100,000 | Initial node capacity (17.6 MB); see "Node capacity" below. |
 | `MAX_GENES` | 30,000 | `genes` array (33.4 MB; `struct _gene` is 1,112 bytes). Per-contig gene cap; overflow is silently truncated. |
 | `MAX_MASKS` | 5,000 | Mask list (inline in the context). |
 | `MASK_SIZE` | 50 | Minimum N run to mask. |
@@ -258,10 +260,15 @@ and a flag matrix. Still different:
 
 - **Per context:** about 71 MB at `prodigal_create`, plus 27.9 MB in meta
   mode, plus node growth for long contigs.
-- **Node capacity is not enforced.** Real genomes produce about 0.04–0.06
-  nodes/bp, well under the 0.125/bp budget. Low-complexity input can exceed
-  it: `"ATG" × 110000` overflows the heap in `add_nodes` in both the CLI and
-  the API.
+- **Node capacity.** `build_nodes` sizes the array for `slen/8` nodes (22
+  B/bp) when that is more than `STT_NOD`. Real genomes produce about
+  0.04–0.06 nodes/bp, well under that. Low-complexity input can need up to
+  about 2 nodes/bp (`add_nodes` adds at most one per pass of each strand's
+  scan): a 330 kbp `ATG` repeat has 110,000. When the nodes don't fit,
+  `add_nodes` returns -1 and `build_nodes` doubles the array and runs it
+  again, so such input costs memory, not correctness. The array never
+  shrinks. A long reverse ORF with many starts also costs quadratic `dprog`
+  time (`upstream-behavior.md`, quirk 10).
 
 ## Build integration
 

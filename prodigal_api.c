@@ -4,6 +4,7 @@
 *******************************************************************************/
 
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -108,6 +109,7 @@ prodigal_ctx_t *prodigal_create(const prodigal_config_t *config) {
 
     /* Allocate node and gene arrays */
     ctx->nodes = (struct _node *)pdg_alloc(ctx, STT_NOD * sizeof(struct _node));
+    ctx->node_cap = STT_NOD;
     ctx->genes = (struct _gene *)pdg_alloc(ctx, MAX_GENES * sizeof(struct _gene));
     if (ctx->nodes == NULL || ctx->genes == NULL) {
         prodigal_destroy(ctx);
@@ -345,34 +347,53 @@ int prodigal_get_seq_info(const prodigal_ctx_t *ctx, prodigal_seq_info_t *info) 
     Nodes
 *******************************************************************************/
 
-/* Make room for the nodes of the current sequence. A new array is zeroed. */
-static int reserve_nodes(prodigal_ctx_t *ctx) {
+/* Room for at least cap nodes. A new array is zeroed and replaces the old
+   one, whose contents are dropped. Returns 0, or -1 if out of memory (the
+   caller sets the error). */
+static int reserve_nodes(prodigal_ctx_t *ctx, int cap) {
     struct _node *nodes;
-    if (ctx->slen <= ctx->max_slen || ctx->slen <= STT_NOD * 8) return PRODIGAL_OK;
-    nodes = (struct _node *)pdg_calloc(ctx,
-        (size_t)(ctx->slen / 8) * sizeof(struct _node));
-    if (nodes == NULL) {
-        /* Upstream's message, which the CLI prints */
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM, "Realloc failed on nodes");
-        return PRODIGAL_ERR_NOMEM;
-    }
+    if (cap <= ctx->node_cap) return 0;
+    if ((size_t)cap > SIZE_MAX / sizeof(struct _node)) return -1;
+    nodes = (struct _node *)pdg_calloc(ctx, (size_t)cap * sizeof(struct _node));
+    if (nodes == NULL) return -1;
     pdg_free(ctx, ctx->nodes);
     ctx->nodes = nodes;
     ctx->nn = 0;
-    ctx->max_slen = ctx->slen;
-    return PRODIGAL_OK;
+    ctx->node_cap = cap;
+    return 0;
 }
 
 /* The sorted nodes of the current sequence under model tinf, in ctx->nodes.
    add_nodes and the steps after it expect zeroed nodes (add_nodes sets edge
    only when it is 1, and a stale elim drops a gene), so the previous list,
-   ctx->nodes[0, ctx->nn), is cleared first; everything past it is zero. */
+   ctx->nodes[0, ctx->nn), is cleared first; everything past it is zero.
+   The array is first sized for slen/8 nodes, upstream's budget, which real
+   genomes stay well under; low-complexity input can need up to 2*slen+2
+   (add_nodes adds at most one node per pass), so when the nodes don't fit
+   the array doubles and add_nodes runs again. */
 static int build_nodes(prodigal_ctx_t *ctx, struct _training *tinf) {
-    int rc = reserve_nodes(ctx);
-    if (rc != PRODIGAL_OK) return rc;
+    int nn;
+    if (reserve_nodes(ctx, ctx->slen / 8) != 0) {
+        /* Upstream's message, which the CLI prints */
+        PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM, "Realloc failed on nodes");
+        return PRODIGAL_ERR_NOMEM;
+    }
     memset(ctx->nodes, 0, ctx->nn * sizeof(struct _node));
-    ctx->nn = add_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
-                        ctx->config.closed_ends, ctx->mlist, ctx->nmask, tinf);
+    while ((nn = add_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
+                           ctx->node_cap, ctx->config.closed_ends, ctx->mlist,
+                           ctx->nmask, tinf)) < 0) {
+        if (reserve_nodes(ctx, 2 * ctx->node_cap) != 0) {
+            /* add_nodes filled the array: clear it for the next call */
+            memset(ctx->nodes, 0, (size_t)ctx->node_cap * sizeof(struct _node));
+            ctx->nn = 0;
+            PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
+                          "Out of memory for more than %d nodes in a %d bp "
+                          "sequence (low-complexity input has up to 2 per bp)",
+                          ctx->node_cap, ctx->slen);
+            return PRODIGAL_ERR_NOMEM;
+        }
+    }
+    ctx->nn = nn;
     qsort(ctx->nodes, ctx->nn, sizeof(struct _node), &compare_nodes);
     return PRODIGAL_OK;
 }

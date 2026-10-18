@@ -69,9 +69,11 @@ make distclean          # removes objects, binaries and libs
 ### CI
 
 `.github/workflows/ci.yml` runs `make test` and `make regress` on Linux
-x86-64 and ARM64 (gcc, clang), macOS and Windows, `make oracle` on Linux
-x86-64/ARM64 and macOS, and `test_api` under WASM, for pushes and PRs to
-`v2.6.4-miint`.
+x86-64 and ARM64 (gcc, clang), macOS and Windows, `make compare` and
+`make oracle` on Linux x86-64/ARM64 and macOS, `test_api` under WASM, and
+`make test`, `make compare` and the oracle comparison under ASan + UBSan
+(the `sanitizers` job; some failures show only there), for pushes and PRs
+to `v2.6.4-miint`.
 
 ## Layout
 

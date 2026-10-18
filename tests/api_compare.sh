@@ -72,7 +72,7 @@ add() {  # add <case> <input> <mode> <options...>
   echo "$name" >>"$O/cases.list"
   echo "$P $O/cases/$name $*" >>"$O/jobs"
 }
-for entry in "${corpus[@]}"; do
+for entry in "${corpus[@]}" "${fork_corpus[@]}"; do
   label=${entry%%:*} in=${entry#*:}
   for f in "" "-c" "-m"; do
     add "$label.meta.$(fname "$f")" "$in" meta $f

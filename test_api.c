@@ -8,7 +8,9 @@
 #include <math.h>
 #include <stdint.h>
 #include "prodigal.h"
-#include "node.h"   /* STT_NOD, and struct _training: the model blob's layout */
+/* White-box: the context (the node array), STT_NOD, and struct _training,
+   the model blob's layout */
+#include "prodigal_internal.h"
 #include "tests/api_gff.h"
 #include "tests/fasta.h"
 
@@ -865,9 +867,9 @@ static void test_failed_training_leaves_no_model(void) {
     ASSERT_TRUE(ctx != NULL);
     ASSERT_EQ_INT(prodigal_load_training(ctx, tdata, tlen), PRODIGAL_OK);
 
-    /* Too long for the initial node array, so training's first step
-       (reserve_nodes) allocates, and fails */
-    int32_t len = STT_NOD * 8 + 1;
+    /* Long enough that slen/8 nodes exceed the initial STT_NOD, so
+       training's first step (reserve_nodes) allocates, and fails */
+    int32_t len = 8 * (STT_NOD + 1);
     char *big = (char *)malloc(len);
     ASSERT_TRUE(big != NULL);
     memset(big, 'A', len);
@@ -1298,6 +1300,130 @@ static void test_independence_single(void) {
 }
 
 /*******************************************************************************
+    Phase 15: Low-complexity input
+
+    "ATG" repeated gives one start node per codon, about slen/3 nodes, past
+    the slen/8 (and at least STT_NOD) nodes the array is first sized for.
+    The array must grow, not overflow. make compare runs repeats past
+    STT_NOD (tests/make_corpus.sh); here a context's capacity is set to 0,
+    so that a 21 kbp repeat starts from slen/8 and grows.
+*******************************************************************************/
+
+/* fa = one record, n copies of "ATG". */
+static void atg_repeat(fasta_t *fa, int32_t n) {
+    int32_t i;
+    fa->n = 1;
+    fa->seqs = (char **)xrealloc(NULL, sizeof(char *));
+    fa->headers = (char **)xrealloc(NULL, sizeof(char *));
+    fa->lens = (int32_t *)xrealloc(NULL, sizeof(int32_t));
+    fa->seqs[0] = (char *)xrealloc(NULL, 3 * (size_t)n + 1);
+    for (i = 0; i < n; i++) memcpy(fa->seqs[0] + 3 * i, "ATG", 3);
+    fa->seqs[0][3 * n] = '\0';
+    fa->headers[0] = dupstr("atg_repeat");
+    fa->lens[0] = 3 * n;
+}
+
+/* An ATG repeat, run twice on one context made from src (SINGLE: trained on
+   the repeat each time) whose node array starts at slen/8: it must grow in
+   the first run (in training, for SINGLE) and not in the second, and the
+   two must give the same genes and, trained, the same model. */
+static void low_complexity(int src) {
+    fasta_t fa;
+    lines_t out[2] = {{0}, {0}};
+    struct _training *model[2] = {NULL, NULL};
+    prodigal_ctx_t *ctx = NULL;
+    void *blob = NULL;
+    size_t len;
+    int cap[2], i, rc = PRODIGAL_OK;
+    atg_repeat(&fa, 7000);   /* 21 kbp: enough to train on */
+    if (src != REF_MODEL) ctx = make_ctx(src == META);
+    else if ((blob = load_ref_model(&len)) != NULL) ctx = make_model_ctx(blob, len);
+    if (ctx != NULL) ctx->node_cap = 0;   /* the first run sizes it to slen/8 */
+    for (i = 0; ctx != NULL && rc == PRODIGAL_OK && i < 2; i++) {
+        if (src == SINGLE && (rc = api_train(ctx, &fa)) == PRODIGAL_OK)
+            model[i] = (struct _training *)memcpy(
+                xrealloc(NULL, sizeof(struct _training)), &ctx->tinf,
+                sizeof(struct _training));
+        if (rc == PRODIGAL_OK)
+            rc = api_emit_records(ctx, &fa, 0, 1, src == META, lines_emit, &out[i]);
+        cap[i] = ctx->node_cap;
+    }
+    if (ctx != NULL) {
+        if (rc != PRODIGAL_OK)
+            printf("[FAIL] %d: %s\n", rc, prodigal_last_error(ctx));
+        else if (cap[0] <= fa.lens[0] / 8 || cap[1] != cap[0])
+            printf("[FAIL] node array of %d, then %d nodes: the first run "
+                   "must grow it past %d, the second not\n", cap[0], cap[1],
+                   fa.lens[0] / 8);
+        else if (src == SINGLE &&
+                 memcmp(model[0], model[1], sizeof(struct _training)) != 0)
+            printf("[FAIL] the models differ\n");
+        else if (lines_equal(&out[0], &out[1], "genes on the grown array"))
+            TEST_PASS();
+    }
+    lines_free(&out[0]); lines_free(&out[1]);
+    free(model[0]); free(model[1]);
+    prodigal_destroy(ctx);
+    free(blob);
+    fasta_free(&fa);
+}
+
+/* Every node past ctx->nn is zero (the invariant build_nodes keeps). */
+static int node_tail_zero(const prodigal_ctx_t *ctx) {
+    const unsigned char *p = (const unsigned char *)(ctx->nodes + ctx->nn);
+    size_t i, n = (size_t)(ctx->node_cap - ctx->nn) * sizeof(struct _node);
+    for (i = 0; i < n; i++)
+        if (p[i] != 0) return 0;
+    return 1;
+}
+
+static void test_low_complexity_grow_fails(void) {
+    TEST_START("ATG repeat: failed growth, then anthus = ref_meta.gff");
+    fasta_t fa, atg;
+    lines_t first = {0};
+    prodigal_genes_soa_t *genes = NULL;
+    if (!load_anthus(&fa)) return;
+    atg_repeat(&atg, STT_NOD + 10000);
+    prodigal_ctx_t *ctx = make_counted_ctx(1);
+    ASSERT_TRUE(ctx != NULL);
+
+    /* Bins allocated; then the ATG repeat fills the array and growing it
+       fails */
+    ASSERT_EQ_INT(api_emit_records(ctx, &fa, 0, 1, 1, lines_emit, &first), PRODIGAL_OK);
+    lines_free(&first);
+    ASSERT_EQ_INT(prodigal_set_sequence(ctx, atg.seqs[0], atg.lens[0], NULL),
+                  PRODIGAL_OK);
+    alloc_limit = alloc_count;
+    ASSERT_EQ_INT(prodigal_find_genes(ctx, &genes, NULL), PRODIGAL_ERR_NOMEM);
+    alloc_limit = (size_t)-1;
+    ASSERT_TRUE(strstr(prodigal_last_error(ctx), "nodes") != NULL);
+    ASSERT_TRUE(node_tail_zero(ctx));
+
+    /* No stale node reaches the next sequence */
+    if (!golden_run(ctx, &fa, REF_DIR "ref_meta.gff", 1)) return;
+    ASSERT_TRUE(node_tail_zero(ctx));
+
+    prodigal_destroy(ctx);
+    fasta_free(&fa); fasta_free(&atg);
+    TEST_PASS();
+}
+
+static void test_low_complexity_meta(void) {
+    TEST_START("ATG repeat: meta mode, node array grows");
+    low_complexity(META);
+}
+
+static void test_low_complexity_model(void) {
+    TEST_START("ATG repeat: single mode from model, node array grows");
+    low_complexity(REF_MODEL);
+}
+
+static void test_low_complexity_trained(void) {
+    TEST_START("ATG repeat: training and single mode, node array grows");
+    low_complexity(SINGLE);
+}
+
+/*******************************************************************************
     Test runner
 *******************************************************************************/
 
@@ -1383,6 +1509,12 @@ int main(void) {
     test_golden();
     test_independence_meta();
     test_independence_single();
+
+    printf("\nPhase 15: Low-complexity input\n");
+    test_low_complexity_meta();
+    test_low_complexity_model();
+    test_low_complexity_trained();
+    test_low_complexity_grow_fails();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

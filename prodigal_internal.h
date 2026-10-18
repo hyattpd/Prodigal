@@ -33,7 +33,7 @@ struct prodigal_ctx {
     unsigned char *rseq;              /* 2-bit encoded reverse complement */
     unsigned char *useq;              /* Ambiguity bitmap (N bases) */
     int slen;                         /* Current sequence length in bp */
-    int max_slen;                     /* Sequence length the nodes are sized for */
+    int node_cap;                     /* Nodes the nodes array holds */
     double gc;                        /* GC content of current sequence */
     char cur_header[MAX_LINE];        /* Current sequence header */
 

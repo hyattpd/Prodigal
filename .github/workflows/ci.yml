@@ -45,12 +45,15 @@ jobs:
         run: make compare CC=${{ matrix.cc }}
 
       # CLI vs an upstream c1e2d36 built here with the same compiler
-      # (tests/oracle_diff.sh). The cache key is the script's own stamp.
-      - name: Oracle cache key
+      # (tests/oracle_diff.sh). The cache key is the script's own stamp. The
+      # anchored steps and paths (&) are reused by the jobs below (*).
+      - &oracle_key
+        name: Oracle cache key
         id: oracle
         run: echo "key=oracle-${{ runner.os }}-${{ runner.arch }}-$(tests/oracle_diff.sh --stamp-key | cksum | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
 
-      - uses: actions/cache@v4
+      - &oracle_cache
+        uses: actions/cache@v4
         with:
           path: tests/out/oracle-c1e2d36
           key: ${{ steps.oracle.outputs.key }}
@@ -62,13 +65,55 @@ jobs:
         if: failure()
         with:
           name: diffs-${{ matrix.os }}-${{ matrix.cc }}
-          path: |
+          path: &diff_paths |
             tests/out/compare/cases/**/diff
             tests/out/compare/cases/**/RESULT
             tests/out/compare/cases/**/*.err
             tests/out/oracle/cases/**/*.diff
             tests/out/oracle/cases/**/stderr
             tests/out/oracle-c1e2d36/build.log
+
+  # ── Sanitizers ─────────────────────────────────────────────────────────────
+  # ASan + UBSan, aborting on any report: the library tests (the AOS strings
+  # test only fails under ASan), the API vs CLI comparison (its corpus
+  # includes low-complexity input that overflowed the node array before the
+  # array could grow), and the CLI over the oracle corpus. The oracle itself
+  # is built without them (oracle_diff.sh would add a CFLAGS given to make),
+  # so it matches its cache key.
+  sanitizers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CC: clang   # also read by the oracle cache key
+      SAN_CFLAGS: -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g -O1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      - name: Library tests
+        run: make test CC=clang CFLAGS="$SAN_CFLAGS"
+
+      - name: API vs CLI (flag matrix x corpus)
+        run: make compare CC=clang CFLAGS="$SAN_CFLAGS"
+
+      - *oracle_key
+
+      - *oracle_cache
+
+      - name: CLI vs upstream (flag matrix x corpus)
+        run: |
+          make prodigal CC=clang CFLAGS="$SAN_CFLAGS"
+          tests/oracle_diff.sh
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: diffs-sanitizers
+          path: *diff_paths
 
   # ── macOS ──────────────────────────────────────────────────────────────────
   # ARM64 macOS: make regress skips the train.bin byte compare (docs/testing.md).
@@ -95,14 +140,9 @@ jobs:
 
       # CLI vs an upstream c1e2d36 built here with the same compiler
       # (tests/oracle_diff.sh). The cache key is the script's own stamp.
-      - name: Oracle cache key
-        id: oracle
-        run: echo "key=oracle-${{ runner.os }}-${{ runner.arch }}-$(tests/oracle_diff.sh --stamp-key | cksum | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
+      - *oracle_key
 
-      - uses: actions/cache@v4
-        with:
-          path: tests/out/oracle-c1e2d36
-          key: ${{ steps.oracle.outputs.key }}
+      - *oracle_cache
 
       - name: CLI vs upstream (flag matrix x corpus)
         run: make oracle
@@ -111,13 +151,7 @@ jobs:
         if: failure()
         with:
           name: diffs-macos
-          path: |
-            tests/out/compare/cases/**/diff
-            tests/out/compare/cases/**/RESULT
-            tests/out/compare/cases/**/*.err
-            tests/out/oracle/cases/**/*.diff
-            tests/out/oracle/cases/**/stderr
-            tests/out/oracle-c1e2d36/build.log
+          path: *diff_paths
 
   # ── WASM (library only, via Emscripten) ────────────────────────────────────
   wasm:

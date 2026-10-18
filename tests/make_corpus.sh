@@ -11,6 +11,9 @@
 #   anthus.fa.gz   anthus_aco.fas, gzipped (the CLI's zlib input path)
 #   big.fa         one 1.2 Mbp contig alternating anthus slices and random
 #                  sequence: above 800 kbp the CLI grows its node array
+#   lowcomplex.fa  CAT and ATG repeats of 360 and 330 kbp, with more nodes
+#                  than the node array is first sized for (fork only:
+#                  upstream overflows on them, so the oracle can't run them)
 #   ecoli_2k.fa    ECOLI_FASTA cut into 2,000 bp fragments, remainder dropped
 #                  (only when ECOLI_FASTA is given)
 #
@@ -169,6 +172,23 @@ END {
   }
   if (buf != "") print buf
 }' anthus_aco.fas >"$out/big.fa"
+
+# One start per codon gives about slen/3 nodes, past the slen/8 (at least
+# STT_NOD) the node array is first sized for. The CAT record, first so that
+# it is the one that grows the array in meta mode, puts the starts on the
+# reverse strand. It is cut into 300-codon ORFs on purpose: a single long
+# reverse ORF with that many starts would take dprog quadratic time
+# (docs/upstream-behavior.md, quirk 10). The ATG repeat is one forward ORF.
+awk '
+function lines(hdr, line, n,   i) {
+  print ">" hdr
+  for (i = 0; i < n; i++) print line
+}
+function rep(s, k,   o, i) { o = ""; for (i = 0; i < k; i++) o = o s; return o }
+BEGIN {
+  lines("cat_orfs_360k", "TTA" rep("CAT", 300), 400)
+  lines("atg_repeat_330k", rep("ATG", 20), 5500)
+}' >"$out/lowcomplex.fa"
 
 if [ -n "$ecoli" ]; then
   awk -v w=2000 '

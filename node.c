@@ -23,11 +23,15 @@
 /*******************************************************************************
   Adds nodes to the node list.  Genes must be >=90bp in length, unless they
   run off the edge, in which case they only have to be 50bp.
+
+  The list holds cap nodes.  Returns the number of nodes, or -1 if they don't
+  fit; the list then holds a partial set.  Each pass of the loops below adds
+  at most one node, so they check the capacity once per pass.
 *******************************************************************************/
 
 int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
-              *nodes, int closed, mask *mlist, int nm, struct _training
-              *tinf) {
+              *nodes, int cap, int closed, mask *mlist, int nm,
+              struct _training *tinf) {
   int i, nn = 0, last[3], saw_start[3], min_dist[3];
   int slmod = 0;
 
@@ -40,6 +44,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     if(closed == 0) while(last[(i+slmod)%3]+2 > slen-1) last[(i+slmod)%3]-=3;
   }
   for(i = slen-3; i >= 0; i--) {
+    if(nn == cap) return -1;
     if(is_stop(seq, i, tinf)==1) {
       if(saw_start[i%3] == 1) {
         if(is_stop(seq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
@@ -90,6 +95,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     }
   }
   for(i = 0; i < 3; i++) {
+    if(nn == cap) return -1;
     if(saw_start[i%3] == 1) {
       if(is_stop(seq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
       nodes[nn].ndx = last[i%3]; 
@@ -107,6 +113,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     if(closed == 0) while(last[(i+slmod)%3]+2 > slen-1) last[(i+slmod)%3]-=3;
   }
   for(i = slen-3; i >= 0; i--) {
+    if(nn == cap) return -1;
     if(is_stop(rseq, i, tinf)==1) {
       if(saw_start[i%3] == 1) {
         if(is_stop(rseq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
@@ -160,6 +167,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     }
   }
   for(i = 0; i < 3; i++) {
+    if(nn == cap) return -1;
     if(saw_start[i%3] == 1) {
       if(is_stop(rseq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
       nodes[nn].ndx = slen - last[i%3] - 1; 

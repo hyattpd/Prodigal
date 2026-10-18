@@ -1,5 +1,11 @@
 VERSION 2.6.5 (unreleased)
 
+* Fixed heap corruption (a crash, in the CLI and the library) on
+low-complexity input such as a 330 kbp ATG repeat: add_nodes wrote past the
+node array, which is sized for slen/8 nodes (at least 100,000), upstream's
+budget, while such input has up to about 2 per base. The array now grows
+when the nodes don't fit. Output is unchanged on all other input. Such input
+can still be slow: see the dprog note in docs/upstream-behavior.md.
 * Fixed a crash (segmentation fault on macOS) in metagenomic mode: when a
 bin produced no gene path, the CLI read the score of nodes[-1], before the
 start of the node array. Such a bin now scores 0.0, the score of the empty
