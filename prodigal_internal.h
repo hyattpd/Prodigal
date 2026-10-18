@@ -21,6 +21,15 @@
     Internal context structure (opaque to public API consumers)
 *******************************************************************************/
 
+/* The most bases a sequence may have: the CLI's limit (it stops once the
+   length plus MAX_LINE reaches MAX_SEQ). */
+#define MAX_BASES (MAX_SEQ - MAX_LINE - 1)
+
+/* The bases seq, rseq and useq hold: MAX_SEQ, and room for the spacer the
+   CLI adds after training input it cut at the limit (upstream wrote it past
+   its buffers). */
+#define PDG_SEQ_CAP (MAX_SEQ + 16)
+
 struct prodigal_ctx {
     prodigal_config_t config;         /* Snapshot of caller config */
 
@@ -37,14 +46,17 @@ struct prodigal_ctx {
     double gc;                        /* GC content of current sequence */
     char cur_header[MAX_LINE];        /* Current sequence header */
 
-    /* Masking */
-    mask mlist[MAX_MASKS];
+    /* Masking (-m): the regions, in sequence order; the list grows as
+       needed (upstream stopped at 5,000) */
+    mask *masks;
     int nmask;
+    int mask_cap;
 
     /* Node and gene working arrays */
     struct _node *nodes;
     int nn;                           /* Current node count */
     struct _gene *genes;
+    int gene_cap;                     /* Genes the genes array holds */
 
     /* Metagenomic bins (lazily initialized) */
     struct _metagenomic_bin *meta;
@@ -106,6 +118,28 @@ static inline void pdg_free(prodigal_ctx_t *ctx, void *ptr) {
    for the next sequence. The nodes are build_nodes's (prodigal_api.c). */
 void pdg_clear_sequence(prodigal_ctx_t *ctx);
 
+/* Encoding a sequence into ctx (seq, useq, and with -m the masks), shared
+   by the library's prodigal_set_sequence / prodigal_set_training_sequences
+   and the CLI's readers (sequence.c), so both keep, drop and mask the same
+   characters. pdg_encode_begin clears the sequence; pdg_encode_chars
+   encodes the characters in 'A'..'z' of s[0, n) and drops the rest;
+   pdg_encode_spacer adds TTAATTAATTAA (a stop in every frame) between
+   training sequences; pdg_encode_end sets slen and gc and computes the
+   reverse strand. The two can fail with PRODIGAL_ERR_INVALID_INPUT past
+   limit bases, or PRODIGAL_ERR_NOMEM if the mask list can't grow; they
+   set no message. */
+typedef struct {
+    int len;                          /* bases encoded */
+    int gc;                           /* of them G or C */
+    int mask_beg;                     /* -m: start of the current N run, or -1 */
+    int limit;                        /* the most bases allowed */
+} pdg_encoder_t;
+void pdg_encode_begin(prodigal_ctx_t *ctx, pdg_encoder_t *e, int limit);
+int pdg_encode_chars(prodigal_ctx_t *ctx, pdg_encoder_t *e, const char *s,
+                     size_t n);
+int pdg_encode_spacer(prodigal_ctx_t *ctx, pdg_encoder_t *e);
+void pdg_encode_end(prodigal_ctx_t *ctx, pdg_encoder_t *e);
+
 /* Training on the sequence in ctx, in stages. report, if not NULL, is
    called before (done 0) and after (done 1) each stage: prodigal_train logs
    from it, and the CLI prints upstream's progress text. */
@@ -123,8 +157,8 @@ int pdg_train(prodigal_ctx_t *ctx, pdg_train_report_fn report);
 int pdg_score_nodes(prodigal_ctx_t *ctx, struct _training *tinf);
 
 /* Single genome mode, after pdg_score_nodes: the genes, in ctx->genes, and
-   their number (it cannot fail). seqnum is the 1-based sequence number in
-   the genes' IDs. */
+   their number, or PRODIGAL_ERR_NOMEM if the gene array can't grow to hold
+   them. seqnum is the 1-based sequence number in the genes' IDs. */
 int pdg_single_genes(prodigal_ctx_t *ctx, int seqnum);
 
 /* Metagenomic mode: the bins, allocated on first use. */

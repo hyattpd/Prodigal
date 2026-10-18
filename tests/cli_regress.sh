@@ -4,7 +4,8 @@
 # Runs the CLI on anthus_aco.fas for every output type in both modes and
 # compares each result with testdata/ground_truth/. Also predicts from the
 # committed ref_train.bin, and writes a training file, predicts from it and
-# byte-compares it with ref_train.bin.
+# byte-compares it with ref_train.bin. Last, the fork's deviations from
+# upstream (docs/upstream-behavior.md) are checked against its own output.
 #
 # Usage: tests/cli_regress.sh [--binary | --no-binary]
 #   The training-file byte compare is on by default except on ARM64 macOS,
@@ -38,7 +39,7 @@ IN=anthus_aco.fas
 mkdir -p "$O" || exit 2
 # Remove only what this script writes, so a stale result can never pass.
 rm -f "$O"/meta.* "$O"/single.* "$O"/trained.* "$O"/fromref.* \
-      "$O"/train*.bin "$O"/stderr
+      "$O"/train*.bin "$O"/stderr "$O"/empty* "$O"/noempty*
 
 fail=0
 run() {  # run the CLI; any non-zero exit is a failure
@@ -79,6 +80,49 @@ if cmp "$want" "$O/train.bin"; then
   echo "OK   train.bin (vs ${want##*/})"
 else
   echo "DIFF train.bin (vs ${want##*/})"; fail=1
+fi
+
+# Deviations. An empty record (header, no sequence), first or later, is
+# skipped with a warning: the genes are those of the file without it, in
+# FASTA and in EMBL (default names) alike. Upstream stopped reading there.
+# Training on the input still adds a spacer for it, as upstream did, so
+# there only the record count is checked.
+fa2embl='/^>/ { if (n++) print "//"; print "ID   " substr($0, 2) ";"; print "SQ   Sequence;"; next }
+         { print } END { print "//" }'
+awk '/^>/ { n++; if (n == 1 || n == 4) print ">empty_record_" n } { print }' \
+    $IN >"$O/empty.fa"
+awk "$fa2embl" $IN >"$O/noempty.embl"
+awk "$fa2embl" "$O/empty.fa" >"$O/empty.embl"
+empty_case() {  # empty_case WITHOUT WITH OPTIONS...: same genes, 2 warnings
+  local without=$1 with=$2; shift 2
+  run -i "$without" "$@" -f gff -q -o "$O/noempty.gff"
+  run -i "$with" "$@" -f gff -q -o "$O/empty.gff"
+  if [ "$(grep -c 'no sequence' "$O/stderr")" != 2 ]; then
+    echo "FAIL empty records (${with##*/} $*): expected 2 warnings"; sed 's/^/     /' "$O/stderr"; fail=1
+  elif ! cmp -s "$O/noempty.gff" "$O/empty.gff"; then
+    echo "DIFF empty records (${with##*/} $*): genes differ from the file without them"; fail=1
+  else
+    echo "OK   empty records skipped (${with##*/} $*)"
+  fi
+}
+empty_case $IN "$O/empty.fa" -p meta
+empty_case $IN "$O/empty.fa" -t $G/ref_train.bin
+empty_case "$O/noempty.embl" "$O/empty.embl" -p meta
+run -i "$O/empty.fa" -f gff -q -o "$O/empty.gff"
+n=$(grep -c '^# Sequence Data' "$O/empty.gff")
+if [ "$n" = "$(grep -c '^>' $IN)" ]; then
+  echo "OK   empty records skipped (training on the input)"
+else
+  echo "FAIL empty records (training on the input): $n records in the output"; fail=1
+fi
+
+# Input from a closed standard input names /dev/stdin (upstream: "(null)").
+"$P" -p meta -q <&- >/dev/null 2>"$O/stderr"
+rc=$?
+if [ $rc = 5 ] && grep -q "can't open input file /dev/stdin" "$O/stderr"; then
+  echo "OK   closed stdin"
+else
+  echo "FAIL closed stdin (exit $rc)"; sed 's/^/     /' "$O/stderr"; fail=1
 fi
 
 [ $fail = 0 ] && echo "all CLI regression checks passed"

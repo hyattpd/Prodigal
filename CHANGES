@@ -1,5 +1,28 @@
 VERSION 2.6.5 (unreleased)
 
+* Contigs with 30,000 or more genes are no longer truncated at 30,000 (the
+CLI warned "max # of genes exceeded, truncating"; the library dropped them
+silently): the gene array grows. Output is unchanged on smaller contigs.
+* With -m, more than 5,000 masked regions (runs of at least 50 Ns) no longer
+stop the CLI (exit 52 in training, 55 otherwise), and the library no longer
+drops the masks past 5,000: the list grows.
+* CLI: a record with no sequence (a header followed by another header) is
+skipped with a warning, and the records after it are read: the genes are
+those of the file without it. Upstream stopped reading there, silently
+dropping the rest of the file. An empty last record is still ignored
+without a warning, as upstream did. Training on the input still adds the
+12-base spacer upstream added for it, so there the model can differ
+slightly from that of the file without it.
+* CLI: when standard input can't be opened, the error names /dev/stdin
+(upstream printed "(null)").
+* CLI: training input cut at the length limit no longer gets its last
+spacer written past the end of the sequence buffers (up to 3 bytes); the
+buffers have room for it.
+* Library: the length limits are the CLI's, on the bases kept (characters in
+A-z): at most 31,989,999. prodigal_set_sequence checked the raw length
+against 32,000,000 instead, and prodigal_set_training_sequences truncated
+longer training input silently; both now return an error. The CLI still
+trains on the start of such input, with a warning.
 * Fixed heap corruption (a crash, in the CLI and the library) on
 low-complexity input such as a 330 kbp ATG repeat: add_nodes wrote past the
 node array, which is sized for slen/8 nodes (at least 100,000), upstream's

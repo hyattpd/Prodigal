@@ -33,7 +33,6 @@
 #define MAX_LINE 10000
 #define WINDOW 120
 #define MASK_SIZE 50
-#define MAX_MASKS 5000
 #define ATG 0
 #define GTG 1
 #define TTG 2
@@ -45,10 +44,10 @@ typedef struct _mask {
   int end;
 } mask;
 
-int read_seq_training(fptr, unsigned char *, unsigned char *, double *, int,
-                      mask *, int *);
-int next_seq_multi(fptr, unsigned char *, unsigned char *, int *, double *,
-                   int, mask *, int *, char *, char *);
+/* The CLI's readers encode into the context (prodigal_internal.h) */
+struct prodigal_ctx;
+int read_seq_training(fptr, struct prodigal_ctx *);
+int next_seq_multi(fptr, struct prodigal_ctx *, int *, char *, char *);
 void rcom_seq(unsigned char *, unsigned char *, unsigned char *, int);
 
 void calc_short_header(char *header, char *short_header, int);

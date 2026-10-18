@@ -314,7 +314,10 @@ typedef struct {
 
 /** Basic information about the currently loaded sequence. */
 typedef struct {
-    int32_t length;             /**< Encoded sequence length in bp */
+    /** Encoded sequence length in bp: the input's characters in 'A'..'z'
+     *  (the rest are dropped), plus, after prodigal_set_training_sequences
+     *  with several sequences, 12 for each spacer (one after each). */
+    int32_t length;
     double  gc_content;         /**< GC fraction [0, 1].  0.0 if no sequence loaded. */
 } prodigal_seq_info_t;
 
@@ -461,16 +464,23 @@ PRODIGAL_API void prodigal_destroy(prodigal_ctx_t *ctx);
  *
  * Encodes the raw ASCII nucleotide string into Prodigal's internal 2-bit
  * representation, computes the reverse complement, and calculates GC content.
- * Accepts A/C/G/T/N in upper or lower case.  Non-alphabetic characters are
- * silently skipped.  Ambiguous bases (N, etc.) are encoded as C with an
+ * Accepts A/C/G/T/N in upper or lower case.  Characters outside 'A'..'z'
+ * (digits, '-', '.', '*', whitespace, ...) are dropped, as the CLI drops
+ * them, which shifts the coordinates of everything after them:
+ * prodigal_get_seq_info() reports how many characters were kept, so a
+ * caller can compare that with len.  Other characters in 'A'..'z' (IUPAC
+ * codes, '[', '_', ...) are ambiguous bases, encoded as C with an
  * ambiguity flag.
+ *
+ * At most 31,989,999 characters may be kept (MAX_SEQ - MAX_LINE - 1), the
+ * CLI's limit; a longer sequence is an error (PRODIGAL_ERR_INVALID_INPUT).
  *
  * Resets internal state from any previous sequence.  The context can be
  * reused across multiple set_sequence + find_genes cycles.
  *
  * @param ctx     Context.
  * @param seq     Raw nucleotide string (not null-terminated required; len used).
- * @param len     Number of characters in seq.  Must be > 0 and < 32000000.
+ * @param len     Number of characters in seq.  Must be > 0.
  * @param header  Sequence name/header.  May be NULL.
  * @return PRODIGAL_OK or error code.
  */
@@ -483,7 +493,10 @@ PRODIGAL_API int prodigal_set_sequence(prodigal_ctx_t *ctx,
  *
  * Concatenates all sequences with TTAATTAATTAA stop-codon spacers (forcing
  * stops in all 6 reading frames), matching Prodigal's training behavior.
- * After this call, use prodigal_train() to build the model.
+ * After this call, use prodigal_train() to build the model.  Characters are
+ * kept or dropped as in prodigal_set_sequence(), and the same limit applies
+ * to the whole, spacers included: a longer input is an error, where the
+ * CLI warns and trains on the start of it.
  *
  * @param ctx      Context.
  * @param seqs     Array of n_seqs raw nucleotide strings.

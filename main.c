@@ -235,7 +235,7 @@ int main(int argc, char *argv[]) {
   if(input_ptr == NULL) {
     input_ptr = INPUT_OPEN("/dev/stdin", "r");
     if(input_ptr == NULL) {
-      fprintf(stderr, "\nError: can't open input file %s.\n\n", input_file);
+      fprintf(stderr, "\nError: can't open input file /dev/stdin.\n\n");
       exit(5);
     }
   }
@@ -282,9 +282,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* Read sequences directly into context buffers using existing FILE* I/O */
-    ctx->slen = read_seq_training(input_ptr, ctx->seq, ctx->useq,
-                                  &ctx->gc, config.mask_regions,
-                                  ctx->mlist, &ctx->nmask);
+    ctx->slen = read_seq_training(input_ptr, ctx);
     if(ctx->slen == 0) {
       fprintf(stderr, "\n\nSequence read failed (file must be Fasta, ");
       fprintf(stderr, "Genbank, or EMBL format).\n\n");
@@ -303,7 +301,6 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "training.\nYou may get better results with the ");
       fprintf(stderr, "-p meta option.\n\n");
     }
-    rcom_seq(ctx->seq, ctx->rseq, ctx->useq, ctx->slen);
     if(quiet == 0) {
       fprintf(stderr, "%d bp seq created, %.2f pct GC\n", ctx->slen,
               ctx->gc*100.0);
@@ -366,10 +363,8 @@ int main(int argc, char *argv[]) {
   /* Read and process each sequence in the file in succession */
   sprintf(cur_header, "Prodigal_Seq_1");
   sprintf(new_header, "Prodigal_Seq_2");
-  while((ctx->slen = next_seq_multi(input_ptr, ctx->seq, ctx->useq, &num_seq,
-         &ctx->gc, config.mask_regions, ctx->mlist, &ctx->nmask, cur_header,
+  while((ctx->slen = next_seq_multi(input_ptr, ctx, &num_seq, cur_header,
          new_header)) != -1) {
-    rcom_seq(ctx->seq, ctx->rseq, ctx->useq, ctx->slen);
     if(ctx->slen == 0) {
       fprintf(stderr, "\nSequence read failed (file must be Fasta, ");
       fprintf(stderr, "Genbank, or EMBL format).\n\n");
@@ -391,7 +386,7 @@ int main(int argc, char *argv[]) {
       if(start_ptr != stdout)
         write_start_file(start_ptr, ctx->nodes, ctx->nn, tinf, num_seq,
                          ctx->slen, 0, NULL, VERSION, cur_header);
-      ng = pdg_single_genes(ctx, num_seq);
+      if((ng = pdg_single_genes(ctx, num_seq)) < 0) pipeline_failed(ctx);
     }
 
     else { /* Metagenomic Version */

@@ -96,21 +96,22 @@ prodigal_ctx_t *prodigal_create(const prodigal_config_t *config) {
     reset_model(ctx);
 
     /* Allocate sequence buffers */
-    ctx->seq = (unsigned char *)pdg_alloc(ctx, MAX_SEQ / 4 * sizeof(unsigned char));
-    ctx->rseq = (unsigned char *)pdg_alloc(ctx, MAX_SEQ / 4 * sizeof(unsigned char));
-    ctx->useq = (unsigned char *)pdg_alloc(ctx, MAX_SEQ / 8 * sizeof(unsigned char));
+    ctx->seq = (unsigned char *)pdg_alloc(ctx, PDG_SEQ_CAP / 4 * sizeof(unsigned char));
+    ctx->rseq = (unsigned char *)pdg_alloc(ctx, PDG_SEQ_CAP / 4 * sizeof(unsigned char));
+    ctx->useq = (unsigned char *)pdg_alloc(ctx, PDG_SEQ_CAP / 8 * sizeof(unsigned char));
     if (ctx->seq == NULL || ctx->rseq == NULL || ctx->useq == NULL) {
         prodigal_destroy(ctx);
         return NULL;
     }
-    memset(ctx->seq, 0, MAX_SEQ / 4 * sizeof(unsigned char));
-    memset(ctx->rseq, 0, MAX_SEQ / 4 * sizeof(unsigned char));
-    memset(ctx->useq, 0, MAX_SEQ / 8 * sizeof(unsigned char));
+    memset(ctx->seq, 0, PDG_SEQ_CAP / 4 * sizeof(unsigned char));
+    memset(ctx->rseq, 0, PDG_SEQ_CAP / 4 * sizeof(unsigned char));
+    memset(ctx->useq, 0, PDG_SEQ_CAP / 8 * sizeof(unsigned char));
 
     /* Allocate node and gene arrays */
     ctx->nodes = (struct _node *)pdg_alloc(ctx, STT_NOD * sizeof(struct _node));
     ctx->node_cap = STT_NOD;
     ctx->genes = (struct _gene *)pdg_alloc(ctx, MAX_GENES * sizeof(struct _gene));
+    ctx->gene_cap = MAX_GENES;
     if (ctx->nodes == NULL || ctx->genes == NULL) {
         prodigal_destroy(ctx);
         return NULL;
@@ -129,6 +130,7 @@ void prodigal_destroy(prodigal_ctx_t *ctx) {
     pdg_free(ctx, ctx->useq);
     pdg_free(ctx, ctx->nodes);
     pdg_free(ctx, ctx->genes);
+    pdg_free(ctx, ctx->masks);
 
     free_meta(ctx);
 
@@ -136,48 +138,59 @@ void prodigal_destroy(prodigal_ctx_t *ctx) {
 }
 
 /*******************************************************************************
-    Sequence encoding helpers
+    Working arrays
 *******************************************************************************/
 
-/* Encode a single base into the bitmap at position *bctr, advance counters.
-   Returns 1 if base is G or C (for GC counting), 0 otherwise. */
-static int encode_base(unsigned char *seq, unsigned char *useq,
-                       int *bctr, int *len, char ch) {
-    int gc = 0;
-    if (ch == 'g' || ch == 'G') {
-        set(seq, *bctr);
-        gc = 1;
-    }
-    else if (ch == 't' || ch == 'T') {
-        set(seq, *bctr);
-        set(seq, *bctr + 1);
-    }
-    else if (ch == 'c' || ch == 'C') {
-        set(seq, *bctr + 1);
-        gc = 1;
-    }
-    else if (ch != 'a' && ch != 'A') {
-        /* Ambiguous base: encode as C, mark in useq */
-        set(seq, *bctr + 1);
-        set(useq, *len);
-    }
-    /* A = nothing set (00) */
-    *bctr += 2;
-    (*len)++;
-    return gc;
+/* A zeroed array of n elements of size bytes, holding the first keep of
+   old's elements, in place of old (freed). NULL if out of memory, and old
+   is kept. */
+static void *grow(prodigal_ctx_t *ctx, void *old, size_t n, size_t size,
+                  size_t keep) {
+    void *p = n > SIZE_MAX / size ? NULL : pdg_calloc(ctx, n * size);
+    if (p == NULL) return NULL;
+    if (keep > 0) memcpy(p, old, keep * size);
+    pdg_free(ctx, old);
+    return p;
 }
 
-/* Insert TTAATTAATTAA (12 bases) as stop codons in all 6 frames */
-static void encode_stop_spacer(unsigned char *seq, int *bctr, int *len) {
-    int i;
-    for (i = 0; i < 12; i++) {
-        if (i % 4 == 0 || i % 4 == 1) {
-            set(seq, *bctr);
-            set(seq, *bctr + 1);
+/*******************************************************************************
+    Sequence encoding, shared with the CLI's readers (prodigal_internal.h)
+*******************************************************************************/
+
+/* Encode base ch at position pos (A 00, G 01, C 10, T 11; any other letter
+   is ambiguous: C, flagged in useq). Returns 1 for G or C. */
+static int encode_base(unsigned char *seq, unsigned char *useq, int pos,
+                       char ch) {
+    if (ch == 'g' || ch == 'G') { set(seq, 2 * pos); return 1; }
+    if (ch == 't' || ch == 'T') { set(seq, 2 * pos); set(seq, 2 * pos + 1); }
+    else if (ch == 'c' || ch == 'C') { set(seq, 2 * pos + 1); return 1; }
+    else if (ch != 'a' && ch != 'A') { set(seq, 2 * pos + 1); set(useq, pos); }
+    return 0;
+}
+
+/* -m: before position pos gets base ch, record the run of Ns that ch ends,
+   if at least MASK_SIZE long. Returns 0, or -1 if out of memory. */
+static int track_mask(prodigal_ctx_t *ctx, int *mask_beg, int pos, char ch) {
+    int is_n = ch == 'N' || ch == 'n';
+    mask *m;
+    if (*mask_beg != -1 && !is_n) {
+        if (pos - *mask_beg >= MASK_SIZE) {
+            if (ctx->nmask == ctx->mask_cap) {
+                m = (mask *)grow(ctx, ctx->masks,
+                                 ctx->mask_cap > 0 ? 2 * (size_t)ctx->mask_cap : 64,
+                                 sizeof(mask), (size_t)ctx->nmask);
+                if (m == NULL) return -1;
+                ctx->masks = m;
+                ctx->mask_cap = ctx->mask_cap > 0 ? 2 * ctx->mask_cap : 64;
+            }
+            ctx->masks[ctx->nmask].begin = *mask_beg;
+            ctx->masks[ctx->nmask].end = pos - 1;
+            ctx->nmask++;
         }
-        *bctr += 2;
-        (*len)++;
+        *mask_beg = -1;
     }
+    if (*mask_beg == -1 && is_n) *mask_beg = pos;
+    return 0;
 }
 
 void pdg_clear_sequence(prodigal_ctx_t *ctx) {
@@ -192,148 +205,103 @@ void pdg_clear_sequence(prodigal_ctx_t *ctx) {
     ctx->error_code = PRODIGAL_OK;
 }
 
+void pdg_encode_begin(prodigal_ctx_t *ctx, pdg_encoder_t *e, int limit) {
+    pdg_clear_sequence(ctx);
+    e->len = 0;
+    e->gc = 0;
+    e->mask_beg = -1;
+    e->limit = limit;
+}
+
+int pdg_encode_chars(prodigal_ctx_t *ctx, pdg_encoder_t *e, const char *s,
+                     size_t n) {
+    size_t i;
+    for (i = 0; i < n; i++) {
+        if (s[i] < 'A' || s[i] > 'z') continue;
+        if (e->len >= e->limit) return PRODIGAL_ERR_INVALID_INPUT;
+        if (ctx->config.mask_regions &&
+            track_mask(ctx, &e->mask_beg, e->len, s[i]) != 0)
+            return PRODIGAL_ERR_NOMEM;
+        e->gc += encode_base(ctx->seq, ctx->useq, e->len++, s[i]);
+    }
+    return PRODIGAL_OK;
+}
+
+int pdg_encode_spacer(prodigal_ctx_t *ctx, pdg_encoder_t *e) {
+    int i;
+    if (e->len + 12 > e->limit) return PRODIGAL_ERR_INVALID_INPUT;
+    for (i = 0; i < 12; i++, e->len++)
+        if (i % 4 < 2) encode_base(ctx->seq, ctx->useq, e->len, 'T');
+    return PRODIGAL_OK;
+}
+
+void pdg_encode_end(prodigal_ctx_t *ctx, pdg_encoder_t *e) {
+    ctx->slen = e->len;
+    ctx->gc = e->len > 0 ? (double)e->gc / (double)e->len : 0.0;
+    rcom_seq(ctx->seq, ctx->rseq, ctx->useq, e->len);
+}
+
 /*******************************************************************************
     Sequence input
 *******************************************************************************/
 
+/* Encode seqs[0, n) (NULL or empty ones add nothing), with a spacer after
+   each if n > 1, as the sequence to work on; header names it. */
+static int encode_seqs(prodigal_ctx_t *ctx, const char *const *seqs,
+                       const int32_t *lens, int32_t n, const char *header) {
+    pdg_encoder_t e;
+    int32_t s;
+    int rc = PRODIGAL_OK;
+
+    pdg_encode_begin(ctx, &e, MAX_BASES);
+    for (s = 0; s < n && rc == PRODIGAL_OK; s++) {
+        if (seqs[s] != NULL && lens[s] > 0)
+            rc = pdg_encode_chars(ctx, &e, seqs[s], (size_t)lens[s]);
+        if (rc == PRODIGAL_OK && n > 1) rc = pdg_encode_spacer(ctx, &e);
+    }
+    if (rc != PRODIGAL_OK || e.len == 0) {
+        ctx->slen = e.len;   /* clear what was encoded */
+        pdg_clear_sequence(ctx);
+        if (rc == PRODIGAL_ERR_NOMEM)
+            PDG_SET_ERROR(ctx, rc, "Out of memory for masked regions");
+        else if (rc != PRODIGAL_OK)
+            PDG_SET_ERROR(ctx, rc, "Sequence too long (at most %d bases, not "
+                          "counting characters outside A-z)", MAX_BASES);
+        else
+            PDG_SET_ERROR(ctx, rc = PRODIGAL_ERR_INVALID_INPUT,
+                          "No valid bases found");
+        return rc;
+    }
+    pdg_encode_end(ctx, &e);
+    if (header != NULL) {
+        strncpy(ctx->cur_header, header, MAX_LINE - 1);
+        ctx->cur_header[MAX_LINE - 1] = '\0';
+    }
+    return PRODIGAL_OK;
+}
+
 int prodigal_set_sequence(prodigal_ctx_t *ctx, const char *seq, int32_t len,
                           const char *header) {
-    int bctr = 0, slen = 0, gc_cont = 0;
-    int mask_beg = -1;
-    int32_t i;
-
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
     if (seq == NULL || len <= 0) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
                       "Sequence is NULL or length <= 0");
         return PRODIGAL_ERR_INVALID_INPUT;
     }
-    if (len >= MAX_SEQ) {
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "Sequence length %d exceeds maximum %d", len, MAX_SEQ);
-        return PRODIGAL_ERR_INVALID_INPUT;
-    }
-
-    pdg_clear_sequence(ctx);
-
-    /* Encode each base */
-    for (i = 0; i < len; i++) {
-        char ch = seq[i];
-        if (ch < 'A' || ch > 'z') continue;
-
-        /* Masking logic */
-        if (ctx->config.mask_regions) {
-            if (mask_beg != -1 && ch != 'N' && ch != 'n') {
-                if (slen - mask_beg >= MASK_SIZE) {
-                    if (ctx->nmask < MAX_MASKS) {
-                        ctx->mlist[ctx->nmask].begin = mask_beg;
-                        ctx->mlist[ctx->nmask].end = slen - 1;
-                        ctx->nmask++;
-                    }
-                }
-                mask_beg = -1;
-            }
-            if (mask_beg == -1 && (ch == 'N' || ch == 'n'))
-                mask_beg = slen;
-        }
-
-        gc_cont += encode_base(ctx->seq, ctx->useq, &bctr, &slen, ch);
-    }
-
-    if (slen == 0) {
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "No valid bases found in sequence");
-        return PRODIGAL_ERR_INVALID_INPUT;
-    }
-
-    ctx->slen = slen;
-    ctx->gc = (double)gc_cont / (double)slen;
-
-    /* Compute reverse complement */
-    rcom_seq(ctx->seq, ctx->rseq, ctx->useq, slen);
-
-    /* Store header */
-    if (header != NULL) {
-        strncpy(ctx->cur_header, header, MAX_LINE - 1);
-        ctx->cur_header[MAX_LINE - 1] = '\0';
-    }
-
-    return PRODIGAL_OK;
+    return encode_seqs(ctx, &seq, &len, 1, header);
 }
 
 int prodigal_set_training_sequences(prodigal_ctx_t *ctx, const char **seqs,
                                     const char **headers, const int32_t *lens,
                                     int32_t n_seqs) {
-    int bctr = 0, slen = 0, gc_cont = 0;
-    int mask_beg = -1;
-    int32_t s, i;
-
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
     if (seqs == NULL || lens == NULL || n_seqs <= 0) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
                       "Invalid training sequence arguments");
         return PRODIGAL_ERR_INVALID_INPUT;
     }
-
-    pdg_clear_sequence(ctx);
-
-    for (s = 0; s < n_seqs; s++) {
-        /* Insert stop spacer between sequences (and after last) */
-        if (s > 0) {
-            encode_stop_spacer(ctx->seq, &bctr, &slen);
-        }
-
-        if (seqs[s] == NULL || lens[s] <= 0) continue;
-
-        for (i = 0; i < lens[s]; i++) {
-            char ch = seqs[s][i];
-            if (ch < 'A' || ch > 'z') continue;
-
-            /* Masking logic */
-            if (ctx->config.mask_regions) {
-                if (mask_beg != -1 && ch != 'N' && ch != 'n') {
-                    if (slen - mask_beg >= MASK_SIZE) {
-                        if (ctx->nmask < MAX_MASKS) {
-                            ctx->mlist[ctx->nmask].begin = mask_beg;
-                            ctx->mlist[ctx->nmask].end = slen - 1;
-                            ctx->nmask++;
-                        }
-                    }
-                    mask_beg = -1;
-                }
-                if (mask_beg == -1 && (ch == 'N' || ch == 'n'))
-                    mask_beg = slen;
-            }
-
-            gc_cont += encode_base(ctx->seq, ctx->useq, &bctr, &slen, ch);
-
-            if (slen + MAX_LINE >= MAX_SEQ) break;
-        }
-        if (slen + MAX_LINE >= MAX_SEQ) break;
-    }
-
-    /* Trailing stop spacer if multiple sequences */
-    if (n_seqs > 1) {
-        encode_stop_spacer(ctx->seq, &bctr, &slen);
-    }
-
-    if (slen == 0) {
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "No valid bases found in training sequences");
-        return PRODIGAL_ERR_INVALID_INPUT;
-    }
-
-    ctx->slen = slen;
-    ctx->gc = (double)gc_cont / (double)slen;
-    rcom_seq(ctx->seq, ctx->rseq, ctx->useq, slen);
-
-    /* Store first header */
-    if (headers != NULL && headers[0] != NULL) {
-        strncpy(ctx->cur_header, headers[0], MAX_LINE - 1);
-        ctx->cur_header[MAX_LINE - 1] = '\0';
-    }
-
-    return PRODIGAL_OK;
+    return encode_seqs(ctx, seqs, lens, n_seqs,
+                       headers != NULL ? headers[0] : NULL);
 }
 
 int prodigal_get_seq_info(const prodigal_ctx_t *ctx, prodigal_seq_info_t *info) {
@@ -353,10 +321,9 @@ int prodigal_get_seq_info(const prodigal_ctx_t *ctx, prodigal_seq_info_t *info) 
 static int reserve_nodes(prodigal_ctx_t *ctx, int cap) {
     struct _node *nodes;
     if (cap <= ctx->node_cap) return 0;
-    if ((size_t)cap > SIZE_MAX / sizeof(struct _node)) return -1;
-    nodes = (struct _node *)pdg_calloc(ctx, (size_t)cap * sizeof(struct _node));
+    nodes = (struct _node *)grow(ctx, ctx->nodes, (size_t)cap,
+                                 sizeof(struct _node), 0);
     if (nodes == NULL) return -1;
-    pdg_free(ctx, ctx->nodes);
     ctx->nodes = nodes;
     ctx->nn = 0;
     ctx->node_cap = cap;
@@ -380,8 +347,8 @@ static int build_nodes(prodigal_ctx_t *ctx, struct _training *tinf) {
     }
     memset(ctx->nodes, 0, ctx->nn * sizeof(struct _node));
     while ((nn = add_nodes(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
-                           ctx->node_cap, ctx->config.closed_ends, ctx->mlist,
-                           ctx->nmask, tinf)) < 0) {
+                           ctx->node_cap, ctx->config.closed_ends,
+                           ctx->masks, ctx->nmask, tinf)) < 0) {
         if (reserve_nodes(ctx, 2 * ctx->node_cap) != 0) {
             /* add_nodes filled the array: clear it for the next call */
             memset(ctx->nodes, 0, (size_t)ctx->node_cap * sizeof(struct _node));
@@ -596,9 +563,22 @@ int pdg_score_nodes(prodigal_ctx_t *ctx, struct _training *tinf) {
    ctx->genes with their attributes under model tinf; returns how many. */
 static int keep_genes(prodigal_ctx_t *ctx, int ipath, struct _training *tinf,
                       int seqnum) {
+    struct _gene *genes;
     int ng;
     eliminate_bad_genes(ctx->nodes, ipath, tinf);
-    ng = add_genes(ctx->genes, ctx->nodes, ipath);
+    /* When the genes don't fit (upstream truncated at MAX_GENES), the array
+       doubles and add_genes runs again */
+    while ((ng = add_genes(ctx->genes, ctx->gene_cap, ctx->nodes, ipath)) < 0) {
+        genes = (struct _gene *)grow(ctx, ctx->genes, 2 * (size_t)ctx->gene_cap,
+                                     sizeof(struct _gene), 0);
+        if (genes == NULL) {
+            PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
+                          "Out of memory for more than %d genes", ctx->gene_cap);
+            return PRODIGAL_ERR_NOMEM;
+        }
+        ctx->genes = genes;
+        ctx->gene_cap *= 2;
+    }
     tweak_final_starts(ctx->genes, ng, ctx->nodes, ctx->nn, tinf);
     record_gene_data(ctx->genes, ng, ctx->nodes, tinf, seqnum);
     return ng;
@@ -685,7 +665,9 @@ int pdg_meta(prodigal_ctx_t *ctx, int seqnum, pdg_meta_result_t *res) {
             max_score = path_score;
             res->bin = i;
             res->n_nodes = ctx->nn;
-            res->n_genes = keep_genes(ctx, ipath, tinf, seqnum);
+            rc = keep_genes(ctx, ipath, tinf, seqnum);
+            if (rc < 0) return rc;
+            res->n_genes = rc;
         }
     }
     return PRODIGAL_OK;
@@ -847,6 +829,7 @@ int prodigal_find_genes(prodigal_ctx_t *ctx, prodigal_genes_soa_t **genes_out,
         rc = pdg_score_nodes(ctx, &ctx->tinf);
         if (rc != PRODIGAL_OK) return rc;
         ng = pdg_single_genes(ctx, 1);
+        if (ng < 0) return ng;
         nn = ctx->nn;
     }
 

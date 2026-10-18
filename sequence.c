@@ -19,6 +19,16 @@
 *******************************************************************************/
 
 #include "sequence.h"
+#include "prodigal_internal.h"
+
+/* The readers' buffers hold every base they can read, so encoding fails only
+   for want of memory for masks: stop as upstream did when it ran out of
+   room for them. */
+static void encoded_or_exit(int rc, int code) {
+  if(rc == PRODIGAL_OK) return;
+  fprintf(stderr, "Error: out of memory for regions of 'N''s.\n");
+  exit(code);
+}
 
 /*******************************************************************************
   Read the sequence for training purposes.  If we encounter multiple
@@ -29,13 +39,13 @@
   preferred.
 *******************************************************************************/
 
-int read_seq_training(fptr fp, unsigned char *seq, unsigned char *useq,
-                      double *gc, int do_mask, mask *mlist, int *nm) {
+int read_seq_training(fptr fp, prodigal_ctx_t *ctx) {
   char line[MAX_LINE+1];
-  int hdr = 0, fhdr = 0, bctr = 0, len = 0, wrn = 0;
-  int gc_cont = 0, mask_beg = -1;
+  int hdr = 0, fhdr = 0, wrn = 0;
   unsigned int i, gapsize = 0;
+  pdg_encoder_t enc;
 
+  pdg_encode_begin(ctx, &enc, PDG_SEQ_CAP);
   line[MAX_LINE] = '\0';
   while(INPUT_GETS(line, MAX_LINE, fp) != NULL) {
     if(hdr == 0 && line[strlen(line)-1] != '\n' && wrn == 0) {
@@ -47,12 +57,7 @@ int read_seq_training(fptr fp, unsigned char *seq, unsigned char *useq,
     if(line[0] == '>' || (line[0] == 'S' && line[1] == 'Q') ||
        (strlen(line) > 6 && strncmp(line, "ORIGIN", 6) == 0)) {
       hdr = 1;
-      if(fhdr > 0) {
-        for(i = 0; i < 12; i++) {
-          if(i%4 == 0 || i%4 == 1) { set(seq, bctr); set(seq, bctr+1); }
-          bctr+=2; len++;
-        }
-      }
+      if(fhdr > 0) encoded_or_exit(pdg_encode_spacer(ctx, &enc), 52);
       fhdr++;
     }
     else if(hdr == 1 && (line[0] == '/' && line[1] == '/')) hdr = 0;
@@ -67,65 +72,31 @@ int read_seq_training(fptr fp, unsigned char *seq, unsigned char *useq,
         for(i = 0; i < gapsize; i++) line[i] = 'n';
         line[i] = '\0';
       }
-      for(i = 0; i < strlen(line); i++) {
-        if(line[i] < 'A' || line[i] > 'z') continue;
-        if(do_mask == 1 && mask_beg != -1 && line[i] != 'N' && line[i] != 'n') {
-          if(len - mask_beg >= MASK_SIZE) {
-            if(*nm == MAX_MASKS) {
-              fprintf(stderr, "Error: saw too many regions of 'N''s in the ");
-              fprintf(stderr, "sequence.\n");
-              exit(52);
-            }
-            mlist[*nm].begin = mask_beg;
-            mlist[*nm].end = len-1;
-            (*nm)++;
-          }
-          mask_beg = -1;
-        }
-        if(do_mask == 1 && mask_beg == -1 && (line[i] == 'N' || line[i] == 'n'))
-          mask_beg = len;
-        if(line[i] == 'g' || line[i] == 'G') { set(seq, bctr); gc_cont++; }
-        else if(line[i] == 't' || line[i] == 'T') {
-          set(seq, bctr);
-          set(seq, bctr+1);
-        }
-        else if(line[i] == 'c' || line[i] == 'C') {
-          set(seq, bctr+1);
-          gc_cont++;
-        }
-        else if(line[i] != 'a' && line[i] != 'A') {
-          set(seq, bctr+1);
-          set(useq, len);
-        }
-        bctr+=2; len++;
-      }
+      encoded_or_exit(pdg_encode_chars(ctx, &enc, line, strlen(line)), 52);
     }
-    if(len+MAX_LINE >= MAX_SEQ) {
+    if(enc.len+MAX_LINE >= MAX_SEQ) {
       fprintf(stderr, "\n\nWarning:  Sequence is long (max %d for training).\n",
               MAX_SEQ);
       fprintf(stderr, "Training on the first %d bases.\n\n", MAX_SEQ);
       break;
     }
   }
-  if(fhdr > 1) {
-    for(i = 0; i < 12; i++) {
-      if(i%4 == 0 || i%4 == 1) { set(seq, bctr); set(seq, bctr+1); }
-      bctr+=2; len++;
-    }
-  }
-  *gc = ((double)gc_cont / (double)len);
-  return len;
+  if(fhdr > 1) encoded_or_exit(pdg_encode_spacer(ctx, &enc), 52);
+  pdg_encode_end(ctx, &enc);
+  return enc.len;
 }
 
 /* This routine reads in the next sequence in a FASTA/GB/EMBL file */
 
-int next_seq_multi(fptr fp, unsigned char *seq, unsigned char *useq,
-                   int *sctr, double *gc, int do_mask, mask *mlist, int *nm,
-                   char *cur_hdr, char *new_hdr) {
+int next_seq_multi(fptr fp, prodigal_ctx_t *ctx, int *sctr, char *cur_hdr,
+                   char *new_hdr) {
   char line[MAX_LINE+1];
-  int reading_seq = 0, genbank_end = 0, bctr = 0, len = 0, wrn = 0;
-  int gc_cont = 0, mask_beg = -1;
+  int reading_seq = 0, genbank_end = 0, wrn = 0;
+  int named = 0;   /* new_hdr is from the file, not the default name */
   unsigned int i, gapsize = 0;
+  pdg_encoder_t enc;
+
+  pdg_encode_begin(ctx, &enc, PDG_SEQ_CAP);
 
   sprintf(new_hdr, "Prodigal_Seq_%d", *sctr+2);
 
@@ -146,6 +117,7 @@ int next_seq_multi(fptr fp, unsigned char *seq, unsigned char *useq,
       else {
         strcpy(new_hdr, line+12);
         new_hdr[strlen(new_hdr)-1] = '\0';
+        named = 1;
       }
     }
     if(line[0] == '>' || (line[0] == 'S' && line[1] == 'Q') ||
@@ -154,8 +126,20 @@ int next_seq_multi(fptr fp, unsigned char *seq, unsigned char *useq,
         if(line[0] == '>') {
           strcpy(new_hdr, line+1);
           new_hdr[strlen(new_hdr)-1] = '\0';
+          named = 1;
         }
-        break;
+        if(enc.len > 0) break;
+        /* A record without sequence: skip it and read the next one in its
+           place (upstream returned -1 here, ending the input). A default
+           name stays with the place, as if the record weren't there. */
+        fprintf(stderr, "Warning: skipping a record with no sequence: %s\n",
+                cur_hdr);
+        if(named == 1) strcpy(cur_hdr, new_hdr);
+        sprintf(new_hdr, "Prodigal_Seq_%d", *sctr+2);
+        named = 0;
+        reading_seq = 1;
+        genbank_end = 0;
+        continue;
       }
       if(line[0] == '>') {
         strcpy(cur_hdr, line+1);
@@ -178,48 +162,17 @@ int next_seq_multi(fptr fp, unsigned char *seq, unsigned char *useq,
         for(i = 0; i < gapsize; i++) line[i] = 'n';
         line[i] = '\0';
       }
-      for(i = 0; i < strlen(line); i++) {
-        if(line[i] < 'A' || line[i] > 'z') continue;
-        if(do_mask == 1 && mask_beg != -1 && line[i] != 'N' && line[i] != 'n') {
-          if(len - mask_beg >= MASK_SIZE) {
-            if(*nm == MAX_MASKS) {
-              fprintf(stderr, "Error: saw too many regions of 'N''s in the ");
-              fprintf(stderr, "sequence.\n");
-              exit(55);
-            }
-            mlist[*nm].begin = mask_beg;
-            mlist[*nm].end = len-1;
-            (*nm)++;
-          }
-          mask_beg = -1;
-        }
-        if(do_mask == 1 && mask_beg == -1 && (line[i] == 'N' || line[i] == 'n'))
-          mask_beg = len;
-        if(line[i] == 'g' || line[i] == 'G') { set(seq, bctr); gc_cont++; }
-        else if(line[i] == 't' || line[i] == 'T') {
-          set(seq, bctr);
-          set(seq, bctr+1);
-        }
-        else if(line[i] == 'c' || line[i] == 'C') {
-          set(seq, bctr+1);
-          gc_cont++;
-        }
-        else if(line[i] != 'a' && line[i] != 'A') {
-          set(seq, bctr+1);
-          set(useq, len);
-        }
-        bctr+=2; len++;
-      }
+      encoded_or_exit(pdg_encode_chars(ctx, &enc, line, strlen(line)), 55);
     }
-    if(len+MAX_LINE >= MAX_SEQ) {
+    if(enc.len+MAX_LINE >= MAX_SEQ) {
       fprintf(stderr, "Sequence too long (max %d permitted).\n", MAX_SEQ);
       exit(56);
     }
   }
-  if(len == 0) return -1;
-  *gc = ((double)gc_cont / (double)len);
+  if(enc.len == 0) return -1;
+  pdg_encode_end(ctx, &enc);
   *sctr = *sctr + 1;
-  return len;
+  return enc.len;
 }
 
 /* Takes first word of header */

@@ -100,10 +100,11 @@ oracle. Change one only by explicit decision: record it here and in
     It needs an ORF spanning more than 500 nodes, which typical genomes
     rarely have. Kept: the wider scan can change the chosen path, so a fix
     changes output.
-11. **Per-contig caps:**
-    - more than 30,000 genes in one contig: truncated (CLI warns);
-    - training input over `MAX_SEQ`: truncated (CLI warns);
-    - more than 5,000 masks: the CLI exits.
+11. **Training input over the length limit is truncated** (CLI). When the
+    training input reaches 31,990,000 bases, the CLI warns and trains on
+    what it has read (`read_seq_training`). The library returns an error
+    instead. (Upstream's other caps, 30,000 genes per contig and 5,000
+    masks, are gone: see "Fork deviations".)
 
 ## Upstream bugs present in the CLI too (fix, but preserve output)
 
@@ -128,25 +129,45 @@ defect.
   23/23 `-g 4`).
   The library's meta loop applies the same rule (until 2.6.5 it skipped
   no-path bins, so a contig on which no bin had a path reported bin 0).
+- **The last training spacer could overflow (fixed in 2.6.5).** When the
+  CLI cut multi-record training input at the limit (quirk 11) on a line
+  long enough to end within 12 bases of `MAX_SEQ` (unwrapped sequence), it
+  then added the trailing 12-base spacer past the end of its 2-bit buffers,
+  up to 3 bytes, and `rcom_seq` read and wrote as far (ASan:
+  heap-buffer-overflow in `read_seq_training`, checked on 2026-10-18 with a
+  13,185-base record and a 32 Mbp unwrapped one). The buffers now have 16
+  bases of slack (`PDG_SEQ_CAP`), so the model is what upstream computed
+  when the bytes past its buffers happened to be free.
 - **Unbounded `add_nodes` (fixed in 2.6.5).** `add_nodes` (`node.c`) wrote
   past the node array on low-complexity input with more nodes than the
   `slen/8` (at least `STT_NOD`) it is sized for, e.g. `"ATG" × 110000`: heap
   corruption. The array now grows (`internals.md`, "Limits and memory"), so
   output is unchanged wherever upstream didn't overflow.
-- **An empty record ends the CLI's input** (CLI only). `next_seq_multi`
-  returns -1, its end-of-input value, for a record with no sequence
-  (`sequence.c:219`). In either mode, a FASTA header with no sequence lines
-  therefore silently drops every record after it, and a file that starts
-  with one fails with "no input sequences to analyze". The library takes one
-  record at a time and rejects an empty one (`PRODIGAL_ERR_INVALID_INPUT`).
-  Not fixed yet: a fix changes output on such input, so it needs a documented
-  deviation (P2).
 - **Unchecked allocations:** `calc_mer_bg` does not check its `malloc`
   (`sequence.c:645`), and `calc_most_gc_frame` leaks on partial allocation
   failure (`sequence.c:576-580`).
 
 ## Fork deviations (CLI)
 
+Each changes output only on input upstream mishandled (tests:
+`docs/testing.md`).
+
+- **Empty records are skipped.** `next_seq_multi` returned -1, its
+  end-of-input value, for a record with no sequence, so a header followed by
+  another header silently dropped every record after it (and a file
+  starting with one failed with "no input sequences to analyze"). Now it
+  warns and reads on; the genes are those of the file without the record.
+  An empty last record is ignored without a warning, as before (so with
+  several empty records at the end, all but the last are warned about).
+  Training on the input still adds upstream's 12-base spacer for it, so
+  there the model can differ slightly. The library takes one record at a
+  time and rejects an empty one.
+- **Closed standard input** is reported as `/dev/stdin`; upstream printed
+  `input_file`, which is NULL there ("(null)" on glibc).
+- **No gene cap.** Upstream kept at most 30,000 genes per contig (CLI:
+  "max # of genes exceeded, truncating..."); the gene array now grows.
+- **No mask cap.** With `-m`, upstream exited at the 5,001st masked region
+  (exit 52 in training, 55 otherwise); the mask list now grows.
 - **`-ffp-contract=off`.** The fork builds without fused multiply-adds, so
   ARM64 output equals x86-64 output. A default ARM64 build of upstream can
   differ in the last printed digit of some scores (`docs/testing.md`).

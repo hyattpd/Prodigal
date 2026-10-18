@@ -1312,15 +1312,10 @@ static void test_independence_single(void) {
 /* fa = one record, n copies of "ATG". */
 static void atg_repeat(fasta_t *fa, int32_t n) {
     int32_t i;
-    fa->n = 1;
-    fa->seqs = (char **)xrealloc(NULL, sizeof(char *));
-    fa->headers = (char **)xrealloc(NULL, sizeof(char *));
-    fa->lens = (int32_t *)xrealloc(NULL, sizeof(int32_t));
-    fa->seqs[0] = (char *)xrealloc(NULL, 3 * (size_t)n + 1);
-    for (i = 0; i < n; i++) memcpy(fa->seqs[0] + 3 * i, "ATG", 3);
-    fa->seqs[0][3 * n] = '\0';
-    fa->headers[0] = dupstr("atg_repeat");
-    fa->lens[0] = 3 * n;
+    char *s = (char *)xrealloc(NULL, 3 * (size_t)n + 1);
+    for (i = 0; i < n; i++) memcpy(s + 3 * i, "ATG", 3);
+    s[3 * n] = '\0';
+    fasta_one(fa, "atg_repeat", s, 3 * n);
 }
 
 /* An ATG repeat, run twice on one context made from src (SINGLE: trained on
@@ -1424,6 +1419,137 @@ static void test_low_complexity_trained(void) {
 }
 
 /*******************************************************************************
+    Phase 16: Limits
+
+    Genes and masked regions past the initial arrays are kept, not dropped,
+    and the length limits are the CLI's, on encoded bases.
+*******************************************************************************/
+
+/* one = the records of fa joined into a single record. */
+static void join_records(const fasta_t *fa, fasta_t *one) {
+    int32_t k, len = 0;
+    char *s;
+    for (k = 0; k < fa->n; k++) len += fa->lens[k];
+    s = (char *)xrealloc(NULL, (size_t)len + 1);
+    for (len = 0, k = 0; k < fa->n; k++) {
+        memcpy(s + len, fa->seqs[k], (size_t)fa->lens[k]);
+        len += fa->lens[k];
+    }
+    s[len] = '\0';
+    fasta_one(one, "anthus_joined", s, len);
+}
+
+/* Genes past the gene array grow it: on anthus joined into one sequence, a
+   context with room for one gene to start with must find what a default
+   one finds, and only the first may grow. Single mode from the model: in
+   meta mode the joined sequence has one gene, and both modes keep their
+   genes through the same code (keep_genes). */
+static void test_gene_array_grows(void) {
+    TEST_START("gene array grows from 1 gene");
+    fasta_t fa, one;
+    lines_t want = {0}, got = {0};
+    size_t len;
+    void *blob = load_ref_model(&len);
+    if (blob == NULL || !load_anthus(&fa)) return;
+    join_records(&fa, &one);
+    prodigal_ctx_t *def = make_model_ctx(blob, len), *small = make_model_ctx(blob, len);
+    ASSERT_TRUE(def != NULL && small != NULL);
+    small->gene_cap = 1;   /* the real array is larger */
+    ASSERT_EQ_INT(api_emit_records(def, &one, 0, 1, 0, lines_emit, &want), PRODIGAL_OK);
+    ASSERT_EQ_INT(api_emit_records(small, &one, 0, 1, 0, lines_emit, &got), PRODIGAL_OK);
+    ASSERT_TRUE(small->gene_cap > 1 && def->gene_cap == MAX_GENES);
+    if (!lines_equal(&want, &got, "genes, grown from 1")) return;
+    lines_free(&want); lines_free(&got);
+    prodigal_destroy(def); prodigal_destroy(small);
+    free(blob);
+    fasta_free(&fa); fasta_free(&one);
+    TEST_PASS();
+}
+
+/* n runs of MASK_SIZE Ns, each followed by 100 bases; NUL-terminated. */
+static char *n_runs(int n, int32_t *len) {
+    int i;
+    char *s = (char *)xrealloc(NULL, (size_t)n * (MASK_SIZE + 100) + 1);
+    for (i = 0; i < n; i++) {
+        memset(s + i * (MASK_SIZE + 100), 'N', MASK_SIZE);
+        memset(s + i * (MASK_SIZE + 100) + MASK_SIZE, 'A', 100);
+    }
+    *len = n * (MASK_SIZE + 100);
+    s[*len] = '\0';
+    return s;
+}
+
+static void test_masks_past_max(void) {
+    TEST_START("more than 5,000 masked regions (upstream's cap) are all kept");
+    int32_t len;
+    size_t before;
+    char *s = n_runs(6000, &len);
+    const char *seqs[1] = { s };
+    prodigal_ctx_t *ctx = make_counted_ctx(0);   /* masks are a working buffer */
+    ASSERT_TRUE(ctx != NULL);
+    ctx->config.mask_regions = 1;
+    before = alloc_count;
+    ASSERT_EQ_INT(prodigal_set_sequence(ctx, s, len, NULL), PRODIGAL_OK);
+    ASSERT_EQ_INT(ctx->nmask, 6000);
+    ASSERT_TRUE(alloc_count > before);
+    ASSERT_EQ_INT(prodigal_set_training_sequences(ctx, seqs, NULL, &len, 1),
+                  PRODIGAL_OK);
+    ASSERT_EQ_INT(ctx->nmask, 6000);
+    prodigal_destroy(ctx);
+    ASSERT_TRUE(alloc_count == free_count);
+    free(s);
+    TEST_PASS();
+}
+
+/* The CLI rejects a contig, and truncates training input, once the encoded
+   length plus MAX_LINE reaches MAX_SEQ; the library rejects both there,
+   and counts encoded bases only (characters outside A-z are dropped). */
+static void test_length_limits(void) {
+    TEST_START("length limits: encoded bases, at the CLI's boundary");
+    const int32_t max = MAX_SEQ - MAX_LINE - 1;   /* longest accepted */
+    int32_t len = MAX_SEQ + 1000;
+    char *s = (char *)xrealloc(NULL, (size_t)len);
+    const char *seqs[1] = { s };
+    prodigal_seq_info_t info;
+    prodigal_ctx_t *ctx = make_ctx(0);
+    ASSERT_TRUE(ctx != NULL);
+
+    memset(s, 'A', (size_t)max + 1);
+    len = max;
+    ASSERT_EQ_INT(prodigal_set_sequence(ctx, s, len, NULL), PRODIGAL_OK);
+    ASSERT_EQ_INT(prodigal_set_training_sequences(ctx, seqs, NULL, &len, 1),
+                  PRODIGAL_OK);
+    len = max + 1;
+    ASSERT_EQ_INT(prodigal_set_sequence(ctx, s, len, NULL), PRODIGAL_ERR_INVALID_INPUT);
+    ASSERT_EQ_INT(prodigal_set_training_sequences(ctx, seqs, NULL, &len, 1),
+                  PRODIGAL_ERR_INVALID_INPUT);
+
+    /* Two training sequences: the 12-base spacers between and after them
+       count too */
+    const char *two[2] = { s, s };
+    int32_t lens[2] = { 1000, max - 1000 - 24 };
+    ASSERT_EQ_INT(prodigal_set_training_sequences(ctx, two, NULL, lens, 2),
+                  PRODIGAL_OK);
+    ASSERT_EQ_INT(prodigal_get_seq_info(ctx, &info), PRODIGAL_OK);
+    ASSERT_EQ_INT(info.length, max);
+    lens[1]++;
+    ASSERT_EQ_INT(prodigal_set_training_sequences(ctx, two, NULL, lens, 2),
+                  PRODIGAL_ERR_INVALID_INPUT);
+
+    /* Longer than MAX_SEQ, but mostly dropped characters */
+    memset(s, '-', (size_t)MAX_SEQ + 1000);
+    memset(s, 'A', 1000);
+    len = MAX_SEQ + 1000;
+    ASSERT_EQ_INT(prodigal_set_sequence(ctx, s, len, NULL), PRODIGAL_OK);
+    ASSERT_EQ_INT(prodigal_get_seq_info(ctx, &info), PRODIGAL_OK);
+    ASSERT_EQ_INT(info.length, 1000);
+
+    prodigal_destroy(ctx);
+    free(s);
+    TEST_PASS();
+}
+
+/*******************************************************************************
     Test runner
 *******************************************************************************/
 
@@ -1515,6 +1641,11 @@ int main(void) {
     test_low_complexity_model();
     test_low_complexity_trained();
     test_low_complexity_grow_fails();
+
+    printf("\nPhase 16: Limits\n");
+    test_gene_array_grows();
+    test_masks_past_max();
+    test_length_limits();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

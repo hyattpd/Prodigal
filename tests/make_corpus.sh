@@ -14,6 +14,9 @@
 #   lowcomplex.fa  CAT and ATG repeats of 360 and 330 kbp, with more nodes
 #                  than the node array is first sized for (fork only:
 #                  upstream overflows on them, so the oracle can't run them)
+#   manymasks.fa   5,100 runs of 50 Ns between random sequence, past the
+#                  5,000 masks upstream allows with -m (fork only: upstream
+#                  exits)
 #   ecoli_2k.fa    ECOLI_FASTA cut into 2,000 bp fragments, remainder dropped
 #                  (only when ECOLI_FASTA is given)
 #
@@ -30,7 +33,7 @@ mkdir -p "$out"
 
 # Shared by the generators below: a Park-Miller PRNG (seed it in END), R(n,
 # gc) random sequence, A(off, n) a slice of the anthus concatenation, which
-# the main rule collects.
+# the main rule collects, and rep(s, k), k copies of s.
 lib='
 function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647 }
 function R(n, gc,   s, i, r) {
@@ -43,6 +46,7 @@ function R(n, gc,   s, i, r) {
   return s
 }
 function A(off, n) { return substr(cat, off % (length(cat) - n) + 1, n) }
+function rep(s, k,   o, i) { o = ""; for (i = 0; i < k; i++) o = o s; return o }
 { sub(/\r$/, "") }
 /^>/ { next }
 { cat = cat $0 }
@@ -58,7 +62,6 @@ function rec(hdr, s, width,   i) {
   if (width == 0) { print s; return }
   for (i = 1; i <= length(s); i += width) print substr(s, i, width)
 }
-function rep(unit, k,   s, i) { s = ""; for (i = 0; i < k; i++) s = s unit; return s }
 # every(s, n, chars, replace): after (or, if replace, instead of) every n-th
 # character of s, insert the next character of chars, cycling.
 function every(s, n, chars, replace,   o, i, k) {
@@ -189,6 +192,16 @@ BEGIN {
   lines("cat_orfs_360k", "TTA" rep("CAT", 300), 400)
   lines("atg_repeat_330k", rep("ATG", 20), 5500)
 }' >"$out/lowcomplex.fa"
+
+# More N runs of MASK_SIZE (50) than upstream's 5,000 masks, between random
+# sequence long enough for a gene (anthus slices hold gaps and Ns, which
+# would merge runs).
+awk "$lib"'
+END {
+  seed = 5100
+  print ">manymasks_5100"
+  for (k = 0; k < 5100; k++) { print rep("N", 50); print R(150, 0.5) }
+}' anthus_aco.fas >"$out/manymasks.fa"
 
 if [ -n "$ecoli" ]; then
   awk -v w=2000 '

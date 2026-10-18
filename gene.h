@@ -50,7 +50,7 @@ struct _gene {
   char score_data[500];    /* String containing scoring information */
 };
 
-int add_genes(struct _gene *, struct _node *, int);
+int add_genes(struct _gene *, int, struct _node *, int);
 void record_gene_data(struct _gene *, int, struct _node *, struct _training *,
                       int);
 void tweak_final_starts(struct _gene *, int, struct _node *, int, struct

@@ -6,7 +6,7 @@ changing the code. Line references are to `v2.6.4-miint` at `6e96ba8`.
 ## Sequence encoding
 
 Each sequence lives in three bitmaps inside the context (`seq`, `rseq`,
-`useq`, each sized for `MAX_SEQ`):
+`useq`, each sized for `PDG_SEQ_CAP`, `MAX_SEQ` plus 16 bases):
 
 - **`seq`**: 2 bits per base. Base `i` uses bits `2i` and `2i+1`:
   `A=00`, `G=01` (bit `2i` set), `C=10` (bit `2i+1` set), `T=11`.
@@ -22,8 +22,11 @@ Each sequence lives in three bitmaps inside the context (`seq`, `rseq`,
   checks `is_n(useq, forward_pos)`; on the reverse strand that is
   `is_n(useq, slen-1-j)`.
 
-Input filtering is the same in the CLI readers (`sequence.c:70`, `:181`) and
-in the API (`prodigal_set_sequence`, `prodigal_set_training_sequences`):
+One encoder fills them, `pdg_encode_begin` / `_chars` / `_spacer` / `_end`
+(`prodigal_api.c`), for the API (`prodigal_set_sequence`,
+`prodigal_set_training_sequences`) and the CLI's readers alike
+(`read_seq_training`, `next_seq_multi`, which pass it each line); only the
+readers' parsing and their per-line length checks are their own:
 
 - Characters outside `'A'..'z'` are skipped and do not advance the position.
   That includes `-`, `.`, `*`, digits and whitespace, so coordinates refer to
@@ -34,7 +37,8 @@ in the API (`prodigal_set_sequence`, `prodigal_set_training_sequences`):
 **Masking** (`-m` / `mask_regions`): a run of at least `MASK_SIZE` (50) `N`/`n`
 becomes a mask region, recorded when the run is closed by a non-N. A run
 reaching the end of the sequence is never recorded. `cross_mask()` stops
-nodes from spanning a mask.
+nodes from spanning a mask. The mask list (`ctx->masks`) grows as needed,
+through the custom allocator; upstream stopped at 5,000.
 
 **Training input** (single mode) is all contigs concatenated, with
 `TTAATTAATTAA` between them and after the last one when there is more than
@@ -134,9 +138,9 @@ add_nodes → qsort → score_nodes(is_meta=0) → record_overlapping_starts(1)
 → record_gene_data
 ```
 
-- `add_genes` (`gene.c:25`) walks the path into `struct _gene`, up to
-  `MAX_GENES` (30,000) per contig. Genes beyond that are silently dropped by
-  the library; the CLI warns.
+- `add_genes` (`gene.c`) walks the path into `struct _gene`. It takes the
+  array's capacity and returns -1 when the genes don't fit; `keep_genes`
+  then doubles the array and runs it again.
 - `tweak_final_starts` may move a gene's start to a nearby alternative.
 - `record_gene_data` captures what is reported for each gene **from the
   node scores at that moment** into `struct _gene`: strand, partial flags,
@@ -240,19 +244,20 @@ and a flag matrix. Still different:
   - the all-starts table (`-s`);
   - the gene ID (`<seqnum>_<n>`) and the total `score`;
   - per-contig model data (GFF `# Model Data`) beyond `prodigal_stats_t`.
-- **Input limits.** Masks beyond `MAX_MASKS` and training input beyond
-  `MAX_SEQ` are dropped silently by the API; the CLI exits or warns.
-  `prodigal_set_sequence` checks the raw character count against `MAX_SEQ`,
-  while the CLI checks the filtered base count plus `MAX_LINE`.
+- **Input limits.** Both accept at most `MAX_BASES` bases kept, that is
+  `MAX_SEQ - MAX_LINE - 1` (the CLI stops at `len + MAX_LINE >= MAX_SEQ`).
+  The CLI rejects a longer contig, as the library does, but trains on the
+  start of longer training input, with a warning, where the library
+  returns an error. The library counts the spacers between and after
+  training sequences too.
 
 ## Limits and memory
 
 | Constant | Value | Where it bites |
 |---|---|---|
-| `MAX_SEQ` | 32,000,000 | Per-contig maximum. Also sizes `seq` and `rseq` (8 MB each) and `useq` (4 MB) at create time. |
+| `MAX_SEQ` | 32,000,000 | Sizes `seq` and `rseq` (8 MB each) and `useq` (4 MB) at create time, with 16 bases of slack (`PDG_SEQ_CAP`). A contig, and training input, may have at most `MAX_BASES` bases ("Input limits" above). |
 | `STT_NOD` | 100,000 | Initial node capacity (17.6 MB); see "Node capacity" below. |
-| `MAX_GENES` | 30,000 | `genes` array (33.4 MB; `struct _gene` is 1,112 bytes). Per-contig gene cap; overflow is silently truncated. |
-| `MAX_MASKS` | 5,000 | Mask list (inline in the context). |
+| `MAX_GENES` | 30,000 | Initial `genes` array (33.4 MB; `struct _gene` is 1,112 bytes). It doubles when a contig has more genes (`keep_genes`). |
 | `MASK_SIZE` | 50 | Minimum N run to mask. |
 | `MAX_LINE` | 10,000 | Header length, CLI line length. |
 | `MIN_GENE` / `MIN_EDGE_GENE` | 90 / 60 | Minimum ORF length. |

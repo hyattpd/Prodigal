@@ -37,12 +37,12 @@ run_jobs() {  # run_jobs JOBFILE SCRIPT FLAG
 # corpus_setup DIR: generate the test corpus (tests/make_corpus.sh) into DIR,
 # set C to DIR and corpus to its "label:path" entries. An absolute $ECOLI
 # adds the genome and its 2 kbp fragments. fork_corpus holds the inputs only
-# the fork runs (upstream overflows on them).
+# the fork runs (upstream overflows or exits on them).
 corpus_setup() {
   "$ROOT/tests/make_corpus.sh" "$1" ${ECOLI:+"$ECOLI"} || return 1
   C=$1
   corpus=("anthus:$ROOT/anthus_aco.fas" "synthetic:$C/synthetic.fa" "big:$C/big.fa")
-  fork_corpus=("lowcomplex:$C/lowcomplex.fa")
+  fork_corpus=("lowcomplex:$C/lowcomplex.fa" "manymasks:$C/manymasks.fa")
   [ -z "${ECOLI:-}" ] || corpus+=("ecoli:$ECOLI" "ecoli2k:$C/ecoli_2k.fa")
 }
 

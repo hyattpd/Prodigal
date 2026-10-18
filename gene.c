@@ -20,9 +20,11 @@
 
 #include "gene.h"
 
-/* Copies genes from the dynamic programming to a final array */
+/* Copies genes from the dynamic programming to a final array, which holds
+   cap genes.  Returns the number of genes, or -1 if they don't fit (each
+   pass adds at most one gene, so it checks once per pass). */
 
-int add_genes(struct _gene *glist, struct _node *nod, int dbeg) {
+int add_genes(struct _gene *glist, int cap, struct _node *nod, int dbeg) {
   int path, ctr;
 
   if(dbeg == -1) return 0;
@@ -30,6 +32,7 @@ int add_genes(struct _gene *glist, struct _node *nod, int dbeg) {
   while(nod[path].traceb != -1) path = nod[path].traceb;
 
   while(path != -1) {
+    if(ctr == cap) return -1;
     if(nod[path].elim == 1) { path = nod[path].tracef; continue; }
     if(nod[path].strand == 1 && nod[path].type != STOP) {
       glist[ctr].begin = nod[path].ndx+1;
@@ -50,12 +53,6 @@ int add_genes(struct _gene *glist, struct _node *nod, int dbeg) {
       ctr++;
     }
     path = nod[path].tracef;
-    if(ctr == MAX_GENES) {
-#ifndef PRODIGAL_NO_MAIN
-      fprintf(stderr, "warning, max # of genes exceeded, truncating...\n");
-#endif
-      return ctr;
-    }
   }
   return ctr;
 }

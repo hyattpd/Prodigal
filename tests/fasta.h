@@ -51,6 +51,17 @@ typedef struct {
     int32_t *lens;   /* n lengths */
 } fasta_t;
 
+/* f = one record, taking ownership of seq (len characters, NUL-terminated). */
+static void fasta_one(fasta_t *f, const char *header, char *seq, int32_t len) {
+    f->n = 1;
+    f->seqs = (char **)xrealloc(NULL, sizeof(char *));
+    f->headers = (char **)xrealloc(NULL, sizeof(char *));
+    f->lens = (int32_t *)xrealloc(NULL, sizeof(int32_t));
+    f->seqs[0] = seq;
+    f->headers[0] = dupstr(header);
+    f->lens[0] = len;
+}
+
 static void fasta_free(fasta_t *f) {
     int32_t i;
     for (i = 0; i < f->n; i++) { free(f->seqs[i]); free(f->headers[i]); }

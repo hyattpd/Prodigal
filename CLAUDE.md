@@ -86,7 +86,7 @@ to `v2.6.4-miint`.
 | `node.c/.h` | Start/stop node creation, coding/RBS/upstream scoring, start training, `intergenic_mod`, `-s` start file. |
 | `dprog.c/.h` | Dynamic programming over nodes and `eliminate_bad_genes`. |
 | `gene.c/.h` | `add_genes`, `tweak_final_starts`, `record_gene_data` (GFF attribute strings), CLI printers, translations, `calculate_confidence`. |
-| `sequence.c/.h` | 2-bit encoding helpers, codon tests, `amino()` translation, the CLI's FASTA/GenBank readers, SD motif scanners. |
+| `sequence.c/.h` | 2-bit base tests, codon tests, `rcom_seq`, `amino()` translation, the CLI's FASTA/GenBank/EMBL readers (which encode through `pdg_encode_*` in `prodigal_api.c`), SD motif scanners. |
 | `training.c/.h` | `struct _training`, training-file I/O, 50 hard-coded `initialize_metagenome_N` models (generated; never hand-edit). |
 | `metagenomic.c/.h` | `initialize_metagenomic_bins` and the bin descriptions. The header declares functions that don't exist (`score_edges` etc.). |
 | `bitmap.c/.h` | Bit get/set/clear/toggle (`test`, `set`, …; unprefixed global names). |

@@ -36,7 +36,12 @@ Correctness is judged against **upstream Prodigal at `c1e2d36`** (upstream's
 
 Run `make regress` (`tests/cli_regress.sh`) after any change outside the API
 files; usage, checks and environment are in the script header. Each failed
-check leaves a `.diff` in `tests/out/regress`.
+check leaves a `.diff` in `tests/out/regress`. Its last checks cover the
+CLI's deviations from upstream (`upstream-behavior.md`, "Fork deviations"):
+empty records (FASTA and EMBL) and a closed standard input. `make compare`
+runs `manymasks.fa` for the mask cap (its single mode cases call genes, the
+meta ones none); no corpus contig has 30,000 genes, so the library tests
+check the gene array's growth.
 
 **ARM64 and floating-point contraction.** ARM64 compilers fuse multiply-adds
 by default, which changes the last bits of some scores: on 2026-10-16 a
@@ -85,9 +90,11 @@ with ASan + UBSan. Build `./prodigal` with the same `CC` you pass to
   fragments: genome-scale training, and the `slen < 3000` metagenomic
   penalties across many contigs. Upstream calls 4,319 genes in both modes on
   the genome and 6,039 (meta) on the fragments.
-- Low-complexity input (`lowcomplex.fa`: `CAT` and `ATG` repeats with more
-  nodes than the node array is first sized for) is left out: upstream
-  overflows the array on it. `make compare` and the library tests run it.
+- The inputs upstream mishandles are left out, and `make compare` runs them
+  (`fork_corpus` in `tests/lib.sh`): `lowcomplex.fa` (`CAT` and `ATG`
+  repeats with more nodes than the node array is first sized for; upstream
+  overflows it) and `manymasks.fa` (5,100 masked regions with `-m`;
+  upstream exits).
 
 On 2026-10-16: 150/150 cases identical with `ECOLI` set (about 50 s at
 `JOBS=24`, including the oracle build), 98/98 without, against both the
@@ -110,7 +117,9 @@ check that a contig's output doesn't depend on what the context did before
 twice per sequence). Anthus contigs carry about one gene each, so the meta
 golden test sees little of metagenomic scoring; `make compare` covers more.
 The low-complexity tests run an `ATG` repeat whose nodes don't fit the node
-array: growing it must give what the grown array gives (Phase 15).
+array: growing it must give what the grown array gives (Phase 15). Phase 16
+checks the other limits: the gene array grows, more than 5,000 masks are
+kept, and the length limits sit at the CLI's boundary.
 
 On ARM64 macOS, whose training writes different bytes, the training tests
 compare only the model fields training copies or counts (`gc`,
