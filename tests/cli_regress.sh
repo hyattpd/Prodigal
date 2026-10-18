@@ -89,6 +89,9 @@ fi
 # there only the record count is checked.
 fa2embl='/^>/ { if (n++) print "//"; print "ID   " substr($0, 2) ";"; print "SQ   Sequence;"; next }
          { print } END { print "//" }'
+# Both sides of each comparison come from awk, so they have the same line
+# endings (awk may drop the CRs of anthus_aco.fas, and headers keep them).
+awk '{ print }' $IN >"$O/noempty.fa"
 awk '/^>/ { n++; if (n == 1 || n == 4) print ">empty_record_" n } { print }' \
     $IN >"$O/empty.fa"
 awk "$fa2embl" $IN >"$O/noempty.embl"
@@ -105,8 +108,8 @@ empty_case() {  # empty_case WITHOUT WITH OPTIONS...: same genes, 2 warnings
     echo "OK   empty records skipped (${with##*/} $*)"
   fi
 }
-empty_case $IN "$O/empty.fa" -p meta
-empty_case $IN "$O/empty.fa" -t $G/ref_train.bin
+empty_case "$O/noempty.fa" "$O/empty.fa" -p meta
+empty_case "$O/noempty.fa" "$O/empty.fa" -t $G/ref_train.bin
 empty_case "$O/noempty.embl" "$O/empty.embl" -p meta
 run -i "$O/empty.fa" -f gff -q -o "$O/empty.gff"
 n=$(grep -c '^# Sequence Data' "$O/empty.gff")
