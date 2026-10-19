@@ -255,7 +255,7 @@ typedef struct {
 
     /** NCBI translation table (genetic code) number.  Default: 11
      *  (Bacterial, Archaeal and Plant Plastid).  Supported: 4, 5, 9, 11,
-     *  13, 15, 21, 25, 32, the NCBI codes Prodigal uses exactly as NCBI
+     *  13, 15, 21, 25, 26, 32, the NCBI codes Prodigal uses exactly as NCBI
      *  defines them (docs/genetic-codes.md).  An unsupported table
      *  makes prodigal_create() return NULL, in either mode;
      *  prodigal_config_validate() says why.  Metagenomic mode otherwise

@@ -52,8 +52,10 @@ a message:
   15;
 - `-t` with a copy of `ref_train.bin` patched to table 24: exit 4.
 
-A last check runs `-g 32`, which upstream rejects, and expects genes called
-with table 32 that differ from table 11's.
+The last checks run `-g 32` and `-g 26`, which upstream rejects, and expect
+genes called with those tables: table 32's differ from table 11's, and no
+table 26 gene starts at GTG or TTG. For each, a training file written with
+`-g N -t` must carry the table: predicting from it calls the same genes.
 
 `make compare`
 runs `manymasks.fa` for the mask cap (its single mode cases call genes, the

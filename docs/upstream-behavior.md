@@ -175,9 +175,9 @@ Each changes output only on input upstream mishandled or rejected (tests:
   training file that uses one exits 4. That code is unchanged, so the
   eight tables still accepted from upstream give upstream's output. The
   rules and the reasons per table are in `docs/genetic-codes.md`.
-- **Table 32 is supported.** Upstream rejects `-g 32` (exit 15); the fork
-  calls genes with it, with two clauses of its own in `is_stop` and
-  `amino` (TAG is W, `docs/genetic-codes.md`).
+- **Tables 26 and 32 are supported.** Upstream rejects `-g 26` and
+  `-g 32` (exit 15); the fork calls genes with them, with clauses of its
+  own marked "the fork's" (`docs/genetic-codes.md`, Provenance).
 - **The CLI checks its input more strictly.**
   - `-t` refuses any training file the library would refuse, such as one
     with a GC outside [0, 1]; upstream used it.

@@ -39,7 +39,7 @@ IN=anthus_aco.fas
 mkdir -p "$O" || exit 2
 # Remove only what this script writes, so a stale result can never pass.
 rm -f "$O"/meta.* "$O"/single.* "$O"/trained.* "$O"/fromref.* \
-      "$O"/train*.bin "$O"/stderr "$O"/empty* "$O"/noempty* "$O"/g32.*
+      "$O"/train*.bin "$O"/stderr "$O"/empty* "$O"/noempty* "$O"/g26.* "$O"/g32.*
 
 fail=0
 run() {  # run the CLI; any non-zero exit is a failure
@@ -142,7 +142,7 @@ fi
 # rejected (docs/genetic-codes.md), with the reason; upstream used 1, 2, 3,
 # 6, 10, 12, 14, 16, 22, 23 and 24. Meta mode, which ignores -g, checks it
 # too.
-for t in 1 2 3 6 10 12 14 16 22 23 24 26 27 7; do
+for t in 1 2 3 6 10 12 14 16 22 23 24 27 29 7; do
   expect_exit 15 "^Translation table $t is not supported: " -g $t
 done
 expect_exit 15 "^Translation table 1 is not supported: " -p meta -g 1
@@ -172,6 +172,30 @@ if grep -q "transl_table=32;" "$O/g32.gff" && grep -q "CDS" "$O/g32.gff" &&
 else
   echo "FAIL -g 32: no genes, not with table 32, or table 11's genes"; fail=1
 fi
+
+# So is table 26 (Pachysolen nuclear). Of ATG, GTG and TTG it starts genes
+# only at ATG, so no gene starts at GTG or TTG, as many of table 11's do
+run -i $IN -g 26 -f gff -q -o "$O/g26.gff"
+if grep -q "transl_table=26;" "$O/g26.gff" && grep -q "CDS" "$O/g26.gff" &&
+   grep -q "start_type=[GT]TG" "$O/single.gff" &&
+   ! grep -q "start_type=[GT]TG" "$O/g26.gff"; then
+  echo "OK   -g 26 calls genes with table 26, starting at ATG only"
+else
+  echo "FAIL -g 26: no genes, not with table 26, or a GTG or TTG start"; fail=1
+fi
+
+# A training file written with either table carries it: predicting from the
+# file calls the same genes as -g does
+for t in 26 32; do
+  run -i $IN -g $t -t "$O/g$t.bin" -q
+  run -i $IN -t "$O/g$t.bin" -f gff -q -o "$O/g$t.t.gff"
+  if grep -q "transl_table=$t;" "$O/g$t.t.gff" &&
+     cmp -s <(grep CDS "$O/g$t.gff") <(grep CDS "$O/g$t.t.gff"); then
+    echo "OK   -g $t -t writes a model that carries table $t"
+  else
+    echo "FAIL -g $t -t: predicting from the model is not -g $t"; fail=1
+  fi
+done
 
 [ $fail = 0 ] && echo "all CLI regression checks passed"
 exit $fail

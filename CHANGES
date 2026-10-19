@@ -16,12 +16,14 @@ Prodigal's code for the tables still accepted (4, 5, 9, 11, 13, 15, 21,
 25) is unchanged, so they give upstream's output, and metagenomic mode
 (tables 11 and 4) is unaffected. A test checks Prodigal's handling of
 every table against NCBI's file (testdata/ncbi/gc.prt).
-* Genetic codes: table 32 (Balanophoraceae plastid: TAG is W), which NCBI
-added after Prodigal 2.6, is supported (-g 32). NCBI's other new tables,
-26 to 31 and 33, are still rejected: 26 is not implemented, 29, 30 and
-33 would need changes to how Prodigal scores open reading frames and
-separates training contigs, and in 27, 28 and 31 a codon's meaning depends
-on context (docs/genetic-codes.md).
+* Genetic codes: tables 26 (Pachysolen tannophilus nuclear: CTG is A, and
+ATG the only start Prodigal uses; NCBI also lists CTG) and 32
+(Balanophoraceae plastid: TAG is W), which NCBI added after Prodigal 2.6,
+are supported (-g 26, -g 32). NCBI's other new
+tables, 27 to 31 and 33, are still rejected: 29, 30 and 33 would need
+changes to how Prodigal scores open reading frames and separates training
+contigs, and in 27, 28 and 31 a codon's meaning depends on context
+(docs/genetic-codes.md).
 * CLI: -t refuses a training file that the library would refuse (see
 above; also a GC outside [0, 1], a start weight that is not finite and
 > 0, or an SD flag other than 0 or 1), with exit 4.

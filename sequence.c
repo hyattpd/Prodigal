@@ -246,7 +246,7 @@ int is_n(unsigned char *useq, int n) {
 const char *pdg_trans_table_unsupported(int tt) {
   switch(tt) {
   case 4: case 5: case 9: case 11: case 13: case 15: case 21: case 25:
-  case 32:
+  case 26: case 32:
     return NULL;
   case 1:
     return "Prodigal never starts genes at TTG (NCBI: a start), and its "
@@ -277,8 +277,6 @@ const char *pdg_trans_table_unsupported(int tt) {
   case 24:
     return "Prodigal reads TGA as a stop (NCBI: W) and AGA and AGG as R "
            "(NCBI: S and K), and never starts genes at TTG (NCBI: a start)";
-  case 26:
-    return "not implemented: it postdates Prodigal 2.6";
   case 29: case 30: case 33:
     return "not implemented: it postdates Prodigal 2.6, Prodigal's "
            "ORF-length score cannot count its stops, and its training "
@@ -347,7 +345,8 @@ int is_start(unsigned char *seq, int n, struct _training *tinf) {
   /* Codes that only use ATG */
   if(tinf->trans_table == 6 || tinf->trans_table == 10 ||
      tinf->trans_table == 14 || tinf->trans_table == 15 ||
-     tinf->trans_table == 16 || tinf->trans_table == 22) return 0;
+     tinf->trans_table == 16 || tinf->trans_table == 22 ||
+     tinf->trans_table == 26) return 0;   /* 26: the fork's */
 
   /* GTG */
   if(is_g(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
@@ -449,6 +448,7 @@ char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
   if(is_c(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
     if(tinf->trans_table == 3) return 'T';
     if(tinf->trans_table == 12) return 'S';
+    if(tinf->trans_table == 26) return 'A';   /* the fork's */
     return 'L';
   }
   if(is_c(seq, n) == 1 && is_c(seq, n+1) == 1) return 'P';

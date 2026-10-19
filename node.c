@@ -579,10 +579,12 @@ void calc_orf_gc(unsigned char *seq, unsigned char *rseq, int slen, struct
    ORF-length score, with bases independent at the training GC.  Upstream
    counts TAA, TAG and TGA in table 11 and TAA and one of TAG and TGA in
    every other table, which is right only for some of them: the tables
-   where it isn't are rejected (docs/genetic-codes.md). */
+   where it isn't are rejected (docs/genetic-codes.md).  The fork counts
+   all three in table 26 too. */
 double pdg_no_stop(struct _training *tinf) {
   double no_stop;
-  if(tinf->trans_table != 11) { /* TGA or TAG is not a stop */
+  if(tinf->trans_table != 11 && /* TGA or TAG is not a stop */
+     tinf->trans_table != 26) {   /* 26: the fork's */
     no_stop = ((1-tinf->gc)*(1-tinf->gc)*tinf->gc)/8.0;
     no_stop += ((1-tinf->gc)*(1-tinf->gc)*(1-tinf->gc))/8.0;
     no_stop = (1 - no_stop);

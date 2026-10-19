@@ -1861,6 +1861,11 @@ static void test_protein_letters(void) {
     ASSERT_TRUE(strcmp(got, "M**") == 0);
     letters_of(ctx, "ATGTAGTAA", 1, 0, 32, got);
     ASSERT_TRUE(strcmp(got, "MW*") == 0);
+    /* CTG is L in table 11 and A in table 26, the fork's */
+    letters_of(ctx, "ATGCTGTAA", 1, 0, 11, got);
+    ASSERT_TRUE(strcmp(got, "ML*") == 0);
+    letters_of(ctx, "ATGCTGTAA", 1, 0, 26, got);
+    ASSERT_TRUE(strcmp(got, "MA*") == 0);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -1912,10 +1917,11 @@ static void test_proteins_off(void) {
 
 /* The outcome, pinned.  Nothing checks the copies of these lists in
    docs/genetic-codes.md, README.md, prodigal.h (supported only) and
-   CHANGES: update them with these.  Table 32 is the fork's addition. */
-static const int supported_tables[] = { 4, 5, 9, 11, 13, 15, 21, 25, 32 };
+   CHANGES: update them with these.  Tables 26 and 32 are the fork's
+   additions. */
+static const int supported_tables[] = { 4, 5, 9, 11, 13, 15, 21, 25, 26, 32 };
 static const int rejected_ncbi_tables[] = {
-    1, 2, 3, 6, 10, 12, 14, 16, 22, 23, 24, 26, 27, 28, 29, 30, 31, 33
+    1, 2, 3, 6, 10, 12, 14, 16, 22, 23, 24, 27, 28, 29, 30, 31, 33
 };
 
 /* NCBI's tables.  Codon k is base[0][k] base[1][k] base[2][k]; aa[r][k] is
