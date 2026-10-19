@@ -456,9 +456,18 @@ int pdg_train(prodigal_ctx_t *ctx, pdg_train_report_fn report) {
                     &ctx->tinf);
     determine_sd_usage(&ctx->tinf);
     if (ctx->config.force_nonsd) ctx->tinf.uses_sd = 0;
-    if (ctx->tinf.uses_sd == 0)
+    if (ctx->tinf.uses_sd == 0) {
+        struct _motif_counts *mc = (struct _motif_counts *)
+            pdg_alloc(ctx, sizeof(struct _motif_counts));
+        if (mc == NULL) {
+            PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
+                          "Out of memory for the non-SD start motif counts");
+            return PRODIGAL_ERR_NOMEM;
+        }
         train_starts_nonsd(ctx->seq, ctx->rseq, ctx->slen, ctx->nodes,
-                           ctx->nn, &ctx->tinf);
+                           ctx->nn, &ctx->tinf, mc);
+        pdg_free(ctx, mc);
+    }
     ctx->trained = 1;
     REPORT(PDG_TRAIN_STARTS, 1);
 #undef REPORT

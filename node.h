@@ -50,6 +50,13 @@ struct _rbs_text {
   char spacer[8];      /* Longest: "13-15bp" */
 };
 
+/* train_starts_nonsd's motif counts, 1.25 MB, from its caller: on the
+   stack they left little of a 2 MiB thread. */
+struct _motif_counts {
+  int good[4][4][4096];
+  double bg[4][4][4096], real[4][4][4096];
+};
+
 struct _node {
   int type;            /* 0=ATG, 1=GTG, 2=TTG/Other, 3=Stop */
   int edge;            /* Runs off the edge; 0 = normal, 1 = edge node */
@@ -110,7 +117,7 @@ double intergenic_mod(struct _node *, struct _node *, struct _training *);
 void train_starts_sd(unsigned char *, unsigned char *, int, struct _node *,
                         int, struct _training *);
 void train_starts_nonsd(unsigned char *, unsigned char *, int, struct _node *,
-                        int, struct _training *);
+                        int, struct _training *, struct _motif_counts *);
 
 void count_upstream_composition(unsigned char *, int, int, int, 
                                 struct _training *);

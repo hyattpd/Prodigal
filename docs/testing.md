@@ -127,9 +127,12 @@ compare only the model fields training copies or counts (`gc`,
 predictions. `make compare` still checks the bytes there, against the CLI
 of the same build.
 
-Under WASM (CI) the tests need `-sNODERAWFS=1` to see the fixtures and a
-stack of at least about 1.5 MB (`-sSTACK_SIZE=8MB`): `train_starts_nonsd`
-alone uses 1.31 MB of stack, against WASM's 64 KiB default.
+Under WASM (CI) the tests need `-sNODERAWFS=1` to see the fixtures. CI
+gives them a 1 MiB stack with `-sSTACK_OVERFLOW_CHECK=2` (emsdk pinned),
+so every call chain the tests run must fit in 1 MiB; they need about
+600 KB, mostly a metagenomic bin's 558 KB model, against WASM's 64 KiB
+default. Without the check, an overflow shows up as an unrelated error
+("null function or function signature mismatch").
 
 ## API ≡ CLI on larger inputs (`make compare`)
 
@@ -167,30 +170,45 @@ The API's extra peak RSS came from zeroing the whole grown node array with
 coli single from model 84 MiB, meta 138 MiB, single trained 152 MiB).
 Compare later measurements with this table on the same machine.
 
-## Sanitizers and concurrency
+## Sanitizers, threads, fuzzing and the stack
 
 The library has no mutable globals; keep it that way and keep these clean.
+Each change of compiler or flags rebuilds every object (about a minute,
+mostly training.c), and the next plain `make` rebuilds them again.
 
 ```bash
-CORE="bitmap.c dprog.c gene.c metagenomic.c node.c sequence.c training.c prodigal_api.c"
-# ASan + UBSan
-gcc -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer \
-    -DPRODIGAL_NO_MAIN $CORE test_api.c -o test_api_asan -lm && ./test_api_asan
-# TSan: drive several contexts from separate pthreads with a small harness
-gcc -O1 -g -fsanitize=thread -DPRODIGAL_NO_MAIN $CORE harness.c -o h_tsan -lm -lpthread
+SAN="-fsanitize=address,undefined -fno-sanitize-recover=all -g -O1"
+make test compare CFLAGS="$SAN"                  # ASan + UBSan
+make threads CFLAGS="-fsanitize=thread -g -O1"   # TSan
+make fuzz FUZZ_TIME=600                          # libFuzzer, 10 minutes (clang)
+make stack                                       # frames over 1 MiB fail
 ```
 
+- CI's `sanitizers` job (clang, aborting on any report) runs the library
+  tests, the API vs CLI comparison and the oracle comparison under ASan +
+  UBSan, `make threads` under TSan, and `make fuzz` for 60 s (steps in
+  `ci.yml`). Some failures show only there, e.g. the AOS strings outliving
+  the SOA.
+- **Threads:** `tests/threads.c` (its header says what it runs). A static
+  counter planted in `prodigal_find_genes` makes TSan fail it.
+- **Fuzzing:** `tests/fuzz_find_genes.c` (input format and checks in its
+  header); `make fuzz` builds everything with `FUZZ_CFLAGS` (Makefile). New
+  inputs collect in `tests/out/fuzz/corpus` (CI caches it, so it grows
+  across runs) and failing ones in `tests/out/fuzz/` (CI uploads them).
+  About 300–500 inputs/s under ASan, mostly metagenomic scoring across the
+  50 bins (comparison tracing is off: it cost two thirds of the time).
+- **Stack:** consumers run the library on 2 MiB threads. The library
+  objects are built with `-fstack-usage`; `make stack` lists their largest
+  frames and fails on any over 1 MiB or of unbounded size (a VLA or
+  `alloca`). The largest are `initialize_metagenome_N`'s (training.c builds
+  each bin's model on the stack; `static const` tables would remove those
+  frames and most of training.c's compile time but add 16 MB to the
+  binary, so they stay). Frame sizes don't add up call chains; the WASM job
+  (1 MiB, checked) and `make threads` (2 MiB threads) check those on the
+  paths the tests take.
 - On 2026-10-16 ASan/UBSan were clean on lengths 1–199, all-N, all-A,
   all-G, lowercase, IUPAC codes, gapped input, 6,000 N runs, closed ends,
   single mode on short contigs, and repeated runs on one context (no leaks).
-- TSan was clean with 4 concurrent contexts, and results were deterministic
-  across threads.
-- CI's `sanitizers` job (clang, ASan + UBSan, aborting on any report; steps
-  in `ci.yml`) runs the library tests, the API vs CLI comparison and the
-  oracle comparison. Some failures show only there, e.g. the AOS strings
-  outliving the SOA.
-- **Stack:** use `-fstack-usage` to watch frame sizes. Consumers run the
-  library on 2 MiB threads, and `train_starts_nonsd` is already 1.31 MB.
 
 ## Downstream (GPL-boundary)
 

@@ -944,11 +944,13 @@ exit(0); */
   algorithm, it allows for any popular motif to be discovered.
 *******************************************************************************/
 void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
-                  struct _node *nod, int nn, struct _training *tinf) {
-  int i, j, k, l, fr, bndx[3], mgood[4][4][4096], stage;
+                  struct _node *nod, int nn, struct _training *tinf,
+                  struct _motif_counts *mc) {
+  int i, j, k, l, fr, bndx[3], stage;
+  int (*mgood)[4][4096] = mc->good;
   double sum, ngenes, wt = tinf->st_wt, best[3], sthresh = 35.0;
   double tbg[3], treal[3];
-  double mbg[4][4][4096], mreal[4][4][4096], zbg, zreal;
+  double (*mbg)[4][4096] = mc->bg, (*mreal)[4][4096] = mc->real, zbg, zreal;
 
   for(i = 0; i < 32; i++) for(j = 0; j < 4; j++) tinf->ups_comp[i][j] = 0.0;
 

@@ -26,6 +26,16 @@ CFLAGS  += -pedantic -Wall -O3
 # (docs/testing.md); "override" keeps it when CFLAGS is given on the command
 # line. tests/oracle_diff.sh builds the oracle the same way.
 override CFLAGS += -ffp-contract=off
+# make fuzz builds everything for libFuzzer, with clang (CC= for another):
+# coverage, ASan, and UBSan reports fatal so libFuzzer records them. No
+# comparison tracing: it tripled the time per input for no coverage gain.
+FUZZ_CFLAGS = -fsanitize=fuzzer-no-link,address,undefined \
+              -fno-sanitize-coverage=trace-cmp \
+              -fno-sanitize-recover=all -fno-omit-frame-pointer -g -O1
+ifneq ($(filter fuzz,$(MAKECMDGOALS)),)
+CC = clang
+override CFLAGS := $(FUZZ_CFLAGS) -ffp-contract=off
+endif
 # training.c's 50 initialize_metagenome_N each build a 558 KB model on the
 # stack from 25 MB of constants: instrumented, that takes minutes to compile
 # and checks nothing useful, so its objects drop the sanitizer flags (the
@@ -34,6 +44,9 @@ training.o training.lib.o training.pic.o: override CFLAGS := $(filter-out -fsani
 
 # The CLI reads gzip input; the library takes sequences from the caller.
 CLI_DEFS = -DSUPPORT_GZIP_COMPRESSED
+# Library objects: no stderr in the core, and each object's frame sizes in
+# a .su file next to it (make stack)
+LIB_FLAGS = -DPRODIGAL_NO_MAIN -fstack-usage
 LFLAGS = -lm $(LDFLAGS) -lz
 
 TARGET  = prodigal
@@ -45,6 +58,8 @@ API_SOURCES  = prodigal_api.c
 CLI_SOURCE   = main.c
 TEST_SOURCE  = test_api.c
 DUMP_SOURCE  = tests/api_dump.c
+THREADS_SOURCE = tests/threads.c
+FUZZ_SOURCE  = tests/fuzz_find_genes.c
 TEST_HEADERS = tests/api_gff.h tests/fasta.h
 
 HEADERS = $(shell echo *.h)
@@ -64,7 +79,7 @@ all: $(TARGET)
 
 # Objects depend on the compiler, its version and the flags, so changing any
 # of them rebuilds everything instead of mixing stale objects.
-BUILD_FLAGS := $(CC) $(shell $(CC) --version 2>/dev/null | head -1) $(CFLAGS) $(CLI_DEFS)
+BUILD_FLAGS := $(CC) $(shell $(CC) --version 2>/dev/null | head -1) $(CFLAGS) $(CLI_DEFS) $(LIB_FLAGS)
 .build-flags: FORCE
 	@echo '$(BUILD_FLAGS)' | cmp -s - $@ || echo '$(BUILD_FLAGS)' >$@
 FORCE:
@@ -75,7 +90,7 @@ FORCE:
 
 # Library objects: compiled WITH PRODIGAL_NO_MAIN (suppresses stderr in core)
 %.lib.o: %.c $(HEADERS) .build-flags
-	$(CC) $(CFLAGS) -DPRODIGAL_NO_MAIN -c -o $@ $<
+	$(CC) $(CFLAGS) $(LIB_FLAGS) -c -o $@ $<
 
 # Static library
 libprodigal.a: $(LIB_OBJS)
@@ -87,7 +102,7 @@ $(TARGET): $(CLI_OBJ) $(CLI_CORE_OBJS) $(CLI_API_OBJ)
 
 # PIC objects for shared library
 %.pic.o: %.c $(HEADERS) .build-flags
-	$(CC) $(CFLAGS) -fPIC -DPRODIGAL_NO_MAIN -c -o $@ $<
+	$(CC) $(CFLAGS) $(LIB_FLAGS) -fPIC -c -o $@ $<
 
 LIB_PIC_OBJS = $(CORE_SOURCES:.c=.pic.o) $(API_SOURCES:.c=.pic.o)
 
@@ -128,9 +143,43 @@ pedantic:
 	for f in $(STRICT_SOURCES) $(CLI_SOURCE); do \
 	  $(STRICT) -O2 $(CLI_DEFS) $$f || exit 1; \
 	done; \
-	for f in $(STRICT_SOURCES) $(TEST_SOURCE) $(DUMP_SOURCE); do \
+	for f in $(STRICT_SOURCES) $(TEST_SOURCE) $(DUMP_SOURCE) \
+	         $(THREADS_SOURCE) $(FUZZ_SOURCE); do \
 	  $(STRICT) -O2 -DPRODIGAL_NO_MAIN $$f || exit 1; \
 	done; echo "strict C99: no warnings"
+
+# Contexts on four 2 MiB threads must each reproduce a serial run; with
+# CFLAGS="-fsanitize=thread ..." ThreadSanitizer also checks for races
+threads: tests/threads
+	tests/threads
+
+tests/threads: $(THREADS_SOURCE) $(TEST_HEADERS) libprodigal.a
+	$(CC) $(CFLAGS) -pthread -o $@ $< -L. -lprodigal $(LFLAGS)
+
+# libFuzzer on the sequence path for FUZZ_TIME seconds (see FUZZ_CFLAGS).
+# Seeds: the anthus and synthetic records, each after a byte that picks the
+# context (tests/fuzz_find_genes.c). New inputs are kept in FUZZ_DIR/corpus;
+# a failing input is written to FUZZ_DIR (crash-*, oom-*, ...).
+FUZZ_TIME = 60
+FUZZ_DIR  = tests/out/fuzz
+fuzz: tests/fuzz_find_genes
+	@rm -rf $(FUZZ_DIR)/seed && mkdir -p $(FUZZ_DIR)/seed $(FUZZ_DIR)/corpus
+	@tests/make_corpus.sh $(FUZZ_DIR)/gen >/dev/null
+	@awk -v d=$(FUZZ_DIR)/seed '/^>/ { if (f) close(f); f = sprintf("%s/%04d", d, n); printf "%c", 48 + n++ % 4 > f; next } { sub(/\r$$/, ""); printf "%s", $$0 > f }' \
+	  anthus_aco.fas $(FUZZ_DIR)/gen/synthetic.fa
+	tests/fuzz_find_genes -max_total_time=$(FUZZ_TIME) \
+	  -artifact_prefix=$(FUZZ_DIR)/ $(FUZZ_DIR)/corpus $(FUZZ_DIR)/seed
+
+tests/fuzz_find_genes: $(FUZZ_SOURCE) tests/fasta.h libprodigal.a
+	$(CC) $(CFLAGS) -fsanitize=fuzzer -o $@ $< -L. -lprodigal $(LFLAGS)
+
+# Callers run the library on 2 MiB threads: no library frame may exceed
+# STACK_MAX bytes or have an unbounded size (a VLA or alloca), per the
+# library objects' -fstack-usage files. Lists the largest frames.
+STACK_MAX = 1048576
+stack: libprodigal.a
+	@sort -k2,2nr $(LIB_OBJS:.o=.su) | head -3
+	@awk -v max=$(STACK_MAX) '$$2 > max || $$3 == "dynamic" { print "too big: " $$0; bad = 1 } END { exit bad }' $(LIB_OBJS:.o=.su)
 
 # CLI vs an upstream c1e2d36 build across a flag matrix and corpus; set ECOLI
 # to an E. coli FASTA for the genome-scale cases (see docs/testing.md)
@@ -145,10 +194,11 @@ uninstall:
 	-rm $(INSTALLDIR)/$(TARGET)
 
 clean:
-	-rm -f *.o *.lib.o *.pic.o
+	-rm -f *.o *.lib.o *.pic.o *.su
 
 distclean: clean
-	-rm -f $(TARGET) libprodigal.a libprodigal.so test_api tests/api_dump .build-flags
+	-rm -f $(TARGET) libprodigal.a libprodigal.so test_api tests/api_dump \
+	       tests/threads tests/fuzz_find_genes .build-flags
 
 .PHONY: all install uninstall clean distclean test regress oracle compare \
-        pedantic FORCE
+        pedantic threads fuzz stack FORCE

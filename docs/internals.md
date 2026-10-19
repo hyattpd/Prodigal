@@ -112,8 +112,9 @@ CLI warns below 100,000 bp.
 5. `rbs_score`, then `train_starts_sd` (`type_wt`, `rbs_wt`, `ups_comp`),
    then `determine_sd_usage`.
 6. If `force_nonsd`, set `uses_sd = 0`. If `!uses_sd`, run
-   `train_starts_nonsd` (`mot_wt`, `no_mot`, `type_wt`, `ups_comp`). Its
-   stack frame is 1.31 MB.
+   `train_starts_nonsd` (`mot_wt`, `no_mot`, `type_wt`, `ups_comp`) with
+   1.25 MB of motif counts that `pdg_train` allocates (`struct
+   _motif_counts`).
 
 Before step 1, `pdg_train` resets the model (`reset_model`: zero, then
 `trans_table` and `st_wt` from `ctx->config`, which the setters update) and

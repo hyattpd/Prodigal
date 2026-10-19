@@ -51,6 +51,10 @@ make test               # builds ./test_api and runs it; run from the repo root
 make compare            # library API vs the CLI on the same build (tests/api_compare.sh)
 make regress            # CLI vs testdata/ground_truth, every output type, both modes
 make oracle             # CLI vs an upstream c1e2d36 build: flag matrix x corpus
+make pedantic           # every source as strict C99, no warnings
+make threads            # contexts on four 2 MiB threads (TSan in CI)
+make stack              # fails on a stack frame over 1 MiB or unbounded
+make fuzz               # libFuzzer on the sequence path, with clang (docs/testing.md)
 make distclean          # removes objects, binaries and libs
 ```
 
@@ -68,13 +72,15 @@ make distclean          # removes objects, binaries and libs
 
 ### CI
 
-`.github/workflows/ci.yml` runs `make test` and `make regress` on Linux
-x86-64 and ARM64 (gcc, clang), macOS and Windows, `make pedantic` on
-Linux, `make compare` and `make oracle` on Linux x86-64/ARM64 and macOS,
-`test_api` under WASM, and
-`make test`, `make compare` and the oracle comparison under ASan + UBSan
-(the `sanitizers` job; some failures show only there), for pushes and PRs
-to `v2.6.4-miint`.
+`.github/workflows/ci.yml` runs, for pushes and PRs to `v2.6.4-miint`:
+- `make test`, `make regress`: Linux x86-64 and ARM64 (gcc, clang), macOS,
+  Windows;
+- `make threads`, `make compare`, `make oracle`: Linux and macOS;
+- `make pedantic`, `make stack`: Linux;
+- `test_api` under WASM on a checked 1 MiB stack;
+- the `sanitizers` job: `make test`, `make compare` and the oracle
+  comparison under ASan + UBSan, `make threads` under TSan, a minute of
+  `make fuzz` (some failures show only there).
 
 ## Layout
 
@@ -109,8 +115,8 @@ to `v2.6.4-miint`.
   GPL-boundary's stdout is its JSON control channel, so a stray `printf`
   corrupts the protocol.
 - **No mutable global or static state.** GPL-boundary runs many contexts at
-  once on separate threads in one process; TSan was clean with 4 concurrent
-  contexts on 2026-10-16. Static tables must be `const`.
+  once on separate threads in one process; `make threads` runs 4 under TSan
+  in CI. Static tables must be `const`.
 - **Errors:** return `PRODIGAL_ERR_*` and set `PDG_SET_ERROR(ctx, …)` with a
   message specific enough to act on. A context must stay reusable after any
   error.
@@ -135,9 +141,8 @@ to `v2.6.4-miint`.
   With fused multiply-adds, ARM64 output drifts from x86-64 in the last
   printed digit. GPL-boundary's `build.rs` must use the same flag.
 - **Stack:** library code runs on Rust worker threads with 2 MiB stacks.
-  `train_starts_nonsd` already uses 1.31 MB of stack, and each
-  `initialize_metagenome_N` uses about 558 KB. Don't add large stack arrays;
-  put them on the heap.
+  Each `initialize_metagenome_N` uses about 558 KB. Don't add large stack
+  arrays; put them on the heap. `make stack` fails on a frame over 1 MiB.
 - **Symbols:** core functions have short global names (`set`, `test`,
   `dprog`, `amino`, …). Today they don't collide with the other libraries
   linked into GPL-boundary. `-fvisibility=hidden` does not protect against

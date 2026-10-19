@@ -10,6 +10,10 @@ no model.
 * Library: prodigal_load_training also rejects a model whose GC is outside
 [0, 1], whose start weight is not finite and > 0, or whose SD flag is not
 0 or 1, and leaves the context unchanged.
+* Library: non-SD start training (a genome without Shine-Dalgarno motifs,
+or force_nonsd) no longer puts 1.25 MB of motif counts on the stack: they
+are allocated, through the custom allocator, so training fits a 2 MiB
+thread with room to spare. Output is unchanged.
 * Training no longer leaks when the GC frame plot's allocation fails (now
 one block, through the custom allocator), and the hexamer background
 behind the coding model no longer allocates (upstream did not check that

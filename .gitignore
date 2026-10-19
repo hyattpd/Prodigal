@@ -8,3 +8,6 @@ test_api
 tests/out/
 .build-flags
 tests/api_dump
+tests/threads
+tests/fuzz_find_genes
+*.su

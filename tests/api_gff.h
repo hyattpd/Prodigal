@@ -1,6 +1,7 @@
 /*******************************************************************************
     CLI-format lines from the public API's output, for comparing the library
-    with the CLI (test_api.c, tests/api_dump.c).
+    with the CLI (test_api.c, tests/api_dump.c, tests/threads.c); static
+    inline, so each uses what it needs.
 
     Per contig, a model line, then one line per gene:
       #  seqnum  seqlen=N  model=DESC  transl_table=T  uses_sd=U
@@ -29,7 +30,7 @@
 
 /* Check snprintf's result r for a buffer of n bytes: a line that doesn't fit
    is a harness bug, never a silent difference. */
-static void api_fits(int r, size_t n) {
+static inline void api_fits(int r, size_t n) {
     if (r < 0 || (size_t)r >= n) {
         fputs("api_gff: line too long\n", stderr);
         abort();
@@ -38,7 +39,7 @@ static void api_fits(int r, size_t n) {
 
 /* The CLI's sequence ID: the header up to the first space, tab or CR, or
    "Prodigal_Seq_<seqnum>" when that is empty (calc_short_header). */
-static void api_seqid(char *out, size_t n, const char *hdr, int seqnum) {
+static inline void api_seqid(char *out, size_t n, const char *hdr, int seqnum) {
     size_t i = strcspn(hdr, " \t\r\n");
     if (i == 0) snprintf(out, n, "Prodigal_Seq_%d", seqnum);
     else snprintf(out, n, "%.*s", (int)i, hdr);
@@ -46,17 +47,17 @@ static void api_seqid(char *out, size_t n, const char *hdr, int seqnum) {
 
 /* The model line. model ("-" in single mode) ends at a NUL or a double
    quote, so the CLI side can pass the rest of its line. */
-static void api_model_line(char *out, size_t n, int seqnum, int seqlen,
-                           const char *model, int table, int uses_sd) {
+static inline void api_model_line(char *out, size_t n, int seqnum, int seqlen,
+                                  const char *model, int table, int uses_sd) {
     api_fits(snprintf(out, n, "#\t%d\tseqlen=%d\tmodel=%.*s\ttransl_table=%d\tuses_sd=%d",
                       seqnum, seqlen, (int)strcspn(model, "\""), model, table,
                       uses_sd), n);
 }
 
 /* Gene i of g. seqid is api_seqid's, seqnum the 1-based record index. */
-static void api_gff_line(char *out, size_t n, const prodigal_genes_soa_t *g,
-                         int i, const char *seqid, int seqnum,
-                         int blank_score) {
+static inline void api_gff_line(char *out, size_t n, const prodigal_genes_soa_t *g,
+                                int i, const char *seqid, int seqnum,
+                                int blank_score) {
     static const char *const start_types[4] = { "ATG", "GTG", "TTG", "Edge" };
     double score = g->cscore[i] + g->sscore[i];
     char col6[32];
@@ -83,7 +84,7 @@ static void api_gff_line(char *out, size_t n, const prodigal_genes_soa_t *g,
 typedef struct { int seqnum, seqlen; } api_cli_state_t;
 
 /* Value of key in line ("key=VALUE;..."), or NULL. */
-static const char *api_cli_field(const char *line, const char *key) {
+static inline const char *api_cli_field(const char *line, const char *key) {
     const char *p = strstr(line, key);
     return p ? p + strlen(key) : NULL;
 }
@@ -91,8 +92,8 @@ static const char *api_cli_field(const char *line, const char *key) {
 /* Translate one line of a CLI GFF file into the form above; line is split in
    place. Returns 0 and fills out for a model or CDS line, -1 for anything
    else. */
-static int api_gff_from_cli(char *line, int blank_score, api_cli_state_t *st,
-                            char *out, size_t n) {
+static inline int api_gff_from_cli(char *line, int blank_score, api_cli_state_t *st,
+                                   char *out, size_t n) {
     char *col[9];
     int k;
 
@@ -128,7 +129,7 @@ static int api_gff_from_cli(char *line, int blank_score, api_cli_state_t *st,
 
 /* Train ctx on all of fa, as the CLI does in single mode. Returns
    PRODIGAL_OK or the failing call's error code. */
-static int api_train(prodigal_ctx_t *ctx, const fasta_t *fa) {
+static inline int api_train(prodigal_ctx_t *ctx, const fasta_t *fa) {
     int rc = prodigal_set_training_sequences(ctx, (const char **)fa->seqs,
                  (const char **)fa->headers, fa->lens, fa->n);
     if (rc == PRODIGAL_OK) rc = prodigal_train(ctx);
@@ -140,8 +141,8 @@ typedef void (*api_emit_fn)(const char *line, void *arg);
 /* Find genes in the sequence set on ctx, record k of fa, and emit its model
    line and gene lines; meta selects metagenomic formatting. Returns
    PRODIGAL_OK or prodigal_find_genes's error code. */
-static int api_emit_found(prodigal_ctx_t *ctx, const fasta_t *fa, int32_t k,
-                          int meta, api_emit_fn emit, void *arg) {
+static inline int api_emit_found(prodigal_ctx_t *ctx, const fasta_t *fa, int32_t k,
+                                 int meta, api_emit_fn emit, void *arg) {
     char seqid[API_GFF_LINE_MAX], line[API_GFF_LINE_MAX];
     prodigal_genes_soa_t *g = NULL;
     prodigal_stats_t stats;
@@ -165,9 +166,9 @@ static int api_emit_found(prodigal_ctx_t *ctx, const fasta_t *fa, int32_t k,
 
 /* api_emit_found for records [first, last) of fa, each set on ctx first.
    Returns PRODIGAL_OK or the failing call's error code. */
-static int api_emit_records(prodigal_ctx_t *ctx, const fasta_t *fa,
-                            int32_t first, int32_t last, int meta,
-                            api_emit_fn emit, void *arg) {
+static inline int api_emit_records(prodigal_ctx_t *ctx, const fasta_t *fa,
+                                   int32_t first, int32_t last, int meta,
+                                   api_emit_fn emit, void *arg) {
     int32_t k;
     for (k = first; k < last; k++) {
         int rc = prodigal_set_sequence(ctx, fa->seqs[k], fa->lens[k], fa->headers[k]);
@@ -177,10 +178,46 @@ static int api_emit_records(prodigal_ctx_t *ctx, const fasta_t *fa,
     return PRODIGAL_OK;
 }
 
+/* Emitted lines, collected (lines_emit) and compared (lines_equal). */
+typedef struct { char **v; int n, cap; } lines_t;
+
+static inline void lines_emit(const char *line, void *arg) {
+    lines_t *l = (lines_t *)arg;
+    if (l->n == l->cap) {
+        l->cap = l->cap ? l->cap * 2 : 256;
+        l->v = (char **)xrealloc(l->v, l->cap * sizeof(char *));
+    }
+    l->v[l->n++] = dupstr(line);
+}
+
+static inline void lines_free(lines_t *l) {
+    int i;
+    for (i = 0; i < l->n; i++) free(l->v[i]);
+    free(l->v);
+    memset(l, 0, sizeof(*l));
+}
+
+/* 1 if want and got are equal; otherwise prints [FAIL] with the number of
+   differing lines and the first difference, and returns 0. */
+static inline int lines_equal(const lines_t *want, const lines_t *got,
+                              const char *what) {
+    int i, ndiff = 0, first = -1;
+    if (want->n != got->n) {
+        printf("[FAIL] %s: %d lines, expected %d\n", what, got->n, want->n);
+        return 0;
+    }
+    for (i = 0; i < want->n; i++)
+        if (strcmp(want->v[i], got->v[i]) != 0 && ndiff++ == 0) first = i;
+    if (ndiff == 0) return 1;
+    printf("[FAIL] %s: %d of %d lines differ; first:\n      want %s\n      got  %s\n",
+           what, ndiff, want->n, want->v[first], got->v[first]);
+    return 0;
+}
+
 /* Emit a CLI GFF file in the same form; -1 if it can't be read or has a
    line too long for the buffer. */
-static int api_emit_cli_file(const char *path, int meta, api_emit_fn emit,
-                             void *arg) {
+static inline int api_emit_cli_file(const char *path, int meta, api_emit_fn emit,
+                                    void *arg) {
     char line[API_GFF_LINE_MAX], out[API_GFF_LINE_MAX];
     api_cli_state_t st = { -1, -1 };
     FILE *fp = fopen(path, "r");

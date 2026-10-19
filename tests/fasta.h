@@ -1,6 +1,7 @@
 /*******************************************************************************
-    File and FASTA input for the test programs (test_api.c, tests/api_dump.c).
-    They abort when memory runs out.
+    File and FASTA input for the test programs (test_api.c and tests/),
+    static inline so each uses what it needs. They abort when memory runs
+    out.
 
     fasta_load keeps the records in order, so record k is the CLI's sequence
     number k+1. Line ends (LF or CRLF) are stripped; every other byte is
@@ -16,7 +17,7 @@
 #include <string.h>
 #include <stdint.h>
 
-static void *xrealloc(void *p, size_t n) {
+static inline void *xrealloc(void *p, size_t n) {
     if ((p = realloc(p, n ? n : 1)) == NULL) {
         fputs("out of memory\n", stderr);
         abort();
@@ -24,13 +25,13 @@ static void *xrealloc(void *p, size_t n) {
     return p;
 }
 
-static char *dupstr(const char *s) {
+static inline char *dupstr(const char *s) {
     size_t n = strlen(s) + 1;
     return memcpy(xrealloc(NULL, n), s, n);
 }
 
 /* The contents of the file at path, or NULL if it can't be read. */
-static void *load_file(const char *path, size_t *len) {
+static inline void *load_file(const char *path, size_t *len) {
     FILE *fp = fopen(path, "rb");
     char *buf = NULL;
     long n;
@@ -51,7 +52,7 @@ typedef struct {
     int32_t *lens;   /* n lengths */
 } fasta_t;
 
-static void fasta_free(fasta_t *f) {
+static inline void fasta_free(fasta_t *f) {
     int32_t i;
     for (i = 0; i < f->n; i++) { free(f->seqs[i]); free(f->headers[i]); }
     free(f->seqs); free(f->headers); free(f->lens);
@@ -61,7 +62,7 @@ static void fasta_free(fasta_t *f) {
 #define FASTA_LINE_MAX 65536
 
 /* Returns 0, or -1 if the file can't be opened. */
-static int fasta_load(const char *path, fasta_t *f) {
+static inline int fasta_load(const char *path, fasta_t *f) {
     FILE *fp = fopen(path, "rb");
     char *line;
     int32_t cap = 0, scap = 0;

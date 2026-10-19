@@ -958,18 +958,30 @@ static void test_meta_alloc_failure(void) {
     TEST_PASS();
 }
 
-static void test_gc_frame_alloc_failure(void) {
-    TEST_START("training: failed GC frame plot allocation is a clean error");
+/* Fail each of training's allocations in turn (non-SD start training
+   forced, so all of them run): each is an error that leaves no model, and
+   with no limit training succeeds, leaking nothing. */
+static void test_training_alloc_failures(void) {
+    TEST_START("training: every failed allocation is a clean error");
     fasta_t fa;
+    void *exported = NULL;
+    size_t elen = 0, k;
+    int rc = PRODIGAL_ERR_NOMEM;
     if (!load_anthus(&fa)) return;
     prodigal_ctx_t *ctx = make_counted_ctx(0);
     ASSERT_TRUE(ctx != NULL);
-    /* On anthus the plot is training's first allocation */
-    alloc_limit = alloc_count;
-    ASSERT_EQ_INT(api_train(ctx, &fa), PRODIGAL_ERR_NOMEM);
-    ASSERT_TRUE(strstr(prodigal_last_error(ctx), "gc frame") != NULL);
+    ctx->config.force_nonsd = 1;
+    for (k = 0; rc == PRODIGAL_ERR_NOMEM; k++) {
+        alloc_limit = alloc_count + k;
+        rc = api_train(ctx, &fa);
+        if (rc == PRODIGAL_ERR_NOMEM)
+            ASSERT_EQ_INT(prodigal_export_training(ctx, &exported, &elen),
+                          PRODIGAL_ERR_INVALID_INPUT);
+        if (k == 0) ASSERT_TRUE(strstr(prodigal_last_error(ctx), "gc frame") != NULL);
+    }
     alloc_limit = (size_t)-1;
-    ASSERT_EQ_INT(api_train(ctx, &fa), PRODIGAL_OK);
+    ASSERT_EQ_INT(rc, PRODIGAL_OK);
+    ASSERT_TRUE(k >= 3);   /* the GC frame plot, the motif counts, then none */
     prodigal_destroy(ctx);
     ASSERT_TRUE(alloc_count == free_count);
     fasta_free(&fa);
@@ -1218,40 +1230,6 @@ static void test_training_setters(void) {
     The library's output, in the form of tests/api_gff.h, must equal the
     CLI's ground truth line for line.
 *******************************************************************************/
-
-typedef struct { char **v; int n, cap; } lines_t;
-
-static void lines_emit(const char *line, void *arg) {
-    lines_t *l = (lines_t *)arg;
-    if (l->n == l->cap) {
-        l->cap = l->cap ? l->cap * 2 : 256;
-        l->v = (char **)xrealloc(l->v, l->cap * sizeof(char *));
-    }
-    l->v[l->n++] = dupstr(line);
-}
-
-static void lines_free(lines_t *l) {
-    int i;
-    for (i = 0; i < l->n; i++) free(l->v[i]);
-    free(l->v);
-    memset(l, 0, sizeof(*l));
-}
-
-/* 1 if want and got are equal; otherwise prints [FAIL] with the number of
-   differing lines and the first difference, and returns 0. */
-static int lines_equal(const lines_t *want, const lines_t *got, const char *what) {
-    int i, ndiff = 0, first = -1;
-    if (want->n != got->n) {
-        printf("[FAIL] %s: %d lines, expected %d\n", what, got->n, want->n);
-        return 0;
-    }
-    for (i = 0; i < want->n; i++)
-        if (strcmp(want->v[i], got->v[i]) != 0 && ndiff++ == 0) first = i;
-    if (ndiff == 0) return 1;
-    printf("[FAIL] %s: %d of %d lines differ; first:\n      want %s\n      got  %s\n",
-           what, ndiff, want->n, want->v[first], got->v[first]);
-    return 0;
-}
 
 /* Run all of fa on ctx and compare with the CLI's output in ref. */
 static int golden_run(prodigal_ctx_t *ctx, const fasta_t *fa, const char *ref,
@@ -1741,7 +1719,7 @@ int main(void) {
     test_custom_allocator();
     test_meta_alloc_failure();
     test_failed_training_leaves_no_model();
-    test_gc_frame_alloc_failure();
+    test_training_alloc_failures();
 
     printf("\nPhase 9: Callbacks\n");
     test_log_callback();
