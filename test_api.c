@@ -135,6 +135,7 @@ static void test_version_constants(void) {
     ASSERT_TRUE(strlen(PRODIGAL_VERSION_STRING) > 0);
     /* Runtime version must match compile-time */
     ASSERT_TRUE(strcmp(prodigal_version_string(), PRODIGAL_VERSION_STRING) == 0);
+    ASSERT_EQ_INT(prodigal_abi_version(), PRODIGAL_ABI_VERSION);
     TEST_PASS();
 }
 
@@ -162,6 +163,104 @@ static void test_config_init_defaults(void) {
     ASSERT_TRUE(config.progress_callback == NULL);
     ASSERT_TRUE(config.progress_user_data == NULL);
     ASSERT_EQ_INT(config.want_proteins, 0);
+    TEST_PASS();
+}
+
+/* The public struct typedefs in prodigal.h ("} name;"), into names; how
+   many, or -1 if it can't be read. */
+static int header_structs(char names[][64], int max) {
+    char line[256], semi[2];
+    int n = 0;
+    FILE *fp = fopen("prodigal.h", "r");
+    if (fp == NULL) return -1;
+    while (fgets(line, sizeof(line), fp) != NULL)
+        if (n < max && sscanf(line, "} %63[a-z_]%1[;]", names[n], semi) == 2) n++;
+    fclose(fp);
+    return n;
+}
+
+/* The ABI version and the FNV-1a hash of the table's names ("type;" and
+   "type.field;" per row) in that version. A change to the table's structs
+   or fields without a new version fails test_abi_layout. */
+#define ABI_PINNED_VERSION 1
+#define ABI_PINNED_HASH 0x8a6eb5fcu
+
+/* prodigal_abi_layout lists the public structs of prodigal.h in order, each
+   with its fields in order, none overlapping the one before; its names are
+   the ones pinned for this ABI version. (A field missing from the table
+   doesn't compile: abi_complete_* in prodigal_api.c.) */
+static void test_abi_layout(void) {
+    TEST_START("ABI: layout has every struct, fields in order; pinned");
+    char header[32][64];
+    size_t n = 0, i;
+    const prodigal_abi_field_t *rows = prodigal_abi_layout(&n);
+    int nh = header_structs(header, 32), t, found = 0;
+    uint32_t hash = 2166136261u;
+    if (nh < 0) { missing_fixture("prodigal.h"); return; }
+    ASSERT_TRUE(rows != NULL && rows[n].type == NULL);
+    ASSERT_TRUE(prodigal_abi_layout(NULL) == rows);
+    for (i = 0, t = 0; i < n; t++) {
+        const prodigal_abi_field_t *s = &rows[i];
+        size_t end = 0;
+        if (t >= nh || s->field != NULL || strcmp(s->type, header[t]) != 0) {
+            printf("[FAIL] row %zu is %s, prodigal.h's next struct %s\n", i,
+                   s->type, t < nh ? header[t] : "(none)");
+            return;
+        }
+        for (i++; i < n && rows[i].field != NULL; i++) {
+            const prodigal_abi_field_t *f = &rows[i];
+            if (f->offset < end || f->offset + f->size > s->size) {
+                printf("[FAIL] %s.%s at %zu (%zu bytes) overlaps the field before "
+                       "it or the end: out of order\n", f->type, f->field,
+                       f->offset, f->size);
+                return;
+            }
+            end = f->offset + f->size;
+            found += strcmp(f->type, "prodigal_config_t") == 0 &&
+                     strcmp(f->field, "want_proteins") == 0 &&
+                     f->offset == offsetof(prodigal_config_t, want_proteins) &&
+                     f->size == sizeof(int);
+        }
+    }
+    if (t != nh) { printf("[FAIL] %s is not in the table\n", header[t]); return; }
+    ASSERT_TRUE(found == 1);
+
+    for (i = 0; i < n; i++) {
+        const char *p, *parts[3];
+        int k;
+        parts[0] = rows[i].type;
+        parts[1] = rows[i].field ? "." : "";
+        parts[2] = rows[i].field ? rows[i].field : "";
+        for (k = 0; k < 3; k++)
+            for (p = parts[k]; *p; p++) hash = (hash ^ (unsigned char)*p) * 16777619u;
+        hash = (hash ^ ';') * 16777619u;
+    }
+    if (PRODIGAL_ABI_VERSION != ABI_PINNED_VERSION || hash != ABI_PINNED_HASH) {
+        printf("[FAIL] ABI version %d, names hash 0x%08lx; pinned: version %d, "
+               "0x%08lx. A changed ABI needs a new PRODIGAL_ABI_VERSION; then pin "
+               "both here\n", PRODIGAL_ABI_VERSION, (unsigned long)hash,
+               ABI_PINNED_VERSION, (unsigned long)ABI_PINNED_HASH);
+        return;
+    }
+    TEST_PASS();
+}
+
+/* prodigal_config_init_v refuses another ABI version or config size, and
+   then writes nothing. */
+static void test_config_init_abi(void) {
+    TEST_START("config_init refuses another ABI and writes nothing");
+    prodigal_config_t config, before;
+    memset(&config, 0x5a, sizeof(config));
+    before = config;
+    ASSERT_EQ_INT(prodigal_config_init_v(&config, PRODIGAL_ABI_VERSION + 1,
+                                         sizeof(config)), PRODIGAL_ERR_INVALID_CONFIG);
+    ASSERT_EQ_INT(prodigal_config_init_v(&config, PRODIGAL_ABI_VERSION,
+                                         sizeof(config) - 8), PRODIGAL_ERR_INVALID_CONFIG);
+    ASSERT_TRUE(memcmp(&config, &before, sizeof(config)) == 0);
+    ASSERT_EQ_INT(prodigal_config_init_v(NULL, PRODIGAL_ABI_VERSION, sizeof(config)),
+                  PRODIGAL_ERR_INVALID_CONFIG);
+    ASSERT_EQ_INT(prodigal_config_init(&config), PRODIGAL_OK);
+    ASSERT_TRUE(config.struct_size == sizeof(config) && config.trans_table == 11);
     TEST_PASS();
 }
 
@@ -531,21 +630,43 @@ static void test_training_load_roundtrip(void) {
     TEST_PASS();
 }
 
+/* Both prodigal_training_info and prodigal_load_training reject the len
+   bytes at blob, with the same reason, and change neither info nor the
+   model. 1, or 0 after printing [FAIL]. */
+static int both_reject(prodigal_ctx_t *ctx, const void *blob, size_t len,
+                       const char *what) {
+    prodigal_training_info_t info, before;
+    char msg[256];
+    memset(&info, 0x5a, sizeof(info));
+    before = info;
+    if (prodigal_training_info(blob, len, &info, msg, sizeof(msg)) !=
+            PRODIGAL_ERR_INVALID_INPUT || msg[0] == '\0' ||
+        memcmp(&info, &before, sizeof(info)) != 0) {
+        printf("[FAIL] %s: training_info accepted it, gave no reason or wrote "
+               "info\n", what);
+        return 0;
+    }
+    if (prodigal_load_training(ctx, blob, len) != PRODIGAL_ERR_INVALID_INPUT ||
+        strcmp(prodigal_last_error(ctx), msg) != 0) {
+        printf("[FAIL] %s: load says \"%s\", training_info \"%s\"\n", what,
+               prodigal_last_error(ctx), msg);
+        return 0;
+    }
+    return 1;
+}
+
 static void test_training_load_invalid(void) {
-    TEST_START("training load rejects a bad blob and keeps the model");
+    TEST_START("training load and info reject a bad blob; model kept");
     size_t tlen, elen;
     void *tdata = load_ref_model(&tlen), *exported = NULL;
     if (tdata == NULL) return;
     prodigal_ctx_t *ctx = make_model_ctx(tdata, tlen);
     ASSERT_TRUE(ctx != NULL);
 
-    char dummy[16] = {0};
-    int rc = prodigal_load_training(ctx, dummy, sizeof(dummy));
-    ASSERT_EQ_INT(rc, PRODIGAL_ERR_INVALID_INPUT);
-    ASSERT_TRUE(strlen(prodigal_last_error(ctx)) > 0);
-
-    rc = prodigal_load_training(ctx, NULL, 0);
-    ASSERT_EQ_INT(rc, PRODIGAL_ERR_INVALID_INPUT);
+    char dummy[16] = {0}, what[32];
+    if (!both_reject(ctx, dummy, sizeof(dummy), "a 16-byte blob") ||
+        !both_reject(ctx, NULL, tlen, "NULL"))
+        return;
 
     /* Fields training sets from the config and counts must be in range */
     void *bad = malloc(tlen);
@@ -565,10 +686,8 @@ static void test_training_load_invalid(void) {
         case 7: b->st_wt = INFINITY; break;
         default: b->uses_sd = 2; break;
         }
-        if (prodigal_load_training(ctx, bad, tlen) != PRODIGAL_ERR_INVALID_INPUT) {
-            printf("[FAIL] bad model %d accepted\n", k);
-            return;
-        }
+        snprintf(what, sizeof(what), "bad model %d", k);
+        if (!both_reject(ctx, bad, tlen, what)) return;
     }
     ASSERT_EQ_INT(prodigal_export_training(ctx, &exported, &elen), PRODIGAL_OK);
     ASSERT_TRUE(elen == tlen && memcmp(exported, tdata, tlen) == 0);
@@ -580,8 +699,37 @@ static void test_training_load_invalid(void) {
     TEST_PASS();
 }
 
+/* prodigal_training_info reads the settings from a blob wherever it sits in
+   memory (its rejections: test_training_load_invalid). */
+static void test_training_info(void) {
+    TEST_START("training_info reads a model, aligned or not");
+    prodigal_training_info_t info;
+    size_t tlen;
+    char msg[256];
+    void *tdata = load_ref_model(&tlen);
+    if (tdata == NULL) return;
+    const struct _training *t = (const struct _training *)tdata;
+    char *buf = (char *)xrealloc(NULL, tlen + 1);
+
+    memcpy(buf + 1, tdata, tlen);
+    ASSERT_EQ_INT(prodigal_training_info(buf + 1, tlen, &info, msg, sizeof(msg)),
+                  PRODIGAL_OK);
+    ASSERT_TRUE(msg[0] == '\0');
+    ASSERT_EQ_INT(info.translation_table, t->trans_table);
+    ASSERT_EQ_INT(info.uses_sd, t->uses_sd);
+    ASSERT_TRUE(info.gc_content == t->gc && info.start_weight == t->st_wt);
+    ASSERT_EQ_INT(prodigal_training_info(tdata, tlen, NULL, msg, sizeof(msg)),
+                  PRODIGAL_ERR_INVALID_INPUT);
+    ASSERT_TRUE(msg[0] != '\0');
+
+    free(buf);
+    free(tdata);
+    TEST_PASS();
+}
+
 static void test_export_needs_model(void) {
     TEST_START("export needs a model; a degenerate one round-trips");
+    prodigal_training_info_t info;
     void *exported = NULL;
     size_t elen = 0;
     fasta_t fa;
@@ -601,6 +749,7 @@ static void test_export_needs_model(void) {
     ASSERT_TRUE(isnan(((struct _training *)exported)->no_mot));
     loaded = make_model_ctx(exported, elen);
     ASSERT_TRUE(loaded != NULL);
+    ASSERT_EQ_INT(prodigal_training_info(exported, elen, &info, NULL, 0), PRODIGAL_OK);
 
     prodigal_destroy(loaded);
     free(exported);
@@ -1197,6 +1346,7 @@ static void test_soa_alignment(void) {
 
 static void test_training_setters(void) {
     TEST_START("training setters change only their field of a loaded model");
+    prodigal_training_info_t info;
     size_t tlen, elen;
     void *tdata = load_ref_model(&tlen), *exported = NULL;
     if (tdata == NULL) return;
@@ -1226,6 +1376,9 @@ static void test_training_setters(void) {
     want->uses_sd = 0;
     ASSERT_EQ_INT(prodigal_export_training(ctx, &exported, &elen), PRODIGAL_OK);
     ASSERT_TRUE(elen == tlen && memcmp(exported, want, tlen) == 0);
+    ASSERT_EQ_INT(prodigal_training_info(exported, elen, &info, NULL, 0), PRODIGAL_OK);
+    ASSERT_TRUE(info.translation_table == 4 && info.start_weight == 3.0 &&
+                info.gc_content == 0.45 && info.uses_sd == 0);
 
     free(exported);
     free(tdata);
@@ -1305,8 +1458,11 @@ enum { META, SINGLE, REF_MODEL, OTHER_MODEL };
 /* One golden test on anthus_aco.fas: make a context from src, train it
    `trainings` times on all of anthus (then its model must be
    ref_train.bin), and compare the genes it finds and their proteins with
-   the CLI's in ref and faa. */
-static void golden(int src, int trainings, const char *ref, const char *faa) {
+   the CLI's in ref and faa. With reload, so must a fresh context given the
+   exported model (which also checks it where training writes other bytes:
+   ARM64 macOS). */
+static void golden(int src, int trainings, int reload, const char *ref,
+                   const char *faa) {
     fasta_t fa;
     prodigal_ctx_t *ctx = NULL;
     void *blob = NULL;
@@ -1331,8 +1487,18 @@ static void golden(int src, int trainings, const char *ref, const char *faa) {
             ctx = NULL;
         }
     if (ctx != NULL && (trainings == 0 || model_is_ref(ctx)) &&
-        golden_run(ctx, &fa, ref, faa, src == META))
-        TEST_PASS();
+        golden_run(ctx, &fa, ref, faa, src == META)) {
+        prodigal_ctx_t *fresh = NULL;
+        void *exported = NULL;
+        if (!reload)
+            TEST_PASS();
+        else if (prodigal_export_training(ctx, &exported, &len) == PRODIGAL_OK &&
+                 (fresh = make_model_ctx(exported, len)) != NULL &&
+                 golden_run(fresh, &fa, ref, faa, 0))
+            TEST_PASS();
+        prodigal_destroy(fresh);
+        free(exported);
+    }
     prodigal_destroy(ctx);
     free(blob);
     fasta_free(&fa);
@@ -1342,17 +1508,17 @@ static void test_golden(void) {
     /* ref_trained.gff equals ref_single.gff (the trained model is
        ref_train.bin), so its proteins are ref_single.proteins */
     static const struct {
-        const char *name; int src, trainings; const char *ref, *faa;
+        const char *name; int src, trainings, reload; const char *ref, *faa;
     } t[] = {
-        { "meta mode = ref_meta.gff + .proteins, every field", META, 0,
+        { "meta mode = ref_meta.gff + .proteins, every field", META, 0, 0,
           REF_DIR "ref_meta.gff", REF_DIR "ref_meta.proteins" },
-        { "API training = ref_train.bin, genes = ref_single.*", SINGLE, 1,
-          REF_DIR "ref_single.gff", REF_DIR "ref_single.proteins" },
-        { "training twice: the same", SINGLE, 2, REF_DIR "ref_single.gff",
+        { "API training = ref_train.bin, genes = ref_single.*; reloaded",
+          SINGLE, 1, 1, REF_DIR "ref_single.gff", REF_DIR "ref_single.proteins" },
+        { "training twice: the same", SINGLE, 2, 0, REF_DIR "ref_single.gff",
           REF_DIR "ref_single.proteins" },
-        { "other model loaded, then training: the same", OTHER_MODEL, 1,
+        { "other model loaded, then training: the same", OTHER_MODEL, 1, 0,
           REF_DIR "ref_single.gff", REF_DIR "ref_single.proteins" },
-        { "single mode from ref_train.bin = ref_trained.gff", REF_MODEL, 0,
+        { "single mode from ref_train.bin = ref_trained.gff", REF_MODEL, 0, 0,
           REF_DIR "ref_trained.gff", REF_DIR "ref_single.proteins" },
     };
     char name[128];
@@ -1360,7 +1526,7 @@ static void test_golden(void) {
     for (i = 0; i < sizeof(t) / sizeof(t[0]); i++) {
         snprintf(name, sizeof(name), "golden: %s", t[i].name);
         TEST_START(name);
-        golden(t[i].src, t[i].trainings, t[i].ref, t[i].faa);
+        golden(t[i].src, t[i].trainings, t[i].reload, t[i].ref, t[i].faa);
     }
 }
 
@@ -1762,6 +1928,8 @@ int main(void) {
     printf("\nPhase 1.2: Config Struct\n");
     test_config_init_defaults();
     test_config_struct_size_at_offset_zero();
+    test_abi_layout();
+    test_config_init_abi();
 
     printf("\nPhase 1.3: Context Lifecycle\n");
     test_create_destroy();
@@ -1792,6 +1960,7 @@ int main(void) {
     printf("\nPhase 3.1: Training Serialization\n");
     test_training_load_roundtrip();
     test_training_load_invalid();
+    test_training_info();
     test_export_needs_model();
 
     printf("\nPhase 3.2: Training Pipeline\n");

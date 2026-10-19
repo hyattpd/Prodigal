@@ -1,5 +1,20 @@
 VERSION 2.6.5 (unreleased)
 
+* Library: ABI checks. PRODIGAL_ABI_VERSION / prodigal_abi_version() (1)
+is bumped on any change to a public struct, a function signature or a
+public constant. prodigal_config_init is now a macro over the new
+prodigal_config_init_v(config, abi_version, struct_size), which refuses a
+caller built for another ABI version or config size and then writes
+nothing (it used to write the library's sizeof into the caller's struct,
+so struct_size could never catch a mismatch); bindings in other languages
+call prodigal_config_init_v with their own values. prodigal_abi_layout()
+lists the offset and size of every field of every public struct, so
+bindings can check their mirrors field by field (struct_size misses
+reordering, and any addition that fits in padding).
+* Library: new prodigal_training_info reads a model's settings (translation
+table, SD usage, GC, start weight) from a blob without loading it, and
+accepts exactly the blobs prodigal_load_training accepts, with the same
+reasons for the others. docs/internals.md describes the model file.
 * Library: proteins. With the new config field want_proteins (default 0),
 prodigal_find_genes also returns each gene's protein: the CLI's -a record
 without its line breaks. The SOA holds them Arrow-style, n_genes + 1
@@ -10,7 +25,7 @@ prodigal_config_t, prodigal_genes_soa_t and prodigal_gene_t gain these
 fields, so consumers must be rebuilt. prodigal_create rejects an old
 config's struct_size on 64-bit targets only: where pointers are 4 bytes
 (wasm32, 32-bit ARM, Win32) the new field fills padding and the size
-doesn't change.
+doesn't change; prodigal_config_init (above) now catches it everywhere.
 * Library: new prodigal_config_validate says why a config is rejected.
 * Library: prodigal_create also rejects a start weight that is not finite
 and > 0, and a free_fn without an alloc_fn.

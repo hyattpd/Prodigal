@@ -123,9 +123,40 @@ sets `tinf->gc` to the training sequence's GC (`ctx->gc`);
 `ctx->gc` with `read_seq_training`; the API computes it in
 `prodigal_set_training_sequences` and `prodigal_set_sequence`. Until
 training succeeds `ctx->trained` is 0, so a failed training leaves no model.
-The model (`struct _training`, 558,392 bytes) is pointer-free, so `-t` /
-`prodigal_export_training` simply `fwrite`/`memcpy` it. The binary layout
-depends on the architecture's padding.
+## The model file (`-t`, `prodigal_export_training`)
+
+The model is `struct _training` (`training.h`), written as it lies in
+memory: the CLI's `-t` `fwrite`s it (`write_training_file`) and
+`prodigal_export_training` copies it. There is no header or version. Its
+layout follows from the C types: 4-byte `int`, 8-byte doubles aligned to 8
+bytes (so 4 bytes of padding follow each `int`), in the machine's byte
+order. Every platform CI builds (x86-64 and ARM64 Linux, ARM64 macOS,
+x86-64 Windows, wasm32) lays it out the same way, little-endian, and loads
+`ref_train.bin`; a big-endian machine, or one that aligns doubles to 4
+bytes in structs (32-bit x86 Linux), would not.
+
+| Offset | Bytes | Field |
+|---:|---:|---|
+| 0 | 8 | `gc` (double) |
+| 8 | 4 | `trans_table` (int), then 4 bytes of padding |
+| 16 | 8 | `st_wt` |
+| 24 | 24 | `bias[3]` |
+| 48 | 24 | `type_wt[3]` |
+| 72 | 4 | `uses_sd` (int), then 4 bytes of padding |
+| 80 | 224 | `rbs_wt[28]` |
+| 304 | 1,024 | `ups_comp[32][4]` |
+| 1,328 | 524,288 | `mot_wt[4][4][4096]` |
+| 525,616 | 8 | `no_mot` |
+| 525,624 | 32,768 | `gene_dc[4096]` |
+| | 558,392 | total |
+
+Nothing reads the padding: loading ignores it, and an export copies
+whatever the model's bytes are (training starts by clearing the struct,
+`reset_model`, and `ref_train.bin`'s padding is zero). `prodigal_load_training` and
+`prodigal_training_info` (which reads `trans_table`, `gc`, `st_wt` and
+`uses_sd` without loading) accept a blob of exactly this size whose four
+settings are in range; the other doubles are not checked (they can be NaN:
+`upstream-behavior.md`, quirk 11).
 
 ## Gene finding
 

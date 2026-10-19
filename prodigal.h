@@ -98,8 +98,9 @@
  *
  * GPL-boundary integration
  * ------------------------
- *   - prodigal_config_t uses struct_size as its first field for ABI
- *     versioning.  The Rust adapter checks this at test time.
+ *   - prodigal_config_init_v() refuses a caller with another ABI version
+ *     or config size, and prodigal_abi_layout() lets bindings check every
+ *     struct's field offsets in their tests.
  *   - Build with -DPRODIGAL_NO_MAIN to exclude the CLI entry point when
  *     compiling as a static library for embedding.
  *   - The Makefile produces libprodigal.a (static) and libprodigal.so
@@ -243,7 +244,8 @@ typedef struct prodigal_ctx prodigal_ctx_t;
  * struct after create() have no effect.
  *
  * New fields are always appended at the end.  Never reorder or remove fields.
- * ABI versioning is via struct_size (must be the first field).
+ * The ABI is checked by prodigal_config_init(), and by prodigal_create() for
+ * struct_size (the first field); see also prodigal_abi_layout().
  */
 typedef struct {
     /** Must be first field.  Set by prodigal_config_init().  Used for ABI
@@ -447,6 +449,40 @@ typedef struct {
 } prodigal_stats_t;
 
 /*******************************************************************************
+    Model settings
+*******************************************************************************/
+
+/** A model's settings, as prodigal_training_info() reads them from a blob.
+ *  Pointer-free, safe to memcpy. */
+typedef struct {
+    int32_t translation_table;  /**< NCBI translation table */
+    int32_t uses_sd;            /**< 1 if the model scores Shine-Dalgarno motifs, else 0 */
+    double  gc_content;         /**< The model's GC fraction [0, 1]: the training sequence's, unless prodigal_set_gc changed it */
+    double  start_weight;       /**< Start score weight (> 0) */
+} prodigal_training_info_t;
+
+/*******************************************************************************
+    ABI checks
+*******************************************************************************/
+
+/** This header's ABI version.  Bumped whenever a public struct's layout, a
+ *  function's signature or a public constant's value changes.
+ *  prodigal_config_init() checks it; bindings with their own mirrors (such
+ *  as GPL-boundary's Rust #[repr(C)] structs) pass theirs to
+ *  prodigal_config_init_v() or compare it with prodigal_abi_version(). */
+#define PRODIGAL_ABI_VERSION 1
+
+/** One row of prodigal_abi_layout(): a public struct, or one of its fields.
+ *  This struct is in the table too, but a binding must mirror it to read
+ *  the table, so its layout changes only with PRODIGAL_ABI_VERSION. */
+typedef struct {
+    const char *type;    /**< Struct name, e.g. "prodigal_config_t"; NULL ends the table */
+    const char *field;   /**< Field name, or NULL for the struct's own row */
+    size_t      offset;  /**< offsetof the field (0 for the struct's row) */
+    size_t      size;    /**< sizeof the field, or of the struct */
+} prodigal_abi_field_t;
+
+/*******************************************************************************
     API Functions
 *******************************************************************************/
 
@@ -457,9 +493,22 @@ typedef struct {
  * zero/NULL.  A config initialized this way is ready for prodigal_create()
  * without further modification (defaults to single-genome mode, table 11).
  *
- * @param config  Pointer to config struct to initialize.  Must not be NULL.
+ * C callers use the macro prodigal_config_init(config), which passes this
+ * header's PRODIGAL_ABI_VERSION and sizeof(*config).  A library with
+ * another ABI then refuses and writes nothing, so the check can't be
+ * forgotten.  Bindings in other languages pass the ABI version they were
+ * written for and their struct's size.
+ *
+ * @param config       Config to initialize.
+ * @param abi_version  The caller's PRODIGAL_ABI_VERSION.
+ * @param struct_size  The caller's sizeof(prodigal_config_t).
+ * @return PRODIGAL_OK, or PRODIGAL_ERR_INVALID_CONFIG (config unchanged)
+ *         for a NULL config, another ABI version or another size.
  */
-PRODIGAL_API void prodigal_config_init(prodigal_config_t *config);
+PRODIGAL_API int prodigal_config_init_v(prodigal_config_t *config,
+                                        int abi_version, size_t struct_size);
+#define prodigal_config_init(config) \
+    prodigal_config_init_v((config), PRODIGAL_ABI_VERSION, sizeof(*(config)))
 
 /**
  * Create a new Prodigal context.
@@ -601,9 +650,13 @@ PRODIGAL_API int prodigal_train(prodigal_ctx_t *ctx);
 /**
  * Load a pre-trained model from a binary blob.
  *
- * The blob must be exactly sizeof(struct _training) bytes, as produced by
- * prodigal_export_training() or the CLI's -t flag.  Binary format is
- * architecture-specific (not portable across endianness or struct padding).
+ * The blob is a model as produced by prodigal_export_training() or the
+ * CLI's -t flag: Prodigal's model struct as it lies in memory, 558,392
+ * bytes where doubles are 8-byte aligned, in the machine's byte order
+ * (docs/internals.md, "The model file").  So a blob moves between x86-64,
+ * ARM64 and wasm32 builds, all little-endian, but not to a big-endian
+ * machine or to 32-bit x86 Linux, which aligns doubles to 4 bytes.  It
+ * need not be aligned.
  * Rejected, leaving the context unchanged: a wrong size, an invalid
  * translation table, a GC outside [0, 1], a start weight that is not
  * finite and > 0, and an SD flag other than 0 or 1.  Other values are not
@@ -633,6 +686,27 @@ PRODIGAL_API int prodigal_load_training(prodigal_ctx_t *ctx,
  */
 PRODIGAL_API int prodigal_export_training(const prodigal_ctx_t *ctx,
                                           void **data_out, size_t *len_out);
+
+/**
+ * Read a model's settings from a blob without loading it.
+ *
+ * Accepts exactly the blobs prodigal_load_training() accepts (the blob of
+ * prodigal_export_training() or a CLI -t file; it need not be aligned) and
+ * gives the same reasons for the others, so it also checks a model file
+ * before any context exists.
+ *
+ * @param data     The blob.
+ * @param len      Its size in bytes.
+ * @param info     Receives the settings; unchanged when the blob is rejected.
+ * @param msg      Receives the reason, or "" if the blob is accepted; may be
+ *                 NULL.  Truncated to msg_len bytes, NUL included.
+ * @param msg_len  Size of msg in bytes.
+ * @return PRODIGAL_OK, or PRODIGAL_ERR_INVALID_INPUT for a NULL argument or
+ *         a blob prodigal_load_training() rejects.
+ */
+PRODIGAL_API int prodigal_training_info(const void *data, size_t len,
+                                        prodigal_training_info_t *info,
+                                        char *msg, size_t msg_len);
 
 /** @name Training parameter setters
  *  Fine-grained control over individual training parameters.  These modify
@@ -745,6 +819,26 @@ PRODIGAL_API const char *prodigal_strerror(int error_code);
  * @return Error message string (never NULL).
  */
 PRODIGAL_API const char *prodigal_last_error(const prodigal_ctx_t *ctx);
+
+/**
+ * The library's ABI version: PRODIGAL_ABI_VERSION of the header it was
+ * built with.
+ */
+PRODIGAL_API int prodigal_abi_version(void);
+
+/**
+ * The layout of every public struct as the library was compiled: for each
+ * struct its own row (field NULL), then a row per field in declaration
+ * order, and a final row whose type is NULL.  A binding that mirrors the
+ * structs can compare every row with its own layout (in Rust: offset_of!
+ * and size_of), which catches reordered fields as well as added or removed
+ * ones, and fields struct_size can't see: those an addition puts in
+ * padding.  The table is static and constant.
+ *
+ * @param n  Receives the number of rows before the final one; may be NULL.
+ * @return The table.
+ */
+PRODIGAL_API const prodigal_abi_field_t *prodigal_abi_layout(size_t *n);
 
 /**
  * Get the library version string at runtime.

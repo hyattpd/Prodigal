@@ -114,7 +114,8 @@ mode with `ref_meta.gff` and `.proteins`; training through the API with
 `ref_train.bin` byte for byte and its predictions with `ref_single.gff`
 and `.proteins`, also when the context was trained before or had another
 model loaded; prediction from `ref_train.bin` with `ref_trained.gff` (equal
-to `ref_single.gff`) and `ref_single.proteins`. Two more tests
+to `ref_single.gff`) and `ref_single.proteins`, and so must a model trained
+through the API, exported and loaded into a fresh context. Two more tests
 check that a contig's output doesn't depend on what the context did before
 (a second pass, each record on a fresh context, and `prodigal_find_genes`
 twice per sequence). Anthus contigs carry about one gene each, so the meta
@@ -127,6 +128,12 @@ also checks each protein's layout (`api_proteins_ok` in `tests/api_gff.h`:
 offsets from 0, a letter per codon, `M` and `*`). Phase 17 checks the
 letters of genes made by hand (no `M` at an Edge start, `X`, the table) and
 that there are no proteins without `want_proteins`.
+
+**ABI.** A struct field missing from the ABI table is a compile error
+(`abi_complete_*` in `prodigal_api.c`). `test_abi_layout` checks the field
+order, that the table has every struct typedef in `prodigal.h`, and that
+the table's names hash to the value pinned for `PRODIGAL_ABI_VERSION`, so
+changing them without a new version fails.
 
 On ARM64 macOS, whose training writes different bytes, the training tests
 compare only the model fields training copies or counts (`gc`,

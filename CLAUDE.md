@@ -131,8 +131,16 @@ make distclean          # removes objects, binaries and libs
   - Any change to a public struct (`prodigal_config_t`,
     `prodigal_genes_soa_t`, `prodigal_stats_t`, …) must be mirrored in
     GPL-boundary's `#[repr(C)]` bindings in the same rollout.
-  - GPL-boundary only size-checks the config struct, so field order needs a
-    manual review.
+  - Such a change, a changed function signature or a changed public
+    constant bumps `PRODIGAL_ABI_VERSION` (`prodigal.h`); then pin the new
+    names hash in `test_abi_layout` (its failure prints it). A new field
+    goes in its struct's list in `prodigal_api.c` (`CONFIG_FIELDS` and the
+    like), in order: the build fails when a list misses a field, and
+    `test_abi_layout` when the order is wrong or a struct typedef is
+    missing.
+  - GPL-boundary only size-checks the config struct today (its layout check
+    against `prodigal_abi_layout()` is planned), so field order still needs
+    a manual review there.
 - **Adding a `.c` file** means updating, together:
   - `CORE_SOURCES` in the `Makefile`;
   - the `CORE=` lists in `ci.yml` (WASM job);

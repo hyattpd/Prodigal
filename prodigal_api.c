@@ -58,11 +58,17 @@ const char *prodigal_last_error(const prodigal_ctx_t *ctx) {
     Config initialization
 *******************************************************************************/
 
-void prodigal_config_init(prodigal_config_t *config) {
+int prodigal_config_init_v(prodigal_config_t *config, int abi_version,
+                           size_t struct_size) {
+    /* Nothing is written for a caller with another ABI */
+    if (config == NULL || abi_version != PRODIGAL_ABI_VERSION ||
+        struct_size != sizeof(prodigal_config_t))
+        return PRODIGAL_ERR_INVALID_CONFIG;
     memset(config, 0, sizeof(*config));
     config->struct_size = sizeof(prodigal_config_t);
     config->trans_table = 11;
     config->start_weight = 4.35;
+    return PRODIGAL_OK;
 }
 
 /*******************************************************************************
@@ -495,47 +501,66 @@ int prodigal_train(prodigal_ctx_t *ctx) {
     return pdg_train(ctx, log_training);
 }
 
-int prodigal_load_training(prodigal_ctx_t *ctx, const void *data, size_t len) {
-    int table, uses_sd;
-    double gc, st_wt;
-    if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
-    if (data == NULL || len != sizeof(struct _training)) {
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "Invalid training data (expected %zu bytes, got %zu)",
-                      sizeof(struct _training), len);
-        return PRODIGAL_ERR_INVALID_INPUT;
-    }
-
-    /* Check before copying, so a rejected blob changes nothing (the blob
-       need not be aligned). Only the fields training sets from the config
-       and counts: other doubles can be NaN (upstream-behavior.md, quirk
-       11). */
+/* Also prodigal_load_training's check. Only the fields training sets from
+   the config and counts are checked: other doubles can be NaN
+   (upstream-behavior.md, quirk 11). */
+int prodigal_training_info(const void *data, size_t len,
+                           prodigal_training_info_t *info, char *msg,
+                           size_t msg_len) {
+    char buf[128] = "";
+    int table = 0, uses_sd = 0;
+    double gc = 0.0, st_wt = 0.0;
+    if (info == NULL) {
+        snprintf(buf, sizeof(buf), "info is NULL");
+    } else if (data == NULL) {
+        snprintf(buf, sizeof(buf), "Training data is NULL");
+    } else if (len != sizeof(struct _training)) {
+        snprintf(buf, sizeof(buf), "Invalid training data (expected %zu bytes, "
+                 "got %zu)", sizeof(struct _training), len);
+    } else {
 #define FIELD(f, v) memcpy(&(v), (const char *)data + \
                            offsetof(struct _training, f), sizeof(v))
-    FIELD(trans_table, table);
-    FIELD(gc, gc);
-    FIELD(st_wt, st_wt);
-    FIELD(uses_sd, uses_sd);
+        FIELD(trans_table, table);
+        FIELD(gc, gc);
+        FIELD(st_wt, st_wt);
+        FIELD(uses_sd, uses_sd);
 #undef FIELD
-    if (!is_valid_trans_table(table))
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "Training data has invalid translation table %d", table);
-    else if (!is_valid_gc(gc))
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "Training data has GC %g, outside [0, 1]", gc);
-    else if (!is_valid_start_weight(st_wt))
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "Training data has start weight %g, not finite and > 0",
-                      st_wt);
-    else if (uses_sd != 0 && uses_sd != 1)
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "Training data has SD flag %d, not 0 or 1", uses_sd);
-    else {
-        memcpy(&ctx->tinf, data, sizeof(struct _training));
-        ctx->trained = 1;
-        return PRODIGAL_OK;
+        if (!is_valid_trans_table(table))
+            snprintf(buf, sizeof(buf), "Training data has invalid translation "
+                     "table %d", table);
+        else if (!is_valid_gc(gc))
+            snprintf(buf, sizeof(buf), "Training data has GC %g, outside [0, 1]",
+                     gc);
+        else if (!is_valid_start_weight(st_wt))
+            snprintf(buf, sizeof(buf), "Training data has start weight %g, not "
+                     "finite and > 0", st_wt);
+        else if (uses_sd != 0 && uses_sd != 1)
+            snprintf(buf, sizeof(buf), "Training data has SD flag %d, not 0 or 1",
+                     uses_sd);
     }
-    return PRODIGAL_ERR_INVALID_INPUT;
+    if (msg != NULL && msg_len > 0) snprintf(msg, msg_len, "%s", buf);
+    if (buf[0] != '\0') return PRODIGAL_ERR_INVALID_INPUT;
+    info->translation_table = table;
+    info->uses_sd = uses_sd;
+    info->gc_content = gc;
+    info->start_weight = st_wt;
+    return PRODIGAL_OK;
+}
+
+int prodigal_load_training(prodigal_ctx_t *ctx, const void *data, size_t len) {
+    prodigal_training_info_t info;
+    char why[128];
+    int rc;
+    if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
+    /* Checked before copying, so a rejected blob changes nothing */
+    rc = prodigal_training_info(data, len, &info, why, sizeof(why));
+    if (rc != PRODIGAL_OK) {
+        PDG_SET_ERROR(ctx, rc, "%s", why);
+        return rc;
+    }
+    memcpy(&ctx->tinf, data, sizeof(struct _training));
+    ctx->trained = 1;
+    return PRODIGAL_OK;
 }
 
 int prodigal_export_training(const prodigal_ctx_t *ctx, void **data_out,
@@ -998,6 +1023,84 @@ int prodigal_find_genes_aos(prodigal_ctx_t *ctx, prodigal_genes_t **genes_out,
     prodigal_genes_free(soa);
     *genes_out = aos;
     return PRODIGAL_OK;
+}
+
+/*******************************************************************************
+    ABI checks
+*******************************************************************************/
+
+int prodigal_abi_version(void) { return PRODIGAL_ABI_VERSION; }
+
+/* The fields of each public struct, in declaration order: F(T, field) for
+   a scalar or pointer, A(T, field) for an array. abi_layout is made from
+   these lists, and so is a positional initializer of each struct
+   (abi_complete_*), which gcc and clang reject when a list misses a field
+   (-Wmissing-field-initializers, an error there); test_abi_layout checks
+   the order and that every public struct is here. */
+#define CONFIG_FIELDS(F, A, T) F(T, struct_size) F(T, trans_table) \
+    F(T, closed_ends) F(T, mask_regions) F(T, force_nonsd) F(T, meta_mode) \
+    F(T, start_weight) F(T, alloc_fn) F(T, free_fn) \
+    F(T, allocator_user_data) F(T, log_callback) F(T, log_user_data) \
+    F(T, progress_callback) F(T, progress_user_data) F(T, want_proteins)
+#define SEQ_INFO_FIELDS(F, A, T) F(T, length) F(T, gc_content)
+#define SOA_FIELDS(F, A, T) F(T, n_genes) F(T, begin) F(T, end) \
+    F(T, strand) F(T, partial_left) F(T, partial_right) F(T, start_type) \
+    F(T, cscore) F(T, sscore) F(T, rscore) F(T, uscore) F(T, tscore) \
+    F(T, confidence) F(T, gc_cont) F(T, rbs_motif) F(T, rbs_spacer) \
+    F(T, protein_offsets) F(T, protein_data) F(T, _base)
+#define GENE_FIELDS(F, A, T) F(T, begin) F(T, end) F(T, strand) \
+    F(T, partial_left) F(T, partial_right) F(T, start_type) F(T, cscore) \
+    F(T, sscore) F(T, rscore) F(T, uscore) F(T, tscore) F(T, confidence) \
+    F(T, gc_cont) F(T, rbs_motif) F(T, rbs_spacer) F(T, protein)
+#define GENES_FIELDS(F, A, T) F(T, n_genes) F(T, genes) F(T, _base)
+#define STATS_FIELDS(F, A, T) F(T, n_genes) F(T, n_nodes) F(T, gc_content) \
+    F(T, translation_table) F(T, uses_sd) F(T, best_meta_bin) \
+    A(T, best_meta_desc)
+#define TRAINING_INFO_FIELDS(F, A, T) F(T, translation_table) \
+    F(T, uses_sd) F(T, gc_content) F(T, start_weight)
+#define ABI_FIELD_FIELDS(F, A, T) F(T, type) F(T, field) F(T, offset) \
+    F(T, size)
+#define PDG_ABI_STRUCTS(S) \
+    S(prodigal_config_t, CONFIG_FIELDS) \
+    S(prodigal_seq_info_t, SEQ_INFO_FIELDS) \
+    S(prodigal_genes_soa_t, SOA_FIELDS) \
+    S(prodigal_gene_t, GENE_FIELDS) \
+    S(prodigal_genes_t, GENES_FIELDS) \
+    S(prodigal_stats_t, STATS_FIELDS) \
+    S(prodigal_training_info_t, TRAINING_INFO_FIELDS) \
+    S(prodigal_abi_field_t, ABI_FIELD_FIELDS)
+
+#define ROW(T, f) { #T, #f, offsetof(T, f), sizeof(((T *)0)->f) },
+#define STRUCT_ROWS(T, FIELDS) { #T, NULL, 0, sizeof(T) }, FIELDS(ROW, ROW, T)
+static const prodigal_abi_field_t abi_layout[] = {
+    PDG_ABI_STRUCTS(STRUCT_ROWS)
+    { NULL, NULL, 0, 0 }
+};
+#undef STRUCT_ROWS
+#undef ROW
+
+/* Each struct initialized from its list, in a type that is never used:
+   the declarations only have to compile. (Like every universal zero
+   initializer, a list of one field would not be checked; none has one.) */
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic error "-Wmissing-field-initializers"
+#endif
+#define ZERO(T, f) 0,
+#define ZERO_ARRAY(T, f) {0},
+#define COMPLETE(T, FIELDS) \
+    typedef char abi_complete_##T[sizeof((T){ FIELDS(ZERO, ZERO_ARRAY, T) })];
+PDG_ABI_STRUCTS(COMPLETE)
+#undef COMPLETE
+#undef ZERO_ARRAY
+#undef ZERO
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
+const prodigal_abi_field_t *prodigal_abi_layout(size_t *n) {
+    if (n != NULL) *n = sizeof(abi_layout) / sizeof(abi_layout[0]) - 1;
+    return abi_layout;
 }
 
 /*******************************************************************************
