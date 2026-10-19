@@ -18,6 +18,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
 
+#include <errno.h>
+#include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include "prodigal_internal.h"
@@ -45,8 +47,11 @@ int main(int argc, char *argv[]) {
   int rv, ng, i, do_training, output;
   int user_tt, num_seq, quiet;
   int piped, fnum;
-  char *desc;
+  char *desc, *end, msg[MAX_LINE];
+  const char *why;
+  long tt;
   struct _training *tinf;
+  prodigal_training_info_t tinfo;
   pdg_meta_result_t meta;
   char *train_file, *start_file, *trans_file, *nuc_file;
   char *input_file, *output_file, input_copy[MAX_LINE];
@@ -80,13 +85,14 @@ int main(int argc, char *argv[]) {
   for(i = 1; i < argc; i++) {
     if(i == argc-1 && (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "-T") == 0
        || strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "-A") == 0 ||
-       strcmp(argv[i], "-g") == 0 || strcmp(argv[i], "-g") == 0 ||
+       strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "-D") == 0 ||
+       strcmp(argv[i], "-g") == 0 || strcmp(argv[i], "-G") == 0 ||
        strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "-F") == 0 ||
        strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "-S") == 0 ||
        strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "-I") == 0 ||
        strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "-O") == 0 ||
        strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "-P") == 0))
-      usage("-a/-f/-g/-i/-o/-p/-s options require parameters.");
+      usage("-a/-d/-f/-g/-i/-o/-p/-s/-t options require parameters.");
     else if(strcmp(argv[i], "-c") == 0 || strcmp(argv[i], "-C") == 0)
       config.closed_ends = 1;
     else if(strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "-Q") == 0)
@@ -122,11 +128,21 @@ int main(int argc, char *argv[]) {
       i++;
     }
     else if(strcmp(argv[i], "-g") == 0 || strcmp(argv[i], "-G") == 0) {
-      config.trans_table = atoi(argv[i+1]);
-      if(config.trans_table < 1 || config.trans_table > 25 ||
-         config.trans_table == 7 || config.trans_table == 8 ||
-         (config.trans_table >= 17 && config.trans_table <= 20))
-        usage("Invalid translation table specified.");
+      errno = 0;
+      tt = strtol(argv[i+1], &end, 10);
+      if(end == argv[i+1] || *end != '\0' || errno != 0 || tt < INT_MIN ||
+         tt > INT_MAX) {
+        snprintf(msg, sizeof(msg), "Translation table '%s' is not a number.",
+                 argv[i+1]);
+        usage(msg);
+      }
+      config.trans_table = (int)tt;
+      why = pdg_trans_table_unsupported(config.trans_table);
+      if(why != NULL) {
+        snprintf(msg, sizeof(msg), "Translation table %d"
+                 PDG_TABLE_UNSUPPORTED ".", config.trans_table, why);
+        usage(msg);
+      }
       user_tt = config.trans_table;
       i++;
     }
@@ -195,6 +211,12 @@ int main(int argc, char *argv[]) {
       }
       if(rv == -1) {
         fprintf(stderr, "\n\nError: training file did not read correctly!\n");
+        exit(4);
+      }
+      /* Refuse any model prodigal_load_training would */
+      if(prodigal_training_info(&ctx->tinf, sizeof(ctx->tinf), &tinfo, msg,
+                                sizeof(msg)) != PRODIGAL_OK) {
+        fprintf(stderr, "\n\nError: %s.\n", msg);
         exit(4);
       }
       ctx->trained = 1;
@@ -465,6 +487,7 @@ void usage(char *msg) {
 }
 
 void help(void) {
+  int t;
   fprintf(stderr, "\nUsage:  prodigal [-a trans_file] [-c] [-d nuc_file]");
   fprintf(stderr, " [-f output_type]\n");
   fprintf(stderr, "                 [-g tr_table] [-h] [-i input_file] [-m]");
@@ -480,7 +503,11 @@ void help(void) {
   fprintf(stderr, "         -f:  Select output format (gbk, gff, or sco).  ");
   fprintf(stderr, "Default is gbk.\n");
   fprintf(stderr, "         -g:  Specify a translation table to use (default");
-  fprintf(stderr, " 11).\n");
+  fprintf(stderr, " 11).\n              Supported:");
+  for(t = 1; t < 100; t++)    /* well past NCBI's last, 33 */
+    if(pdg_trans_table_unsupported(t) == NULL) fprintf(stderr, " %d", t);
+  fprintf(stderr, "\n              (the-miint/Prodigal");
+  fprintf(stderr, " docs/genetic-codes.md).\n");
   fprintf(stderr, "         -h:  Print help menu and exit.\n");
   fprintf(stderr, "         -i:  Specify FASTA/Genbank input file (default ");
   fprintf(stderr, "reads from stdin).\n");

@@ -94,9 +94,9 @@ static inline const char *api_protein(const prodigal_genes_soa_t *g, int32_t i,
 }
 
 /* 1 if g's proteins are well formed: aligned offsets from 0, a letter per
-   codon, M at a start codon (start type not Edge), and * only at a stop
-   codon, none when the gene runs off the edge at its stop end (where a
-   table-22 TNA stop gives X: docs/upstream-behavior.md, quirk 13).
+   codon, M at a start codon (start type not Edge), and * at the stop codon
+   (which never holds an ambiguous base: docs/genetic-codes.md, rule 7) and
+   nowhere else, none when the gene runs off the edge at its stop end.
    Otherwise 0, with what is wrong in why. */
 static inline int api_proteins_ok(const prodigal_genes_soa_t *g, char *why,
                                   size_t n) {
@@ -118,7 +118,7 @@ static inline int api_proteins_ok(const prodigal_genes_soa_t *g, char *why,
         for (k = 0; k < len; k++) {
             int stop = k == len - 1 && !stop_partial;
             if (p[k] == '\0' || strchr("ACDEFGHIKLMNPQRSTVWXY*", p[k]) == NULL ||
-                (stop ? p[k] != '*' && p[k] != 'X' : p[k] == '*') ||
+                (stop ? p[k] != '*' : p[k] == '*') ||
                 (k == 0 && g->start_type[i] != 3 && p[k] != 'M')) {
                 snprintf(why, n, "gene %d: letter %d of %d is '%c'", i + 1, k + 1,
                          len, p[k] ? p[k] : '0');

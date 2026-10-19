@@ -24,8 +24,10 @@ algorithm and keeps the upstream CLI (`main.c`) working.
 
 1. **CLI ≡ upstream.** The CLI's output must be byte-identical to an upstream
    `c1e2d36` build for every output type (`-f gbk|gff|sco`, `-a`, `-d`, `-s`,
-   `-t`), apart from the version string. Verified 2026-10-16 on
-   `anthus_aco.fas` and E. coli K-12 MG1655, in both modes.
+   `-t`), apart from the version string and the deviations listed in
+   `docs/upstream-behavior.md` (among them the rejected tables, item 3).
+   Verified 2026-10-16 on `anthus_aco.fas` and E. coli K-12 MG1655, in
+   both modes.
 2. **API ≡ CLI.** For the same input and options, the library must produce:
    - the same genes, coordinates, strands, partial flags and start types;
    - the same RBS motif and spacer, and the same `gc_cont`;
@@ -34,7 +36,14 @@ algorithm and keeps the upstream CLI (`main.c`) working.
    - with `want_proteins`, the proteins of the CLI's `-a` file.
 
    This holds in both single-genome and metagenomic mode.
-3. **Behaviour changes are deliberate or absent.** Algorithmic output may
+3. **Genetic codes are NCBI's, or rejected.** A translation table is
+   accepted only if Prodigal uses it exactly as NCBI's `gc.prt` defines it
+   (the rules: `docs/genetic-codes.md`). Upstream's tables that fall short
+   are rejected, not fixed (decision of 2026-10-19). `test_api` checks
+   every table against `testdata/ncbi/gc.prt`. Never accept a table that
+   test does not pass, and change none of the code it checks without the
+   decision process in `docs/genetic-codes.md`.
+4. **Behaviour changes are deliberate or absent.** Algorithmic output may
    diverge from upstream only by explicit decision. Record each one in
    `docs/upstream-behavior.md` and `CHANGES`, and regenerate the ground truth
    when you make it. Upstream quirks that look like bugs are listed in that
@@ -94,14 +103,15 @@ make distclean          # removes objects, binaries and libs
 | `node.c/.h` | Start/stop node creation, coding/RBS/upstream scoring, start training, `intergenic_mod`, `-s` start file. |
 | `dprog.c/.h` | Dynamic programming over nodes and `eliminate_bad_genes`. |
 | `gene.c/.h` | `add_genes`, `tweak_final_starts`, `record_gene_data` (GFF attribute strings), CLI printers, `pdg_protein_letter` (translation, shared by `-a` and the library), `calculate_confidence`. |
-| `sequence.c/.h` | 2-bit base tests, codon tests, `rcom_seq`, `amino()` translation, the CLI's FASTA/GenBank/EMBL readers (which encode through `pdg_encode_*` in `prodigal_api.c`), SD motif scanners. |
+| `sequence.c/.h` | 2-bit base tests, codon tests, the supported translation tables (`pdg_trans_table_unsupported`), `rcom_seq`, `amino()` translation, the CLI's FASTA/GenBank/EMBL readers (which encode through `pdg_encode_*` in `prodigal_api.c`), SD motif scanners. |
 | `training.c/.h` | `struct _training`, training-file I/O, 50 hard-coded `initialize_metagenome_N` models (generated; never hand-edit). |
 | `metagenomic.c/.h` | `initialize_metagenomic_bins` and the bin descriptions. The header declares functions that don't exist (`score_edges` etc.). |
 | `bitmap.c/.h` | Bit get/set/clear/toggle (`test`, `set`, …; unprefixed global names). |
 | `fptr.h` | zlib or stdio file abstraction, CLI only. |
 | `test_api.c` | C test suite for the library (custom assert macros). |
 | `testdata/ground_truth/` | Reference outputs from an upstream build on `anthus_aco.fas`. |
-| `docs/` | Internal docs: `internals.md`, `testing.md`, `upstream-behavior.md`. |
+| `testdata/ncbi/` | NCBI's genetic code table `gc.prt` (4.6), verbatim: the oracle for translation tables. |
+| `docs/` | Internal docs: `internals.md`, `testing.md`, `upstream-behavior.md`, `genetic-codes.md`. |
 
 ## Conventions
 

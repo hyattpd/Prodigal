@@ -253,9 +253,13 @@ typedef struct {
      *  struct_size != sizeof(prodigal_config_t). */
     size_t struct_size;
 
-    /** NCBI translation table number.  Default: 11 (Standard Microbial).
-     *  Valid: 1-6, 9-16, 21-25.  Invalid values cause prodigal_create()
-     *  to return NULL. */
+    /** NCBI translation table (genetic code) number.  Default: 11
+     *  (Bacterial, Archaeal and Plant Plastid).  Supported: 4, 5, 9, 11,
+     *  13, 15, 21, 25, the NCBI codes Prodigal uses exactly as NCBI defines
+     *  them.  Upstream accepted more, some of which Prodigal gets wrong:
+     *  docs/genetic-codes.md.  An unsupported table makes prodigal_create()
+     *  return NULL, in either mode (metagenomic mode uses its bins' tables,
+     *  11 and 4); prodigal_config_validate() says why. */
     int    trans_table;
 
     /** Nonzero: closed ends -- do not allow genes to run off sequence edges.
@@ -384,9 +388,8 @@ typedef struct {
      *  start, with X for a codon holding an ambiguous base, M for the start
      *  codon (unless the gene runs off the edge there), * for the stop codon
      *  (none when the gene runs off the edge at its stop end), and between
-     *  them the amino acids of the model's translation table.  Upstream's
-     *  tables 10, 16 and 24 differ from NCBI's, and a table-22 stop holding
-     *  an ambiguous base reads X (docs/upstream-behavior.md, quirk 13). */
+     *  them the amino acids of the model's translation table, which are
+     *  NCBI's (docs/genetic-codes.md). */
     int32_t *protein_offsets;
     char    *protein_data;
 
@@ -529,13 +532,14 @@ PRODIGAL_API prodigal_ctx_t *prodigal_create(const prodigal_config_t *config);
  * Check a config the way prodigal_create() does, and say what is wrong.
  *
  * Rejected: NULL, a struct_size other than this library's
- * sizeof(prodigal_config_t), an invalid translation table, a start weight
+ * sizeof(prodigal_config_t), an unsupported translation table
+ * (docs/genetic-codes.md), a start weight
  * that is not finite and > 0, and free_fn without alloc_fn.
  *
  * @param config   Config to check.  May be NULL (rejected).
  * @param msg      Receives the reason, or "" if the config is valid; may be
  *                 NULL.  Truncated to msg_len bytes, NUL included.
- * @param msg_len  Size of msg in bytes.
+ * @param msg_len  Size of msg in bytes; messages fit in 256.
  * @return PRODIGAL_OK or PRODIGAL_ERR_INVALID_CONFIG.
  */
 PRODIGAL_API int prodigal_config_validate(const prodigal_config_t *config,
@@ -657,10 +661,11 @@ PRODIGAL_API int prodigal_train(prodigal_ctx_t *ctx);
  * ARM64 and wasm32 builds, all little-endian, but not to a big-endian
  * machine or to 32-bit x86 Linux, which aligns doubles to 4 bytes.  It
  * need not be aligned.
- * Rejected, leaving the context unchanged: a wrong size, an invalid
- * translation table, a GC outside [0, 1], a start weight that is not
- * finite and > 0, and an SD flag other than 0 or 1.  Other values are not
- * checked: they can be NaN (docs/upstream-behavior.md, quirk 11).
+ * Rejected, leaving the context unchanged: a wrong size, an unsupported
+ * translation table (docs/genetic-codes.md), a GC outside [0, 1], a start
+ * weight that is not finite and > 0, and an SD flag other than 0 or 1.
+ * Other values are not checked: they can be NaN
+ * (docs/upstream-behavior.md, quirk 11).
  *
  * @param ctx   Context.
  * @param data  Pointer to training data blob.
@@ -700,7 +705,7 @@ PRODIGAL_API int prodigal_export_training(const prodigal_ctx_t *ctx,
  * @param info     Receives the settings; unchanged when the blob is rejected.
  * @param msg      Receives the reason, or "" if the blob is accepted; may be
  *                 NULL.  Truncated to msg_len bytes, NUL included.
- * @param msg_len  Size of msg in bytes.
+ * @param msg_len  Size of msg in bytes; messages fit in 256.
  * @return PRODIGAL_OK, or PRODIGAL_ERR_INVALID_INPUT for a NULL argument or
  *         a blob prodigal_load_training() rejects.
  */
@@ -719,7 +724,9 @@ PRODIGAL_API int prodigal_training_info(const void *data, size_t len,
 
 /**
  * Set the NCBI translation table.
- * @param table  Valid: 1-6, 9-16, 21-25.
+ * @param table  Supported: those listed at prodigal_config_t.trans_table
+ *               (docs/genetic-codes.md); the error message says why another
+ *               is not.
  * @return PRODIGAL_OK or PRODIGAL_ERR_INVALID_INPUT.
  */
 PRODIGAL_API int prodigal_set_translation_table(prodigal_ctx_t *ctx, int table);

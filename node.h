@@ -101,6 +101,7 @@ void calc_amino_bg(struct _training *, unsigned char *, unsigned char *, int,
 
 void score_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
                  struct _training *, int, int);
+double pdg_no_stop(struct _training *);
 void raw_coding_score(unsigned char *, unsigned char *, int, struct _node *,
                       int, struct _training *);
 void calc_orf_gc(unsigned char *, unsigned char *, int, struct _node *, int, 

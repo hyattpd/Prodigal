@@ -32,13 +32,27 @@ Correctness is judged against **upstream Prodigal at `c1e2d36`** (upstream's
   diffing (`tests/lib.sh`). A script pointed at an upstream binary therefore
   fails instead of passing vacuously.
 
+- **NCBI's genetic code table**, `testdata/ncbi/gc.prt` (version 4.6,
+  verbatim; provenance in its `README.md`), for translation tables. Here
+  the oracle is NCBI, not upstream: a table is supported only if Prodigal
+  uses it as the file defines it, and upstream's tables that don't match
+  are rejected (`genetic-codes.md`).
+
 ## CLI regression (CLI ≡ upstream)
 
 Run `make regress` (`tests/cli_regress.sh`) after any change outside the API
 files; usage, checks and environment are in the script header. Each failed
 check leaves a `.diff` in `tests/out/regress`. Its last checks cover the
 CLI's deviations from upstream (`upstream-behavior.md`, "Fork deviations"):
-empty records (FASTA and EMBL) and a closed standard input. `make compare`
+empty records (FASTA and EMBL), a closed standard input, and the rejected
+translation tables. Each of these (`expect_exit`) checks an exit code and
+a message:
+- `-g` with a sample of rejected tables, also in meta mode: exit 15;
+- `-g` with a table that is not a number, and a final `-G` or `-d`: exit
+  15;
+- `-t` with a copy of `ref_train.bin` patched to table 24: exit 4.
+
+`make compare`
 runs `manymasks.fa` for the mask cap (its single mode cases call genes, the
 meta ones none); no corpus contig has 30,000 genes, so the library tests
 check the gene array's growth.
@@ -128,6 +142,27 @@ also checks each protein's layout (`api_proteins_ok` in `tests/api_gff.h`:
 offsets from 0, a letter per codon, `M` and `*`). Phase 17 checks the
 letters of genes made by hand (no `M` at an Edge start, `X`, the table) and
 that there are no proteins without `want_proteins`.
+
+**Genetic codes (phase 18).** `test_genetic_codes_ncbi` parses
+`testdata/ncbi/gc.prt`, taking the codon order from its `Base1`-`Base3`
+rows. For each table number from -1 to 99, the library must support the
+table if and only if Prodigal's own code meets the rules of
+`genetic-codes.md`:
+- `is_stop`, `is_start` and `amino` on all 64 codons. Of the start codons,
+  only ATG, GTG and TTG count, the three Prodigal models.
+- `pdg_no_stop`, the ORF-length score's stop probability, at three GC
+  contents.
+- `is_stop` on the spacer that `prodigal_set_training_sequences` writes
+  between contigs, in every frame.
+- `is_stop` and `is_start` on the 61 codons that hold an N.
+
+A codon that is a stop or sense by context rules a table out. The outcome
+is pinned too, as lists of supported and rejected NCBI tables, and every
+metagenomic bin's table must be supported. `test_genetic_code_entry_points`
+checks that `config_validate`, `create`, `set_translation_table`,
+`training_info` and `load_training` reject the same tables with the same
+whole message, and change nothing when they do. `genetic-codes.md` has the
+rules and the tables.
 
 **ABI.** A struct field missing from the ABI table is a compile error
 (`abi_complete_*` in `prodigal_api.c`). `test_abi_layout` checks the field

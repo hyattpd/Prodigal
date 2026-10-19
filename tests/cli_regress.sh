@@ -47,6 +47,16 @@ run() {  # run the CLI; any non-zero exit is a failure
     echo "FAIL prodigal $*"; sed 's/^/     /' "$O/stderr"; fail=1
   fi
 }
+expect_exit() {  # expect_exit CODE PATTERN OPTIONS...: the CLI on $IN fails so
+  local code=$1 pattern=$2; shift 2
+  "$P" -i $IN -q -o /dev/null "$@" 2>"$O/stderr"
+  local rc=$?
+  if [ $rc = "$code" ] && grep -q "$pattern" "$O/stderr"; then
+    echo "OK   $* rejected"
+  else
+    echo "FAIL $* (exit $rc, want $code and \"$pattern\")"; sed 's/^/     /' "$O/stderr"; fail=1
+  fi
+}
 check() {  # check <output> <reference>
   if diff_norm "$G/$2" "$O/$1" "$O/$1.diff"; then
     echo "OK   $1"
@@ -126,6 +136,30 @@ if [ $rc = 5 ] && grep -q "can't open input file /dev/stdin" "$O/stderr"; then
   echo "OK   closed stdin"
 else
   echo "FAIL closed stdin (exit $rc)"; sed 's/^/     /' "$O/stderr"; fail=1
+fi
+
+# Translation tables Prodigal does not use as NCBI defines them are
+# rejected (docs/genetic-codes.md), with the reason; upstream used 1, 2, 3,
+# 6, 10, 12, 14, 16, 22, 23 and 24. Meta mode, which ignores -g, checks it
+# too.
+for t in 1 2 3 6 10 12 14 16 22 23 24 26 27 7; do
+  expect_exit 15 "^Translation table $t is not supported: " -g $t
+done
+expect_exit 15 "^Translation table 1 is not supported: " -p meta -g 1
+# A table that is not a number, and a missing parameter at the end
+# (upstream read argv[argc] after a final -G or -d)
+expect_exit 15 "^Translation table 'abc' is not a number" -g abc
+expect_exit 15 "^Translation table '11x' is not a number" -g 11x
+expect_exit 15 "options require parameters" -G
+expect_exit 15 "options require parameters" -d
+# So is a training file that uses one (upstream's -g 24 -t writes one). The
+# table is the int after the model's first double (struct _training).
+cp $G/ref_train.bin "$O/train24.bin"
+if [ "$(od -An -tu4 -j8 -N4 "$O/train24.bin" | tr -d ' ')" != 11 ]; then
+  echo "FAIL ref_train.bin: no table 11 at byte 8"; fail=1
+else
+  printf '\030\000\000\000' | dd of="$O/train24.bin" bs=1 seek=8 conv=notrunc 2>/dev/null
+  expect_exit 4 "translation table 24, which is not supported: " -t "$O/train24.bin"
 fi
 
 [ $fail = 0 ] && echo "all CLI regression checks passed"

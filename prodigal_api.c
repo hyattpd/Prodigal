@@ -18,13 +18,6 @@
     Validation helpers
 *******************************************************************************/
 
-static int is_valid_trans_table(int tt) {
-    if (tt < 1 || tt > 25) return 0;
-    if (tt == 7 || tt == 8) return 0;
-    if (tt >= 17 && tt <= 20) return 0;
-    return 1;
-}
-
 static int is_valid_start_weight(double w) { return w > 0.0 && isfinite(w); }
 static int is_valid_gc(double gc) { return gc >= 0.0 && gc <= 1.0; } /* not NaN */
 
@@ -93,16 +86,17 @@ static void reset_model(prodigal_ctx_t *ctx) {
 
 int prodigal_config_validate(const prodigal_config_t *config, char *msg,
                              size_t msg_len) {
-    char buf[128] = "";
+    char buf[256] = "";
+    const char *why = NULL;
     if (config == NULL)
         snprintf(buf, sizeof(buf), "config is NULL");
     else if (config->struct_size != sizeof(prodigal_config_t))
         snprintf(buf, sizeof(buf), "struct_size is %zu, this library's is %zu "
                  "(header and library differ)", config->struct_size,
                  sizeof(prodigal_config_t));
-    else if (!is_valid_trans_table(config->trans_table))
-        snprintf(buf, sizeof(buf), "invalid translation table %d",
-                 config->trans_table);
+    else if ((why = pdg_trans_table_unsupported(config->trans_table)) != NULL)
+        snprintf(buf, sizeof(buf), "translation table %d"
+                 PDG_TABLE_UNSUPPORTED, config->trans_table, why);
     else if (!is_valid_start_weight(config->start_weight))
         snprintf(buf, sizeof(buf), "start weight must be finite and > 0 "
                  "(got %g)", config->start_weight);
@@ -507,7 +501,8 @@ int prodigal_train(prodigal_ctx_t *ctx) {
 int prodigal_training_info(const void *data, size_t len,
                            prodigal_training_info_t *info, char *msg,
                            size_t msg_len) {
-    char buf[128] = "";
+    char buf[256] = "";
+    const char *why;
     int table = 0, uses_sd = 0;
     double gc = 0.0, st_wt = 0.0;
     if (info == NULL) {
@@ -525,9 +520,9 @@ int prodigal_training_info(const void *data, size_t len,
         FIELD(st_wt, st_wt);
         FIELD(uses_sd, uses_sd);
 #undef FIELD
-        if (!is_valid_trans_table(table))
-            snprintf(buf, sizeof(buf), "Training data has invalid translation "
-                     "table %d", table);
+        if ((why = pdg_trans_table_unsupported(table)) != NULL)
+            snprintf(buf, sizeof(buf), "Training data has translation table "
+                     "%d, which" PDG_TABLE_UNSUPPORTED, table, why);
         else if (!is_valid_gc(gc))
             snprintf(buf, sizeof(buf), "Training data has GC %g, outside [0, 1]",
                      gc);
@@ -549,7 +544,7 @@ int prodigal_training_info(const void *data, size_t len,
 
 int prodigal_load_training(prodigal_ctx_t *ctx, const void *data, size_t len) {
     prodigal_training_info_t info;
-    char why[128];
+    char why[256];
     int rc;
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
     /* Checked before copying, so a rejected blob changes nothing */
@@ -583,10 +578,11 @@ int prodigal_export_training(const prodigal_ctx_t *ctx, void **data_out,
 *******************************************************************************/
 
 int prodigal_set_translation_table(prodigal_ctx_t *ctx, int table) {
+    const char *why;
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
-    if (!is_valid_trans_table(table)) {
+    if ((why = pdg_trans_table_unsupported(table)) != NULL) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
-                      "Invalid translation table %d", table);
+                      "Translation table %d" PDG_TABLE_UNSUPPORTED, table, why);
         return PRODIGAL_ERR_INVALID_INPUT;
     }
     ctx->config.trans_table = ctx->tinf.trans_table = table;

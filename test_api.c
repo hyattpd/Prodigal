@@ -2,6 +2,7 @@
     PRODIGAL Library API Test Suite
 *******************************************************************************/
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -308,26 +309,6 @@ static void test_destroy_null(void) {
     TEST_PASS();
 }
 
-static void test_create_invalid_trans_table(void) {
-    TEST_START("create with invalid translation tables returns NULL");
-    int invalid[] = {0, 7, 8, 17, 18, 19, 20, 26, -1};
-    int n = sizeof(invalid) / sizeof(invalid[0]);
-    int i;
-
-    for (i = 0; i < n; i++) {
-        prodigal_config_t config;
-        prodigal_config_init(&config);
-        config.trans_table = invalid[i];
-        prodigal_ctx_t *ctx = prodigal_create(&config);
-        if (ctx != NULL) {
-            prodigal_destroy(ctx);
-            printf("[FAIL] trans_table %d should have been rejected\n", invalid[i]);
-            return;
-        }
-    }
-    TEST_PASS();
-}
-
 static void test_free_fn(void *ptr, void *user_data);
 
 static void test_config_validate(void) {
@@ -370,26 +351,6 @@ static void test_config_validate(void) {
     ASSERT_EQ_INT(prodigal_config_validate(&c, msg, sizeof(msg)),
                   PRODIGAL_ERR_INVALID_CONFIG);
     ASSERT_TRUE(strstr(msg, "free_fn without alloc_fn") != NULL);
-    TEST_PASS();
-}
-
-static void test_create_valid_trans_tables(void) {
-    TEST_START("create with all valid translation tables succeeds");
-    int valid[] = {1,2,3,4,5,6,9,10,11,12,13,14,15,16,21,22,23,24,25};
-    int n = sizeof(valid) / sizeof(valid[0]);
-    int i;
-
-    for (i = 0; i < n; i++) {
-        prodigal_config_t config;
-        prodigal_config_init(&config);
-        config.trans_table = valid[i];
-        prodigal_ctx_t *ctx = prodigal_create(&config);
-        if (ctx == NULL) {
-            printf("[FAIL] trans_table %d should have been accepted\n", valid[i]);
-            return;
-        }
-        prodigal_destroy(ctx);
-    }
     TEST_PASS();
 }
 
@@ -1847,15 +1808,23 @@ static void test_length_limits(void) {
     the letters mean on genes made by hand, and the default.
 *******************************************************************************/
 
+/* A model for the white-box tests of the table-dependent code, which reads
+   only its table and GC. */
+static struct _training *table_model(int table, double gc) {
+    static struct _training tinf;
+    tinf.trans_table = table;
+    tinf.gc = gc;
+    return &tinf;
+}
+
 /* The letters of a gene of seq (white-box: pdg_protein_letter on a gene
    made by hand) under translation table table. */
 static void letters_of(prodigal_ctx_t *ctx, const char *seq, int strand,
                        int start_type, int table, char *out) {
-    static struct _training tinf;   /* amino reads only the table */
+    struct _training *tinf = table_model(table, 0.5);
     struct _gene g;
     int k, n;
     memset(&g, 0, sizeof(g));
-    tinf.trans_table = table;
     prodigal_set_sequence(ctx, seq, (int32_t)strlen(seq), NULL);
     g.begin = 1;
     g.end = ctx->slen;
@@ -1864,7 +1833,7 @@ static void letters_of(prodigal_ctx_t *ctx, const char *seq, int strand,
     n = pdg_protein_length(&g);
     for (k = 0; k < n; k++)
         out[k] = pdg_protein_letter(&g, k, ctx->seq, ctx->rseq, ctx->useq,
-                                    ctx->slen, &tinf);
+                                    ctx->slen, tinf);
     out[n] = '\0';
 }
 
@@ -1917,6 +1886,348 @@ static void test_proteins_off(void) {
     TEST_PASS();
 }
 
+/*******************************************************************************
+    Phase 18: Genetic codes (docs/genetic-codes.md, "The rules")
+
+    A translation table is supported if and only if Prodigal uses it
+    exactly as NCBI defines it in testdata/ncbi/gc.prt: every codon's stop
+    and amino acid; of the codons Prodigal can start genes at (ATG, GTG and
+    TTG), exactly the table's starts; the stop probability of the
+    ORF-length score; a stop in every frame of the spacer between training
+    contigs; and no stop or start made by an ambiguous base.  A table in
+    which a codon is a stop or an amino acid depending on context can't be
+    supported.
+*******************************************************************************/
+
+#define GC_PRT "testdata/ncbi/gc.prt"
+#define GC_PRT_VERSION "4.6"    /* the version docs/genetic-codes.md cites */
+#define GC_MAX 64               /* tables the parser keeps */
+#define GC_PROBE_MAX 99         /* tables -1..GC_PROBE_MAX are checked */
+#define N_CODONS 61             /* codons with at least one N */
+
+/* The outcome, pinned.  Nothing checks the copies of these lists in
+   docs/genetic-codes.md, README.md, prodigal.h (supported only) and
+   CHANGES: update them with these. */
+static const int supported_tables[] = { 4, 5, 9, 11, 13, 15, 21, 25 };
+static const int rejected_ncbi_tables[] = {
+    1, 2, 3, 6, 10, 12, 14, 16, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33
+};
+
+/* NCBI's tables.  Codon k is base[0][k] base[1][k] base[2][k]; aa[r][k] is
+   its amino acid in table id[r] (ncbieaa, * for a stop), and start[r][k]
+   M if it is a start codon there, * if a stop (sncbieaa). */
+typedef struct {
+    int n, id[GC_MAX];
+    char aa[GC_MAX][65], start[GC_MAX][65], base[3][65];
+} gc_prt_t;
+
+/* Reads GC_PRT into g. 1, or 0 after printing [FAIL]. */
+static int load_gc_prt(gc_prt_t *g) {
+    char line[512], s[65], aa[65] = "", version[16] = "", seen[64] = { 0 };
+    int id = -1, k, j;
+    FILE *f = fopen(GC_PRT, "r");
+    memset(g, 0, sizeof(*g));
+    if (f == NULL) { missing_fixture(GC_PRT); return 0; }
+    while (fgets(line, sizeof(line), f) != NULL) {
+        const char *p = line + strspn(line, " \t");
+        if (version[0] == '\0' && sscanf(p, "-- Version %15s", version) == 1)
+            continue;
+        if (sscanf(p, "-- Base%d %64[TCAG]", &k, s) == 2 && k >= 1 && k <= 3 &&
+            strlen(s) == 64) {
+            if (g->base[k - 1][0] == '\0') strcpy(g->base[k - 1], s);
+            else if (strcmp(g->base[k - 1], s) != 0) break;   /* bad file */
+        } else if (sscanf(p, "id %d", &k) == 1) {
+            id = k;
+        } else if (sscanf(p, "ncbieaa \"%64[^\"]\"", s) == 1) {
+            strcpy(aa, s);
+        } else if (sscanf(p, "sncbieaa \"%64[^\"]\"", s) == 1) {
+            if (id < 0 || strlen(aa) != 64 || strlen(s) != 64 || g->n == GC_MAX)
+                break;
+            g->id[g->n] = id;
+            strcpy(g->aa[g->n], aa);
+            strcpy(g->start[g->n], s);
+            g->n++;
+            id = -1;
+            aa[0] = '\0';
+        }
+    }
+    k = feof(f);
+    fclose(f);
+    if (!k || strcmp(version, GC_PRT_VERSION) != 0 || g->n == 0) {
+        printf("[FAIL] %s: version %s (want " GC_PRT_VERSION "), %d tables%s\n",
+               GC_PRT, version, g->n, k ? "" : ", unreadable past them");
+        return 0;
+    }
+    /* The base rows (64 letters of TCAG each, if read) spell the 64
+       codons, each once */
+    for (k = 0; k < 64 && g->base[0][0] && g->base[1][0] && g->base[2][0]; k++) {
+        int v = 0;
+        for (j = 0; j < 3; j++) v = 4 * v + (int)(strchr("TCAG", g->base[j][k]) - "TCAG");
+        if (seen[v]++) break;
+    }
+    if (k < 64) {
+        printf("[FAIL] %s: the Base1-3 rows don't spell the 64 codons\n", GC_PRT);
+        return 0;
+    }
+    return 1;
+}
+
+static int in_list(int t, const int *v, size_t n) {
+    size_t i;
+    for (i = 0; i < n; i++) if (v[i] == t) return 1;
+    return 0;
+}
+#define IN_LIST(t, v) in_list((t), (v), sizeof(v) / sizeof((v)[0]))
+
+/* Appends a formatted line to fails (FAILS_LEN bytes). */
+#define FAILS_LEN 2048
+static void add_fail(char *fails, const char *fmt, ...) {
+    va_list ap;
+    size_t n = strlen(fails);
+    va_start(ap, fmt);
+    vsnprintf(fails + n, FAILS_LEN - n, fmt, ap);
+    va_end(ap);
+}
+
+/* Says in why (len bytes) where Prodigal's use of table g->id[r] differs
+   from NCBI's (white-box: is_stop, is_start, amino, pdg_no_stop), and
+   returns 1; 0 if it doesn't.  text holds the 64 codons in gc.prt's order,
+   then the N_CODONS ones with an N, and seq holds text encoded.  spacer
+   holds two one-base training contigs, so a spacer at base 1 of its seq
+   and at base 0 of its rseq. */
+static int ncbi_differs(const gc_prt_t *g, int r, const char *text,
+                        unsigned char *seq, const prodigal_ctx_t *spacer,
+                        char *why, size_t len) {
+    static const double gcs[] = { 0.3, 0.5, 0.65 };
+    static const int off[2] = { 1, 0 };
+    struct _training *tinf = table_model(g->id[r], 0.5);
+    unsigned char *strand[2] = { spacer->seq, spacer->rseq };
+    int k, j, f;
+    for (k = 0; k < 64; k++) {
+        const char c[4] = { text[3 * k], text[3 * k + 1], text[3 * k + 2], '\0' };
+        char want = g->aa[r][k], got = amino(seq, 3 * k, tinf, 0);
+        int stop = is_stop(seq, 3 * k, tinf), start = is_start(seq, 3 * k, tinf);
+        int ncbi_start = g->start[r][k] == 'M';
+        int modeled = strcmp(c, "ATG") == 0 || strcmp(c, "GTG") == 0 ||
+                      strcmp(c, "TTG") == 0;
+        if (g->start[r][k] == '*' && want != '*')
+            snprintf(why, len, "%s is a stop or %c by context", c, want);
+        else if (stop != (want == '*'))
+            snprintf(why, len, "%s is %sa stop, NCBI's is %s", c, stop ? "" : "not ",
+                     stop ? "not" : "one");
+        else if (got != want)
+            snprintf(why, len, "%s is %c, NCBI %c", c, got, want);
+        else if (start != ncbi_start && (start || modeled))
+            snprintf(why, len, "%s is %sa start, NCBI's is %sone", c,
+                     start ? "" : "not ", ncbi_start ? "" : "not ");
+        else if (start && amino(seq, 3 * k, tinf, 1) != 'M')
+            snprintf(why, len, "start %s reads %c", c, amino(seq, 3 * k, tinf, 1));
+        else
+            continue;
+        return 1;
+    }
+    /* raw_coding_score's stop probability, bases independent at GC gc:
+       A and T (1 - gc) / 2 each, C and G gc / 2 */
+    for (j = 0; j < 3; j++) {
+        double p, ncbi = 0.0, prodigal;
+        for (k = 0; k < 64; k++) {
+            if (g->aa[r][k] != '*') continue;
+            for (p = 1.0, f = 0; f < 3; f++)
+                p *= strchr("AT", text[3 * k + f]) ? (1 - gcs[j]) / 2 : gcs[j] / 2;
+            ncbi += p;
+        }
+        tinf->gc = gcs[j];
+        prodigal = 1.0 - pdg_no_stop(tinf);
+        if (fabs(prodigal - ncbi) > 1e-12) {
+            snprintf(why, len, "the ORF-length score's stop probability at GC "
+                     "%g is %.6f, NCBI's stops' %.6f", gcs[j], prodigal, ncbi);
+            return 1;
+        }
+    }
+    /* The spacer between training contigs: a stop in each frame, on both
+       strands */
+    for (j = 0; j < 2; j++)
+        for (f = 0; f < 3; f++) {
+            int found = 0;
+            for (k = off[j] + f; k + 3 <= off[j] + 12; k += 3)
+                found |= is_stop(strand[j], k, tinf);
+            if (!found) {
+                snprintf(why, len, "the training spacer has no stop in frame %d "
+                         "of the %s strand", f, j == 0 ? "forward" : "reverse");
+                return 1;
+            }
+        }
+    /* An ambiguous base makes no stop or start */
+    for (k = 64; k < 64 + N_CODONS; k++)
+        if (is_stop(seq, 3 * k, tinf) || is_start(seq, 3 * k, tinf)) {
+            snprintf(why, len, "an ambiguous base makes %.3s a %s", text + 3 * k,
+                     is_stop(seq, 3 * k, tinf) ? "stop" : "start");
+            return 1;
+        }
+    return 0;
+}
+
+static void test_genetic_codes_ncbi(void) {
+    TEST_START("genetic codes: supported iff they are NCBI's, codon by codon");
+    static gc_prt_t g;
+    static const char *two[2] = { "A", "A" };
+    static const int32_t one[2] = { 1, 1 };
+    char text[3 * (64 + N_CODONS)], why[128], msg[256], fails[FAILS_LEN] = "";
+    unsigned char seq[(3 * (64 + N_CODONS) * 2 + 7) / 8];
+    prodigal_ctx_t *ctx;
+    int t, r, k, n;
+    if (!load_gc_prt(&g)) return;
+    for (k = 0; k < 64; k++)
+        for (r = 0; r < 3; r++) text[3 * k + r] = g.base[r][k];
+    for (k = n = 0; k < 125; k++)       /* every codon of TCAGN with an N */
+        if (k / 25 == 4 || k / 5 % 5 == 4 || k % 5 == 4) {
+            text[3 * (64 + n)] = "TCAGN"[k / 25];
+            text[3 * (64 + n) + 1] = "TCAGN"[k / 5 % 5];
+            text[3 * (64 + n) + 2] = "TCAGN"[k % 5];
+            n++;
+        }
+    ASSERT_EQ_INT(n, N_CODONS);
+    ctx = make_ctx(1);
+    ASSERT_TRUE(ctx != NULL);
+    /* The codons, encoded; then the spacer, in the same context */
+    ASSERT_EQ_INT(prodigal_set_sequence(ctx, text, (int32_t)sizeof(text), NULL),
+                  PRODIGAL_OK);
+    memcpy(seq, ctx->seq, sizeof(seq));
+    ASSERT_EQ_INT(prodigal_set_training_sequences(ctx, two, NULL, one, 2),
+                  PRODIGAL_OK);
+    ASSERT_EQ_INT(ctx->slen, 26);
+
+    for (t = -1; t <= GC_PROBE_MAX; t++) {
+        prodigal_config_t c;
+        int ok, faithful = 0;
+        for (r = 0; r < g.n && g.id[r] != t; r++) ;
+        if (r == g.n) snprintf(why, sizeof(why), "NCBI has no table %d", t);
+        else faithful = !ncbi_differs(&g, r, text, seq, ctx, why, sizeof(why));
+        prodigal_config_init(&c);
+        c.trans_table = t;
+        ok = prodigal_config_validate(&c, msg, sizeof(msg)) == PRODIGAL_OK;
+        if (ok != faithful || ok != IN_LIST(t, supported_tables) ||
+            (r < g.n && !ok) != IN_LIST(t, rejected_ncbi_tables))
+            add_fail(fails, "\n       table %d: %s; %s; pinned %s", t,
+                     ok ? "supported" : msg, faithful ? "matches NCBI" : why,
+                     IN_LIST(t, supported_tables) ? "supported" :
+                     IN_LIST(t, rejected_ncbi_tables) ? "rejected" : "absent");
+    }
+    for (r = 0; r < g.n; r++)
+        if (g.id[r] < -1 || g.id[r] > GC_PROBE_MAX)
+            add_fail(fails, "\n       NCBI table %d is past those checked", g.id[r]);
+
+    /* Metagenomic mode uses its bins' tables, whatever the config says */
+    ASSERT_EQ_INT(pdg_meta_init(ctx), PRODIGAL_OK);
+    for (k = 0; k < NUM_META; k++) {
+        prodigal_config_t c;
+        prodigal_config_init(&c);
+        c.trans_table = ctx->meta[k].tinf->trans_table;
+        if (prodigal_config_validate(&c, msg, sizeof(msg)) != PRODIGAL_OK)
+            add_fail(fails, "\n       metagenomic bin %d: %s", k, msg);
+    }
+    prodigal_destroy(ctx);
+    if (fails[0] != '\0') {
+        printf("[FAIL]%s\n", fails);
+        return;
+    }
+    TEST_PASS();
+}
+
+/* Every way to choose a table (config, setter, model blob) rejects the same
+   ones, with the same whole reason, and a rejected one changes nothing. */
+static void test_genetic_code_entry_points(void) {
+    TEST_START("genetic codes: every entry point rejects them, saying why");
+    static const struct { int table; const char *msg; } pinned[] = {
+        { 7, "translation table 7 is not supported: NCBI defines no such "
+             "genetic code (the-miint/Prodigal docs/genetic-codes.md)" },
+        { 10, "translation table 10 is not supported: Prodigal translates "
+              "TGA as W (NCBI: C) (the-miint/Prodigal docs/genetic-codes.md)" },
+        { 27, "translation table 27 is not supported: TGA is a stop or W "
+              "depending on context, which Prodigal cannot model "
+              "(the-miint/Prodigal docs/genetic-codes.md)" },
+    };
+    static const char tail[] = " (the-miint/Prodigal docs/genetic-codes.md)";
+    char msg[256], want[256], what[32];
+    const char *reason;
+    size_t tlen, i;
+    void *tdata = load_ref_model(&tlen);
+    if (tdata == NULL) return;
+    struct _training *blob = (struct _training *)xrealloc(NULL, tlen);
+    prodigal_ctx_t *ctx = make_model_ctx(tdata, tlen);
+    prodigal_training_info_t info;
+    int t, ok, before;
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_EQ_INT(ctx->tinf.trans_table, 11);
+    memcpy(blob, tdata, tlen);
+
+    for (t = -1; t <= GC_PROBE_MAX; t++) {
+        prodigal_config_t c;
+        prodigal_config_init(&c);
+        c.trans_table = t;
+        ok = prodigal_config_validate(&c, msg, sizeof(msg)) == PRODIGAL_OK;
+        /* "translation table T is not supported: <why> (<tail>)", whole */
+        snprintf(want, sizeof(want), "translation table %d is not supported: ", t);
+        reason = msg + strlen(want) - strlen(" is not supported: ");
+        if (!ok && (strncmp(msg, want, strlen(want)) != 0 ||
+                    strlen(msg) < strlen(want) + strlen(tail) ||
+                    strcmp(msg + strlen(msg) - strlen(tail), tail) != 0)) {
+            printf("[FAIL] table %d: config_validate says \"%s\"\n", t, msg);
+            return;
+        }
+        for (i = 0; i < sizeof(pinned) / sizeof(pinned[0]); i++)
+            if (pinned[i].table == t && strcmp(msg, pinned[i].msg) != 0) {
+                printf("[FAIL] table %d: \"%s\"\n", t, msg);
+                return;
+            }
+        /* create allocates ~50 MB: rejected tables, and one other */
+        if (!ok || t == 4) {
+            prodigal_ctx_t *made = prodigal_create(&c);
+            if ((made != NULL) != ok) {
+                printf("[FAIL] table %d: config_validate and create disagree\n", t);
+                return;
+            }
+            prodigal_destroy(made);
+        }
+        /* The setter; a rejected table leaves the model's and the config's */
+        snprintf(want, sizeof(want), "Translation table %d%s", t, ok ? "" : reason);
+        before = ctx->config.trans_table;
+        if ((prodigal_set_translation_table(ctx, t) == PRODIGAL_OK) != ok ||
+            ctx->tinf.trans_table != (ok ? t : 11) ||
+            ctx->config.trans_table != (ok ? t : before) ||
+            (!ok && strcmp(prodigal_last_error(ctx), want) != 0)) {
+            printf("[FAIL] table %d: set_translation_table says \"%s\"\n", t,
+                   prodigal_last_error(ctx));
+            return;
+        }
+        /* A model blob: training_info and load_training agree (both_reject),
+           and a rejected one leaves the model as it was */
+        blob->trans_table = t;
+        snprintf(what, sizeof(what), "a model with table %d", t);
+        snprintf(want, sizeof(want), "Training data has translation table %d, "
+                 "which%s", t, ok ? "" : reason);
+        if (ok) {
+            ASSERT_EQ_INT(prodigal_training_info(blob, tlen, &info, NULL, 0),
+                          PRODIGAL_OK);
+            ASSERT_EQ_INT(prodigal_load_training(ctx, blob, tlen), PRODIGAL_OK);
+            ASSERT_EQ_INT(ctx->tinf.trans_table, t);
+            ASSERT_EQ_INT(prodigal_load_training(ctx, tdata, tlen), PRODIGAL_OK);
+        } else {
+            if (!both_reject(ctx, blob, tlen, what)) return;
+            if (strcmp(prodigal_last_error(ctx), want) != 0 ||
+                memcmp(&ctx->tinf, tdata, tlen) != 0) {
+                printf("[FAIL] %s: \"%s\", want \"%s\", or the model changed\n",
+                       what, prodigal_last_error(ctx), want);
+                return;
+            }
+        }
+    }
+    free(blob);
+    free(tdata);
+    prodigal_destroy(ctx);
+    TEST_PASS();
+}
+
 int main(void) {
     printf("=== Prodigal Library API Test Suite ===\n\n");
 
@@ -1936,8 +2247,6 @@ int main(void) {
     test_create_null_config();
     test_create_bad_struct_size();
     test_destroy_null();
-    test_create_invalid_trans_table();
-    test_create_valid_trans_tables();
     test_config_validate();
     test_create_meta_mode();
     test_last_error_on_fresh_context();
@@ -2020,6 +2329,10 @@ int main(void) {
     printf("\nPhase 17: Proteins\n");
     test_protein_letters();
     test_proteins_off();
+
+    printf("\nPhase 18: Genetic codes (NCBI)\n");
+    test_genetic_codes_ncbi();
+    test_genetic_code_entry_points();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

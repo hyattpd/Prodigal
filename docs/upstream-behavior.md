@@ -85,7 +85,8 @@ oracle. Change one only by explicit decision: record it here and in
 9. **Meta mode ignores `-g`, `-n` and the start weight.** Each of the 50
    bins brings its own translation table (11 or 4), SD usage and start
    weight. The best bin's model is the one that applies to the contig's
-   output and translations.
+   output and translations. (The fork still rejects an unsupported `-g`
+   in meta mode: `docs/genetic-codes.md`.)
 10. **`dprog`'s giant-ORF exception scans from the first node.** `dprog`
     scores each node's connections to the 500 nodes before it
     (`MAX_NODE_DIST`), except for a reverse-strand start, or a
@@ -110,14 +111,12 @@ oracle. Change one only by explicit decision: record it here and in
     what it has read (`read_seq_training`). The library returns an error
     instead. (Upstream's other caps, 30,000 genes per contig and 5,000
     masks, are gone: see "Fork deviations".)
-13. **Three translation tables differ from NCBI's** (`amino`, `is_stop`
-    in `sequence.c`). Table 10: TGA translates as W (NCBI: C). Table 16:
-    TAG, a sense codon there, translates as X (NCBI: L). Table 24: TGA is
-    a stop (NCBI: W), which also changes gene calls, and AGA and AGG
-    translate as R (NCBI: S and K). The other tables match NCBI. Separately,
-    an ambiguous base reads as C (quirk 3), so in table 22, where TCA is a
-    stop, a TNA codon ends a gene, and its translation is X, not `*`.
-    These affect the CLI's `-a` output and the library's proteins alike.
+13. **An ambiguous base is a C to `is_stop` and `is_start`** (quirk 3). No
+    supported table has a stop codon or a modeled start codon (ATG, GTG,
+    TTG) with a C in it (`genetic-codes.md`, rule 7). So a codon holding
+    an ambiguous base is never a stop or a start, and translates as X, in
+    the CLI's `-a` output and the library's proteins alike. Upstream's
+    table 22, where TCA is a stop, ended a gene at TNA; it is rejected.
 
 ## Upstream bugs present in the CLI too (fix, but preserve output)
 
@@ -166,6 +165,23 @@ defect.
 Each changes output only on input upstream mishandled (tests:
 `docs/testing.md`).
 
+- **Translation tables Prodigal gets wrong are rejected.** In 11 of the
+  19 tables upstream accepts (1, 2, 3, 6, 10, 12, 14, 16, 22, 23, 24),
+  upstream's handling differs from NCBI's genetic code table: its codon
+  logic (`is_stop`, `is_start`, `amino`), the ORF-length score's stop
+  probability (`pdg_no_stop`), its training spacer, or its reading of
+  ambiguous bases. Upstream used them without a warning. The fork rejects
+  them, with the reason: `-g` exits 15, in either mode, and `-t` with a
+  training file that uses one exits 4. The code itself is unchanged, so
+  every table still accepted gives upstream's output. The rules and the
+  reasons per table are in `docs/genetic-codes.md`.
+- **The CLI checks its input more strictly.**
+  - `-t` refuses any training file the library would refuse, such as one
+    with a GC outside [0, 1]; upstream used it.
+  - `-g` takes only a whole number; upstream read `-g 11x` as 11.
+  - A final `-G` or `-d` without its parameter is an error; upstream read
+    past the end of the arguments, and a final `-G` crashed.
+  - `-h` lists the supported tables.
 - **Empty records are skipped.** `next_seq_multi` returned -1, its
   end-of-input value, for a record with no sequence, so a header followed by
   another header silently dropped every record after it (and a file

@@ -238,6 +238,63 @@ int is_n(unsigned char *useq, int n) {
   return 1;
 }
 
+/* NULL if Prodigal uses translation table tt exactly as NCBI's gc.prt
+   defines it, otherwise why it doesn't: the rules, the reasons and the
+   tests that hold this list to gc.prt are in docs/genetic-codes.md.  The
+   code that falls short is upstream's, left unchanged; its tables are
+   rejected instead. */
+const char *pdg_trans_table_unsupported(int tt) {
+  switch(tt) {
+  case 4: case 5: case 9: case 11: case 13: case 15: case 21: case 25:
+    return NULL;
+  case 1:
+    return "Prodigal never starts genes at TTG (NCBI: a start), and its "
+           "ORF-length score counts two of the three stops";
+  case 2:
+    return "Prodigal's ORF-length score leaves out the AGA and AGG stops";
+  case 3:
+    return "Prodigal never starts genes at GTG (NCBI: a start)";
+  case 6:
+    return "Prodigal's ORF-length score and training spacer take TAA for a "
+           "stop (NCBI: Q)";
+  case 10:
+    return "Prodigal translates TGA as W (NCBI: C)";
+  case 12:
+    return "Prodigal starts genes at TTG (NCBI: not a start), and its "
+           "ORF-length score counts two of the three stops";
+  case 14:
+    return "Prodigal's ORF-length score and training spacer take TAA for a "
+           "stop (NCBI: Y)";
+  case 16:
+    return "Prodigal translates TAG as X (NCBI: L)";
+  case 22:
+    return "Prodigal's ORF-length score leaves out the TCA stop, and an "
+           "ambiguous base makes TNA a stop";
+  case 23:
+    return "Prodigal's ORF-length score counts two of the four stops (TAA, "
+           "TAG, TGA, TTA)";
+  case 24:
+    return "Prodigal reads TGA as a stop (NCBI: W) and AGA and AGG as R "
+           "(NCBI: S and K), and never starts genes at TTG (NCBI: a start)";
+  case 26: case 29: case 30: case 33:
+    return "not implemented: it postdates Prodigal 2.6, and Prodigal's "
+           "ORF-length score cannot count its stops";
+  case 32:
+    return "not implemented: it postdates Prodigal 2.6";
+  case 27:
+    return "TGA is a stop or W depending on context, which Prodigal cannot "
+           "model";
+  case 28:
+    return "TAA and TAG are stops or Q, and TGA a stop or W, depending on "
+           "context, which Prodigal cannot model";
+  case 31:
+    return "TAA and TAG are stops or E depending on context, which Prodigal "
+           "cannot model";
+  default:
+    return "NCBI defines no such genetic code";
+  }
+}
+
 int is_stop(unsigned char *seq, int n, struct _training *tinf) {
 
   /* TAG */

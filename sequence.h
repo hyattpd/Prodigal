@@ -59,6 +59,11 @@ int is_t(unsigned char *, int);
 int is_n(unsigned char *, int);
 int is_gc(unsigned char *, int);
 
+const char *pdg_trans_table_unsupported(int);
+/* Follows "translation table N" in every message about an unsupported one;
+   %s is pdg_trans_table_unsupported's reason. */
+#define PDG_TABLE_UNSUPPORTED \
+  " is not supported: %s (the-miint/Prodigal docs/genetic-codes.md)"
 int is_stop(unsigned char *, int, struct _training *);
 int is_start(unsigned char *, int, struct _training *);
 int is_atg(unsigned char *, int);

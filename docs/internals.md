@@ -74,7 +74,8 @@ fit; see "Limits and memory".
 ## Scoring
 
 `score_nodes` (`node.c`) runs `calc_orf_gc`, then `raw_coding_score`
-(6-mer log-odds plus a length factor), then RBS scoring. That is either
+(6-mer log-odds plus a length factor, from the stop probability
+`pdg_no_stop`: `genetic-codes.md`), then RBS scoring. That is either
 `rbs_score` (SD) or `find_best_upstream_motif` (non-SD). Finally it combines
 everything per start:
 
@@ -239,10 +240,11 @@ same letters without line breaks, so the two can't disagree. The letters:
 - **Any ambiguous base in a codon:** `X`.
 - **Stop codon:** included and printed as `*`. A gene that runs off the edge
   at its stop end (the right edge for a `+` gene, the left for a `-` gene)
-  has no `*`, and a table-22 TNA stop prints `X`
-  (`upstream-behavior.md`, quirk 13).
+  has no `*`. (A stop codon never holds an ambiguous base:
+  `upstream-behavior.md`, quirk 13.)
 - **Table:** the model's `trans_table`. In meta mode that is the best bin's.
-  Tables 10, 16 and 24 differ from NCBI's (quirk 13).
+  Every table the fork accepts matches NCBI's; it rejects the ones that
+  don't (`genetic-codes.md`).
 - In the CLI's `-a` file, lines wrap at 60 residues.
 
 `write_nucleotide_seqs` prints A/C/G/T, with `N` for any ambiguous base
