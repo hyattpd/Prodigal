@@ -78,7 +78,7 @@ for entry in "${corpus[@]}" "${fork_corpus[@]}"; do
   for f in "" "-c" "-m"; do
     add "$label.meta.$(fname "$f")" "$in" meta $f
   done
-  for f in "" "-c" "-m" "-n" "-g 4"; do
+  for f in "" "-c" "-m" "-n" "-g 4" "-g 32"; do
     add "$label.single.$(fname "$f")" "$in" single $f
   done
   add "$label.model" "$in" model

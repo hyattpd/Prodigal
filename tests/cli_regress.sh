@@ -39,7 +39,7 @@ IN=anthus_aco.fas
 mkdir -p "$O" || exit 2
 # Remove only what this script writes, so a stale result can never pass.
 rm -f "$O"/meta.* "$O"/single.* "$O"/trained.* "$O"/fromref.* \
-      "$O"/train*.bin "$O"/stderr "$O"/empty* "$O"/noempty*
+      "$O"/train*.bin "$O"/stderr "$O"/empty* "$O"/noempty* "$O"/g32.*
 
 fail=0
 run() {  # run the CLI; any non-zero exit is a failure
@@ -160,6 +160,17 @@ if [ "$(od -An -tu4 -j8 -N4 "$O/train24.bin" | tr -d ' ')" != 11 ]; then
 else
   printf '\030\000\000\000' | dd of="$O/train24.bin" bs=1 seek=8 conv=notrunc 2>/dev/null
   expect_exit 4 "translation table 24, which is not supported: " -t "$O/train24.bin"
+fi
+
+# Table 32 (Balanophoraceae plastid), which upstream rejects, is supported:
+# genes read through TAG, so they differ from table 11's (single.gff)
+run -i $IN -g 32 -f gff -q -o "$O/g32.gff"
+if grep -q "transl_table=32;" "$O/g32.gff" && grep -q "CDS" "$O/g32.gff" &&
+   ! cmp -s <(grep CDS "$O/single.gff" | cut -f4,5,7) \
+            <(grep CDS "$O/g32.gff" | cut -f4,5,7); then
+  echo "OK   -g 32 calls genes with table 32"
+else
+  echo "FAIL -g 32: no genes, not with table 32, or table 11's genes"; fail=1
 fi
 
 [ $fail = 0 ] && echo "all CLI regression checks passed"

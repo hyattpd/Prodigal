@@ -246,6 +246,7 @@ int is_n(unsigned char *useq, int n) {
 const char *pdg_trans_table_unsupported(int tt) {
   switch(tt) {
   case 4: case 5: case 9: case 11: case 13: case 15: case 21: case 25:
+  case 32:
     return NULL;
   case 1:
     return "Prodigal never starts genes at TTG (NCBI: a start), and its "
@@ -276,11 +277,12 @@ const char *pdg_trans_table_unsupported(int tt) {
   case 24:
     return "Prodigal reads TGA as a stop (NCBI: W) and AGA and AGG as R "
            "(NCBI: S and K), and never starts genes at TTG (NCBI: a start)";
-  case 26: case 29: case 30: case 33:
-    return "not implemented: it postdates Prodigal 2.6, and Prodigal's "
-           "ORF-length score cannot count its stops";
-  case 32:
+  case 26:
     return "not implemented: it postdates Prodigal 2.6";
+  case 29: case 30: case 33:
+    return "not implemented: it postdates Prodigal 2.6, Prodigal's "
+           "ORF-length score cannot count its stops, and its training "
+           "spacer would stop no gene";
   case 27:
     return "TGA is a stop or W depending on context, which Prodigal cannot "
            "model";
@@ -300,7 +302,8 @@ int is_stop(unsigned char *seq, int n, struct _training *tinf) {
   /* TAG */
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
     if(tinf->trans_table == 6 || tinf->trans_table == 15 ||
-       tinf->trans_table == 16 || tinf->trans_table == 22) return 0;
+       tinf->trans_table == 16 || tinf->trans_table == 22 ||
+       tinf->trans_table == 32) return 0;   /* 32: the fork's */
     return 1;
   }
 
@@ -419,6 +422,7 @@ char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
     if(tinf->trans_table == 6 || tinf->trans_table == 15) return 'Q';
     if(tinf->trans_table == 22) return 'L';
+    if(tinf->trans_table == 32) return 'W';   /* the fork's */
   }
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_t(seq, n+2) == 1)
     return 'C';

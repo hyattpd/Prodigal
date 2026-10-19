@@ -12,9 +12,8 @@ prodigal -h
 
   Upstream Prodigal 2.6.3 accepts 19 translation tables (`-g`). In 11 of them, Prodigal's handling disagrees with NCBI's genetic code table, and it uses them without a warning: **1, 2, 3, 6, 10, 12, 14, 16, 22, 23 and 24**. With them it starts or ends genes at the wrong codons, scores open reading frames against the wrong stop codons, or prints wrong amino acids. **This fork refuses those tables with an error.** It accepts a table only if Prodigal's stops, amino acids, ATG/GTG/TTG starts and stop statistics all match NCBI's:
 
-  * The accepted tables are 4, 5, 9, 11 (the default), 13, 15, 21 and 25.
-  * Results with them are unchanged from upstream.
-  * Metagenomic mode (`-p meta`) uses tables 11 and 4, so its results are unaffected. It still checks `-g`, which upstream ignored there.
+  * The accepted tables are 4, 5, 9, 11 (the default), 13, 15, 21 and 25, with results unchanged from upstream, and 32 (Balanophoraceae plastid), which NCBI added after Prodigal 2.6.
+  * Metagenomic mode (`-p meta`) uses tables 11 and 4, so its results are unaffected. It rejects an unsupported `-g`, but, as upstream did, it silently ignores a supported one: for a genome that uses another table (most mitochondria, say), use single mode.
   * Prodigal starts genes only at ATG, GTG and TTG, in every table. NCBI lists other start codons, such as CTG, ATT and ATA, for some tables, and Prodigal never uses them.
 
   The reasons for each table, the start codons Prodigal never uses, and how this is tested against NCBI's own file are in [docs/genetic-codes.md](docs/genetic-codes.md).

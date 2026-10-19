@@ -52,6 +52,9 @@ a message:
   15;
 - `-t` with a copy of `ref_train.bin` patched to table 24: exit 4.
 
+A last check runs `-g 32`, which upstream rejects, and expects genes called
+with table 32 that differ from table 11's.
+
 `make compare`
 runs `manymasks.fa` for the mask cap (its single mode cases call genes, the
 meta ones none); no corpus contig has 30,000 genes, so the library tests

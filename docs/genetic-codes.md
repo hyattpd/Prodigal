@@ -19,14 +19,17 @@ This fork rejects those tables with an error that says why:
 - in the CLI, for `-g` and for a `-t` training file that uses one;
 - in the library.
 
-It does not change how Prodigal calls genes or translates with any table it
-accepts. Those give upstream's output, byte for byte.
+Every table it still accepts from upstream gives upstream's output, byte
+for byte. It also supports table 32, which NCBI added after Prodigal 2.6
+and which Prodigal can use faithfully.
 
 Decided on 2026-10-19:
 - Support a genetic code if and only if Prodigal uses it faithfully, and
   reject the others with an error, rather than produce wrong results
   without a warning.
 - Do not change Prodigal's algorithm for now.
+- So support table 32, which needs only two codon clauses and nothing else
+  changed.
 
 ## Supported tables
 
@@ -40,11 +43,20 @@ Decided on 2026-10-19:
 | 15 | Blepharisma Macronuclear | TAA, TGA | ATG |
 | 21 | Trematode Mitochondrial | TAA, TAG | ATG, GTG |
 | 25 | Candidate Division SR1 and Gracilibacteria | TAA, TAG | ATG, GTG, TTG |
+| 32 | Balanophoraceae Plastid (new in the fork; upstream rejects it) | TAA, TGA | ATG, GTG, TTG |
 
-**Metagenomic mode** (`-p meta`, `meta_mode`) uses its 50 pretrained bins'
-tables, 11 (47 bins) and 4 (3 bins). Both are supported, so its results are
-unaffected. Upstream ignored `-g` and `trans_table` in that mode. The fork
-still checks them, so `-p meta -g 1` is now an error.
+> **Metagenomic mode ignores a supported `-g`.** Metagenomic mode
+> (`-p meta`, `meta_mode`) uses its 50 pretrained bins' tables, 11 (47
+> bins) and 4 (3 bins), so its results are unaffected by this fork. It
+> rejects an unsupported `-g` (`-p meta -g 1` is an error; upstream
+> ignored it). But, as upstream did, it ignores a supported one without a
+> warning: `-p meta -g 5` runs exactly as `-p meta` (quirk 9 in
+> `docs/upstream-behavior.md`). For a genome that uses any supported table
+> other than 11 and 4, use single mode, which needs at least 20,000 bases
+> of training input. Many mitochondrial genomes are smaller than that, and
+> so are the plastid genomes of *Balanophora* (about 16 kb), the genus
+> table 32 is for. For those, train on several genomes together, or load a
+> model trained on such a set with `-t`.
 
 ## The rules
 
@@ -108,6 +120,7 @@ start codons NCBI lists that Prodigal never uses, per supported table:
 | 5 | ATT, ATC, ATA |
 | 11 | CTG, ATT, ATC, ATA |
 | 13 | ATA |
+| 32 | CTG, ATT, ATC, ATA |
 
 Tables 9, 15, 21 and 25 have none.
 
@@ -131,23 +144,22 @@ rejects the table too.
 | 22 | Scenedesmus obliquus Mitochondrial | The ORF-length score leaves out the TCA stop (rule 5), and an ambiguous base in TNA makes a stop (rule 7). | gene calls |
 | 23 | Thraustochytrium Mitochondrial | The ORF-length score counts two of its four stops: TAA, TAG, TGA, TTA (rule 5). | gene calls |
 | 24 | Rhabdopleuridae Mitochondrial | Prodigal reads TGA as a stop (NCBI: W) and translates AGA and AGG as R (NCBI: S and K) (rule 3). It never starts genes at TTG, which NCBI lists (rule 4). | gene calls (genes end at TGA) and proteins |
-| 26 | Pachysolen tannophilus Nuclear | Not implemented: NCBI added it after Prodigal 2.6. Even with the codons implemented, the ORF-length score would count two of its three stops (rule 5). | none |
+| 26 | Pachysolen tannophilus Nuclear | Not implemented: NCBI added it after Prodigal 2.6. Adding it would take a clause in each of `is_start` (ATG only), `amino` (CTG is A) and `pdg_no_stop` (count its three stops as for table 11). | none |
 | 27 | Karyorelict Nuclear | TGA is a stop or W depending on context (rule 2). | none |
 | 28 | Condylostoma Nuclear | TAA and TAG are stops or Q, and TGA a stop or W, depending on context (rule 2). | none |
 | 29 | Mesodinium Nuclear | Not implemented: NCBI added it after Prodigal 2.6. Even with the codons implemented, the ORF-length score and the training spacer would take TAA, which is Y here, for a stop (rules 5, 6). | none |
 | 30 | Peritrich Nuclear | Not implemented, as 29; TAA is E here. | none |
 | 31 | Blastocrithidia Nuclear | TAA and TAG are stops or E, depending on context (rule 2). | none |
-| 32 | Balanophoraceae Plastid | Not implemented: NCBI added it after Prodigal 2.6. | none |
 | 33 | Cephalodiscidae Mitochondrial | Not implemented, as 29; TAA is Y here. | none |
 
 Numbers NCBI does not define are rejected as well, as upstream rejected
 them: 0 and below, 7, 8, 17 to 20, and 34 and above.
 
-**Supporting a rejected table again** needs one of two things:
-- changing Prodigal: its codon logic, its ORF-length score (as the 3.0
-  rewrite did, below) or its training spacer;
-- or, for a table that is only "not implemented", codon logic that meets
-  all seven rules without changing anything else.
+**Supporting a rejected table again** means changing Prodigal: its codon
+logic, its ORF-length score (as the 3.0 rewrite did, below) or its
+training spacer. A table NCBI added after Prodigal 2.6 may need less:
+table 32 took two codon clauses, and table 26 would take three clauses
+(see its row).
 
 ## Where it is enforced
 
@@ -182,7 +194,9 @@ Training data has translation table 24, which is not supported: Prodigal reads T
   the test until those lists are updated.
 - **The entry points.** `test_genetic_code_entry_points` checks that every
   entry point rejects the same tables with the same message.
-- **The CLI.** `tests/cli_regress.sh` checks the CLI's rejections.
+- **The CLI.** `tests/cli_regress.sh` checks the CLI's rejections, and
+  that `-g 32` calls genes with table 32. `make compare` checks that the
+  library and the CLI give the same genes and proteins with `-g 32`.
 - **Not checked by any test:** the copies of the lists on this page, in
   `README.md`, in `prodigal.h` and in `CHANGES`. Update them together.
 
@@ -202,11 +216,11 @@ Details are in `docs/testing.md`, "Genetic codes".
 
 ## Provenance
 
-- **This fork's code is upstream's, unchanged.** That covers `is_stop`,
-  `is_start` and `amino`, the ORF-length stop probability and the training
-  spacer. All of it is upstream's 2.6.x code, identical in `v2.6.3` and
-  `c1e2d36`. The stop probability only moved, verbatim, into
-  `pdg_no_stop`.
+- **This fork's code is upstream's, unchanged, except for table 32.**
+  That covers `is_stop`, `is_start` and `amino`, the ORF-length stop
+  probability and the training spacer. All of it is upstream's 2.6.x code,
+  identical in `v2.6.3` and `c1e2d36`. The stop probability only moved,
+  verbatim, into `pdg_no_stop`.
 - **Earlier releases accepted fewer tables.** `v2.6.0` and `v2.6.1`
   accepted tables up to 23 only. `v2.6.2` added 24 and 25.
 - **The unreleased 3.0 rewrite fixed some of this.** Upstream's
@@ -218,4 +232,12 @@ Details are in `docs/testing.md`, "Genetic codes".
   2.6.x. Tables 1 and 3 still differ from NCBI there.
 - **NCBI's later changes:** NCBI added table 3's GTG start in `gc.prt` 4.4,
   and tables 26 to 33 in versions 4.1 to 4.5.
+- **Table 32's codon logic is the fork's:** TAG is not a stop and
+  translates as W (two clauses in `is_stop` and `amino`, marked "the
+  fork's"). It needs nothing else, since its stops, TAA and TGA, are a
+  pair that `pdg_no_stop` counts exactly.
+- **Training files for table 32 work only with this fork.** Upstream
+  Prodigal does not check the table of a `-t` file, so it would load one
+  written with `-g 32` and use table 32 wrongly: TAG as a stop, and the
+  wrong ORF-length score.
 - **Last check:** verified on 2026-10-19 against `gc.prt` version 4.6.

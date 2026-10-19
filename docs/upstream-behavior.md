@@ -85,8 +85,8 @@ oracle. Change one only by explicit decision: record it here and in
 9. **Meta mode ignores `-g`, `-n` and the start weight.** Each of the 50
    bins brings its own translation table (11 or 4), SD usage and start
    weight. The best bin's model is the one that applies to the contig's
-   output and translations. (The fork still rejects an unsupported `-g`
-   in meta mode: `docs/genetic-codes.md`.)
+   output and translations. (The fork rejects an unsupported `-g` in meta
+   mode and ignores a supported one: `docs/genetic-codes.md`.)
 10. **`dprog`'s giant-ORF exception scans from the first node.** `dprog`
     scores each node's connections to the 500 nodes before it
     (`MAX_NODE_DIST`), except for a reverse-strand start, or a
@@ -162,7 +162,7 @@ defect.
 
 ## Fork deviations (CLI)
 
-Each changes output only on input upstream mishandled (tests:
+Each changes output only on input upstream mishandled or rejected (tests:
 `docs/testing.md`).
 
 - **Translation tables Prodigal gets wrong are rejected.** In 11 of the
@@ -172,9 +172,12 @@ Each changes output only on input upstream mishandled (tests:
   probability (`pdg_no_stop`), its training spacer, or its reading of
   ambiguous bases. Upstream used them without a warning. The fork rejects
   them, with the reason: `-g` exits 15, in either mode, and `-t` with a
-  training file that uses one exits 4. The code itself is unchanged, so
-  every table still accepted gives upstream's output. The rules and the
-  reasons per table are in `docs/genetic-codes.md`.
+  training file that uses one exits 4. That code is unchanged, so the
+  eight tables still accepted from upstream give upstream's output. The
+  rules and the reasons per table are in `docs/genetic-codes.md`.
+- **Table 32 is supported.** Upstream rejects `-g 32` (exit 15); the fork
+  calls genes with it, with two clauses of its own in `is_stop` and
+  `amino` (TAG is W, `docs/genetic-codes.md`).
 - **The CLI checks its input more strictly.**
   - `-t` refuses any training file the library would refuse, such as one
     with a GC outside [0, 1]; upstream used it.
