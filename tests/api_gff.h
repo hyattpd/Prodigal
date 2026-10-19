@@ -9,7 +9,9 @@
     The gene line is the CLI's GFF CDS line without column 2 (the version);
     the model line holds the fields of its "# Sequence Data" / "# Model Data"
     lines that the API reports (model is "-" in single mode). Numbers use the
-    CLI's formats, so equal values print identically.
+    CLI's formats, so equal values print identically. When the genes carry
+    proteins (want_proteins), each gene line ends with a tab and the protein;
+    on the CLI side, the records of its -a file, in order.
 
     Column 6 is "." when blank_score is set. In metagenomic mode the CLI
     prints it from its recovery pass rather than from the values that chose
@@ -21,12 +23,15 @@
 #define PRODIGAL_TESTS_API_GFF_H
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include "../prodigal.h"
 #include "fasta.h"
 
 #define API_GFF_LINE_MAX 2048
+
+typedef void (*api_emit_fn)(const char *line, void *arg);
 
 /* Check snprintf's result r for a buffer of n bytes: a line that doesn't fit
    is a harness bug, never a silent difference. */
@@ -80,6 +85,63 @@ static inline void api_gff_line(char *out, size_t n, const prodigal_genes_soa_t 
                  g->rscore[i], g->uscore[i], g->tscore[i]), n);
 }
 
+/* Gene i's protein in g (want_proteins): its letters and, in len, how
+   many. */
+static inline const char *api_protein(const prodigal_genes_soa_t *g, int32_t i,
+                                      int32_t *len) {
+    *len = g->protein_offsets[i + 1] - g->protein_offsets[i];
+    return g->protein_data + g->protein_offsets[i];
+}
+
+/* 1 if g's proteins are well formed: aligned offsets from 0, a letter per
+   codon, M at a start codon (start type not Edge), and * only at a stop
+   codon, none when the gene runs off the edge at its stop end (where a
+   table-22 TNA stop gives X: docs/upstream-behavior.md, quirk 13).
+   Otherwise 0, with what is wrong in why. */
+static inline int api_proteins_ok(const prodigal_genes_soa_t *g, char *why,
+                                  size_t n) {
+    int32_t i, k, len;
+    if (g->n_genes == 0) return 1;
+    if (g->protein_offsets == NULL || g->protein_data == NULL ||
+        ((uintptr_t)g->protein_offsets) % 16 != 0 || g->protein_offsets[0] != 0) {
+        snprintf(why, n, "protein arrays missing, misaligned or not from 0");
+        return 0;
+    }
+    for (i = 0; i < g->n_genes; i++) {
+        const char *p = api_protein(g, i, &len);
+        int stop_partial = g->strand[i] == 1 ? g->partial_right[i] : g->partial_left[i];
+        if (len != (g->end[i] - g->begin[i] + 1) / 3) {
+            snprintf(why, n, "gene %d: %d letters for %d..%d", i + 1, len,
+                     g->begin[i], g->end[i]);
+            return 0;
+        }
+        for (k = 0; k < len; k++) {
+            int stop = k == len - 1 && !stop_partial;
+            if (p[k] == '\0' || strchr("ACDEFGHIKLMNPQRSTVWXY*", p[k]) == NULL ||
+                (stop ? p[k] != '*' && p[k] != 'X' : p[k] == '*') ||
+                (k == 0 && g->start_type[i] != 3 && p[k] != 'M')) {
+                snprintf(why, n, "gene %d: letter %d of %d is '%c'", i + 1, k + 1,
+                         len, p[k] ? p[k] : '0');
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+/* Emit line, then a tab and the n letters of prot. */
+static inline void api_emit_with_protein(const char *line, const char *prot,
+                                         size_t n, api_emit_fn emit, void *arg) {
+    size_t ln = strlen(line);
+    char *buf = (char *)xrealloc(NULL, ln + n + 2);
+    memcpy(buf, line, ln);
+    buf[ln] = '\t';
+    memcpy(buf + ln + 1, prot, n);
+    buf[ln + 1 + n] = '\0';
+    emit(buf, arg);
+    free(buf);
+}
+
 /* Reader state carried from a "# Sequence Data" line to its "# Model Data". */
 typedef struct { int seqnum, seqlen; } api_cli_state_t;
 
@@ -90,8 +152,9 @@ static inline const char *api_cli_field(const char *line, const char *key) {
 }
 
 /* Translate one line of a CLI GFF file into the form above; line is split in
-   place. Returns 0 and fills out for a model or CDS line, -1 for anything
-   else. */
+   place. Fills out and returns API_CLI_MODEL or API_CLI_GENE for a model or
+   CDS line; returns -1 for anything else. */
+enum { API_CLI_GENE, API_CLI_MODEL };
 static inline int api_gff_from_cli(char *line, int blank_score, api_cli_state_t *st,
                                    char *out, size_t n) {
     char *col[9];
@@ -111,7 +174,7 @@ static inline int api_gff_from_cli(char *line, int blank_score, api_cli_state_t 
         if (rt == NULL || strncmp(rt, "Metagenomic", 11) != 0 || m == NULL) m = "-";
         api_model_line(out, n, st->seqnum, st->seqlen, m, tt ? atoi(tt) : -1,
                        sd ? atoi(sd) : -1);
-        return 0;
+        return API_CLI_MODEL;
     }
     if (line[0] == '#') return -1;
 
@@ -124,7 +187,7 @@ static inline int api_gff_from_cli(char *line, int blank_score, api_cli_state_t 
     api_fits(snprintf(out, n, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", col[0], col[2],
                       col[3], col[4], blank_score ? "." : col[5], col[6], col[7],
                       col[8]), n);
-    return 0;
+    return API_CLI_GENE;
 }
 
 /* Train ctx on all of fa, as the CLI does in single mode. Returns
@@ -136,18 +199,18 @@ static inline int api_train(prodigal_ctx_t *ctx, const fasta_t *fa) {
     return rc;
 }
 
-typedef void (*api_emit_fn)(const char *line, void *arg);
-
 /* Find genes in the sequence set on ctx, record k of fa, and emit its model
-   line and gene lines; meta selects metagenomic formatting. Returns
-   PRODIGAL_OK or prodigal_find_genes's error code. */
+   line and gene lines; meta selects metagenomic formatting. Malformed
+   proteins (api_proteins_ok) add a line "BAD proteins: <why>", so a
+   comparison fails on them. Returns PRODIGAL_OK or prodigal_find_genes's
+   error code. */
 static inline int api_emit_found(prodigal_ctx_t *ctx, const fasta_t *fa, int32_t k,
                                  int meta, api_emit_fn emit, void *arg) {
-    char seqid[API_GFF_LINE_MAX], line[API_GFF_LINE_MAX];
+    char seqid[API_GFF_LINE_MAX], line[API_GFF_LINE_MAX], why[128];
     prodigal_genes_soa_t *g = NULL;
     prodigal_stats_t stats;
     prodigal_seq_info_t info;
-    int32_t j;
+    int32_t j, len;
     int rc = prodigal_find_genes(ctx, &g, &stats);
     if (rc != PRODIGAL_OK) return rc;
     prodigal_get_seq_info(ctx, &info);
@@ -158,6 +221,15 @@ static inline int api_emit_found(prodigal_ctx_t *ctx, const fasta_t *fa, int32_t
     api_seqid(seqid, sizeof(seqid), fa->headers[k], k + 1);
     for (j = 0; j < g->n_genes; j++) {
         api_gff_line(line, sizeof(line), g, j, seqid, k + 1, meta);
+        if (g->protein_offsets == NULL) {
+            emit(line, arg);
+        } else {
+            const char *p = api_protein(g, j, &len);
+            api_emit_with_protein(line, p, (size_t)len, emit, arg);
+        }
+    }
+    if (g->protein_offsets != NULL && !api_proteins_ok(g, why, sizeof(why))) {
+        snprintf(line, sizeof(line), "BAD proteins: %s", why);
         emit(line, arg);
     }
     prodigal_genes_free(g);
@@ -197,39 +269,58 @@ static inline void lines_free(lines_t *l) {
     memset(l, 0, sizeof(*l));
 }
 
-/* 1 if want and got are equal; otherwise prints [FAIL] with the number of
-   differing lines and the first difference, and returns 0. */
+/* 1 if want and got are equal; otherwise prints [FAIL] with the line counts,
+   the number of differing lines, and the first difference (or extra line),
+   and returns 0. */
 static inline int lines_equal(const lines_t *want, const lines_t *got,
                               const char *what) {
-    int i, ndiff = 0, first = -1;
-    if (want->n != got->n) {
-        printf("[FAIL] %s: %d lines, expected %d\n", what, got->n, want->n);
-        return 0;
-    }
-    for (i = 0; i < want->n; i++)
+    int n = want->n < got->n ? want->n : got->n, i, ndiff = 0, first = -1;
+    for (i = 0; i < n; i++)
         if (strcmp(want->v[i], got->v[i]) != 0 && ndiff++ == 0) first = i;
-    if (ndiff == 0) return 1;
-    printf("[FAIL] %s: %d of %d lines differ; first:\n      want %s\n      got  %s\n",
-           what, ndiff, want->n, want->v[first], got->v[first]);
+    if (ndiff == 0 && want->n == got->n) return 1;
+    if (first < 0) first = n;
+    printf("[FAIL] %s: %d lines (expected %d), %d of the first %d differ; "
+           "first, line %d:\n      want %s\n      got  %s\n", what, got->n,
+           want->n, ndiff, n, first + 1,
+           first < want->n ? want->v[first] : "(none)",
+           first < got->n ? got->v[first] : "(none)");
     return 0;
 }
 
-/* Emit a CLI GFF file in the same form; -1 if it can't be read or has a
-   line too long for the buffer. */
-static inline int api_emit_cli_file(const char *path, int meta, api_emit_fn emit,
-                                    void *arg) {
+/* Emit a CLI GFF file in the same form, with the proteins of its -a file
+   faa, in order, unless that is NULL. Returns 0, API_CLI_UNREADABLE if a
+   file can't be read or the GFF has a line too long for the buffer, or
+   API_CLI_MISMATCH if the two files hold different numbers of genes. */
+enum { API_CLI_UNREADABLE = -1, API_CLI_MISMATCH = -2 };
+static inline int api_emit_cli_file(const char *path, const char *faa, int meta,
+                                    api_emit_fn emit, void *arg) {
     char line[API_GFF_LINE_MAX], out[API_GFF_LINE_MAX];
     api_cli_state_t st = { -1, -1 };
-    FILE *fp = fopen(path, "r");
-    int k;
-    if (fp == NULL) return -1;
-    while (fgets(line, sizeof(line), fp) != NULL) {
-        if (strchr(line, '\n') == NULL && !feof(fp)) break;
-        if (api_gff_from_cli(line, meta, &st, out, sizeof(out)) == 0) emit(out, arg);
+    fasta_t prot = {0};
+    FILE *fp;
+    int32_t ngenes = 0;
+    int rc = 0, kind;
+    if (faa != NULL && fasta_load(faa, &prot) != 0) return API_CLI_UNREADABLE;
+    if ((fp = fopen(path, "r")) == NULL) {
+        fasta_free(&prot);
+        return API_CLI_UNREADABLE;
     }
-    k = feof(fp) ? 0 : -1;
+    while (rc == 0 && fgets(line, sizeof(line), fp) != NULL) {
+        if (strchr(line, '\n') == NULL && !feof(fp)) rc = API_CLI_UNREADABLE;
+        else if ((kind = api_gff_from_cli(line, meta, &st, out, sizeof(out))) < 0) continue;
+        else if (faa == NULL || kind == API_CLI_MODEL) emit(out, arg);
+        else if (ngenes == prot.n) rc = API_CLI_MISMATCH;
+        else {
+            api_emit_with_protein(out, prot.seqs[ngenes], (size_t)prot.lens[ngenes],
+                                  emit, arg);
+            ngenes++;
+        }
+    }
+    if (rc == 0)
+        rc = !feof(fp) ? API_CLI_UNREADABLE : ngenes != prot.n ? API_CLI_MISMATCH : 0;
     fclose(fp);
-    return k;
+    fasta_free(&prot);
+    return rc;
 }
 
 #endif

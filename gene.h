@@ -58,9 +58,13 @@ void tweak_final_starts(struct _gene *, int, struct _node *, int, struct
 
 void print_genes(FILE *, struct _gene *, int, struct _node *, int, int, int,
                  int, char *, struct _training *, char *, char *, char *);
-void write_translations(FILE *, struct _gene *, int, struct _node *, 
-                        unsigned char *, unsigned char *, unsigned char *, int,
-                        struct _training *, int, char *);
+int pdg_protein_length(const struct _gene *);
+char pdg_protein_letter(const struct _gene *, int, unsigned char *,
+                        unsigned char *, unsigned char *, int,
+                        struct _training *);
+void write_translations(FILE *, struct _gene *, int, unsigned char *,
+                        unsigned char *, unsigned char *, int,
+                        struct _training *, char *);
 void write_nucleotide_seqs(FILE *, struct _gene *, int, struct _node *, 
                            unsigned char *, unsigned char *, unsigned char *,
                            int, struct _training *, int, char *);

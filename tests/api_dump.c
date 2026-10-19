@@ -5,14 +5,15 @@
     (tests/api_compare.sh).
 
     usage: api_dump [-p single|meta] [-c] [-m] [-n] [-g TABLE] [-t TRAINING]
-                    [--write-model FILE] FASTA
-           api_dump --from-cli [-p single|meta] GFF
+                    [--write-model FILE] [--proteins] FASTA
+           api_dump --from-cli [-p single|meta] [--faa FAA] GFF
 
     The options mean what they mean to the CLI. Single mode without -t trains
     on all records, as the CLI does; --write-model also writes that model to
-    FILE, which then equals the CLI's -t file. --from-cli instead translates
-    a CLI GFF file into the same form. Only the public API (prodigal.h) is
-    used.
+    FILE, which then equals the CLI's -t file. --proteins adds each gene's
+    protein (want_proteins). --from-cli instead translates a CLI GFF file
+    into the same form, with the proteins of the CLI's -a file FAA. Only the
+    public API (prodigal.h) is used.
 *******************************************************************************/
 
 #include <stdio.h>
@@ -53,7 +54,7 @@ static void write_model(const char *path) {
 
 int main(int argc, char **argv) {
     prodigal_config_t cfg;
-    const char *train_path = NULL, *model_out = NULL, *in = NULL;
+    const char *train_path = NULL, *model_out = NULL, *faa = NULL, *in = NULL;
     int meta = 0, cli = 0, i;
     fasta_t fa;
 
@@ -71,12 +72,16 @@ int main(int argc, char **argv) {
             train_path = argv[++i];
         else if (strcmp(argv[i], "--write-model") == 0 && i + 1 < argc)
             model_out = argv[++i];
+        else if (strcmp(argv[i], "--proteins") == 0) cfg.want_proteins = 1;
+        else if (strcmp(argv[i], "--faa") == 0 && i + 1 < argc) faa = argv[++i];
         else if (argv[i][0] != '-' && in == NULL) in = argv[i];
         else { fprintf(stderr, "api_dump: bad argument %s\n", argv[i]); return 2; }
     }
     if (in == NULL) { fprintf(stderr, "api_dump: no input\n"); return 2; }
     if (cli) {
-        if (api_emit_cli_file(in, meta, put_line, NULL) != 0) die("cannot open GFF");
+        int rc = api_emit_cli_file(in, faa, meta, put_line, NULL);
+        if (rc == API_CLI_MISMATCH) die("the GFF and -a files hold different genes");
+        if (rc != 0) die("cannot read the GFF or -a file");
         return 0;
     }
 

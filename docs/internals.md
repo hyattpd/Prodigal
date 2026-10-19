@@ -14,7 +14,7 @@ Each sequence lives in three bitmaps inside the context (`seq`, `rseq`,
   `len` bases into an integer, base `k` contributing `val << 2k`.
   `mer_text` inverts that using `{A, G, C, T}`.
 - **`rseq`**: the reverse complement, built by `rcom_seq`
-  (`sequence.c:243`). An index `i` in `rseq` is forward position
+  (`sequence.c`). An index `i` in `rseq` is forward position
   `slen-1-i`.
 - **`useq`**: 1 bit per base, set for any character other than A/C/G/T
   (upper or lower case). Such bases are **encoded as C** in `seq`.
@@ -93,7 +93,7 @@ is the operon/overlap bonus or the strand-switch penalty. It then marks genes
 with `cscore + sscore < 0` for elimination. **The scores the CLI reports
 include this adjustment.**
 
-`calculate_confidence(score, st_wt)` (`gene.c:420`) is
+`calculate_confidence(score, st_wt)` (`gene.c`) is
 `logistic(score / st_wt) * 100`, clamped to `[50, 99.99]`, where
 `score = cscore + sscore`.
 
@@ -185,7 +185,7 @@ carries its own model. That is true of both the CLI and the API.
 - Forward: `begin = start.ndx+1`, `end = stop.ndx+3`.
 - Reverse: `begin = stop.ndx-1`, `end = start.ndx+1`.
 
-Partial flags (`gene.c:209`):
+Partial flags (`record_gene_data`, `gene.c`):
 
 - `partial_left` is set when a forward gene's start is an edge node, or a
   reverse gene's stop is.
@@ -194,18 +194,25 @@ Partial flags (`gene.c:209`):
 
 ### Translation and gene sequences (CLI `-a` / `-d`)
 
-`write_translations` (`gene.c:346`) walks the codons from `begin` to `end`,
-in reverse complement for `-` genes:
+`pdg_protein_letter` (`gene.c`) gives letter `k` of a gene's protein,
+counting codons from its start (from `begin` on `+` genes, on the reverse
+complement from `end` on `-` genes); `pdg_protein_length` is the number of
+codons. The CLI's `write_translations` prints the letters 60 to a line, and
+the library's proteins (`want_proteins`, built in `extract_soa`) are the
+same letters without line breaks, so the two can't disagree. The letters:
 
 - **First codon:** `M` when it is a valid start for the table and the gene is
-  not edge-started (`is_init`).
+  not edge-started (start type Edge; upstream's `is_init`).
 - **Middle codons:** `amino(seq, pos, tinf, 0)`, which applies the per-table
   differences.
 - **Any ambiguous base in a codon:** `X`.
-- **Stop codon:** included and printed as `*`. A gene that runs off the right
-  edge has no `*`.
+- **Stop codon:** included and printed as `*`. A gene that runs off the edge
+  at its stop end (the right edge for a `+` gene, the left for a `-` gene)
+  has no `*`, and a table-22 TNA stop prints `X`
+  (`upstream-behavior.md`, quirk 13).
 - **Table:** the model's `trans_table`. In meta mode that is the best bin's.
-- Lines wrap at 60 residues.
+  Tables 10, 16 and 24 differ from NCBI's (quirk 13).
+- In the CLI's `-a` file, lines wrap at 60 residues.
 
 `write_nucleotide_seqs` prints A/C/G/T, with `N` for any ambiguous base
 (IUPAC codes are not preserved). Lines wrap at 70.
@@ -241,7 +248,7 @@ Nothing else writes nodes outside `[0, ctx->nn)`.
 and a flag matrix. Still different:
 
 - **Missing from the API:**
-  - protein translations (`-a`) and gene nucleotide sequences (`-d`);
+  - gene nucleotide sequences (`-d`);
   - the all-starts table (`-s`);
   - the gene ID (`<seqnum>_<n>`) and the total `score`;
   - per-contig model data (GFF `# Model Data`) beyond `prodigal_stats_t`.

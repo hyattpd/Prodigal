@@ -108,10 +108,13 @@ unless every test passed. A missing fixture is a failure.
 
 **Golden tests (phase 14): API ≡ CLI ground truth.** The library's output,
 in the form of `tests/api_gff.h`, is compared line by line with the anthus
-references: meta mode with `ref_meta.gff`; training through the API with
-`ref_train.bin` byte for byte and its predictions with `ref_single.gff`,
-also when the context was trained before or had another model loaded;
-prediction from `ref_train.bin` with `ref_trained.gff`. Two more tests
+references, every gene with its protein (the tests' contexts set
+`want_proteins`; the `.proteins` files are the CLI's `-a` output): meta
+mode with `ref_meta.gff` and `.proteins`; training through the API with
+`ref_train.bin` byte for byte and its predictions with `ref_single.gff`
+and `.proteins`, also when the context was trained before or had another
+model loaded; prediction from `ref_train.bin` with `ref_trained.gff` (equal
+to `ref_single.gff`) and `ref_single.proteins`. Two more tests
 check that a contig's output doesn't depend on what the context did before
 (a second pass, each record on a fresh context, and `prodigal_find_genes`
 twice per sequence). Anthus contigs carry about one gene each, so the meta
@@ -119,7 +122,11 @@ golden test sees little of metagenomic scoring; `make compare` covers more.
 The low-complexity tests run an `ATG` repeat whose nodes don't fit the node
 array: growing it must give what the grown array gives (Phase 15). Phase 16
 checks the other limits: the gene array grows, more than 5,000 masks are
-kept, and the length limits sit at the CLI's boundary.
+kept, and the length limits sit at the CLI's boundary. Every comparison
+also checks each protein's layout (`api_proteins_ok` in `tests/api_gff.h`:
+offsets from 0, a letter per codon, `M` and `*`). Phase 17 checks the
+letters of genes made by hand (no `M` at an Edge start, `X`, the table) and
+that there are no proteins without `want_proteins`.
 
 On ARM64 macOS, whose training writes different bytes, the training tests
 compare only the model fields training copies or counts (`gc`,
@@ -139,11 +146,14 @@ default. Without the check, an overflow shows up as an unrelated error
 `tests/api_compare.sh` runs the CLI and `tests/api_dump` (the public API
 only) with the same options over the corpus and a flag matrix, in meta mode,
 single mode, and single mode from a CLI-written training file, and diffs the
-two in the form of `tests/api_gff.h`; every case must be identical. In the
-single mode cases the model the API trains (`api_dump --write-model`) must
-also equal the CLI's `-t` file byte for byte. `ECOLI` adds E. coli and its
-fragments. For any other input, `tests/api_dump -p MODE [FLAGS] FASTA` and
-`tests/api_dump --from-cli -p MODE cli.gff` print the two sides.
+two in the form of `tests/api_gff.h`, every gene with its protein (the
+CLI's `-a` records, `api_dump --proteins`); every case must be identical.
+In the single mode cases the model the API trains (`api_dump
+--write-model`) must also equal the CLI's `-t` file byte for byte. `ECOLI`
+adds E. coli and its fragments. For any other input,
+`tests/api_dump -p MODE [FLAGS] --proteins FASTA` and
+`tests/api_dump --from-cli -p MODE --faa cli.faa cli.gff` print the two
+sides.
 
 ## Performance baselines
 
@@ -192,7 +202,8 @@ make stack                                       # frames over 1 MiB fail
 - **Threads:** `tests/threads.c` (its header says what it runs). A static
   counter planted in `prodigal_find_genes` makes TSan fail it.
 - **Fuzzing:** `tests/fuzz_find_genes.c` (input format and checks in its
-  header); `make fuzz` builds everything with `FUZZ_CFLAGS` (Makefile). New
+  header; it checks the proteins too); `make fuzz` builds everything with
+  `FUZZ_CFLAGS` (Makefile). New
   inputs collect in `tests/out/fuzz/corpus` (CI caches it, so it grows
   across runs) and failing ones in `tests/out/fuzz/` (CI uploads them).
   About 300–500 inputs/s under ASan, mostly metagenomic scoring across the

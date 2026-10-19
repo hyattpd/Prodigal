@@ -30,7 +30,8 @@ algorithm and keeps the upstream CLI (`main.c`) working.
    - the same genes, coordinates, strands, partial flags and start types;
    - the same RBS motif and spacer, and the same `gc_cont`;
    - the same scores the CLI prints (`conf`, `score`, `cscore`, `sscore`,
-     `rscore`, `uscore`, `tscore`), equal up to the CLI's print rounding.
+     `rscore`, `uscore`, `tscore`), equal up to the CLI's print rounding;
+   - with `want_proteins`, the proteins of the CLI's `-a` file.
 
    This holds in both single-genome and metagenomic mode.
 3. **Behaviour changes are deliberate or absent.** Algorithmic output may
@@ -92,7 +93,7 @@ make distclean          # removes objects, binaries and libs
 | `main.c` | Upstream CLI: input, progress text and printing around the shared `pdg_*` pipeline, with its state in a `prodigal_ctx_t`. Whole file sits behind `#ifndef PRODIGAL_NO_MAIN`. |
 | `node.c/.h` | Start/stop node creation, coding/RBS/upstream scoring, start training, `intergenic_mod`, `-s` start file. |
 | `dprog.c/.h` | Dynamic programming over nodes and `eliminate_bad_genes`. |
-| `gene.c/.h` | `add_genes`, `tweak_final_starts`, `record_gene_data` (GFF attribute strings), CLI printers, translations, `calculate_confidence`. |
+| `gene.c/.h` | `add_genes`, `tweak_final_starts`, `record_gene_data` (GFF attribute strings), CLI printers, `pdg_protein_letter` (translation, shared by `-a` and the library), `calculate_confidence`. |
 | `sequence.c/.h` | 2-bit base tests, codon tests, `rcom_seq`, `amino()` translation, the CLI's FASTA/GenBank/EMBL readers (which encode through `pdg_encode_*` in `prodigal_api.c`), SD motif scanners. |
 | `training.c/.h` | `struct _training`, training-file I/O, 50 hard-coded `initialize_metagenome_N` models (generated; never hand-edit). |
 | `metagenomic.c/.h` | `initialize_metagenomic_bins` and the bin descriptions. The header declares functions that don't exist (`score_edges` etc.). |

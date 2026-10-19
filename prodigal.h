@@ -70,8 +70,9 @@
  *   - SOA (prodigal_genes_soa_t): Structure-of-Arrays layout ideal for
  *     columnar / Apache Arrow consumers.  All numeric arrays are carved from
  *     a single 16-byte-aligned backing allocation (_base).  The strings
- *     (rbs_motif, rbs_spacer) live in it too: they are valid until
- *     prodigal_genes_free() and are not freed on their own.
+ *     (rbs_motif, rbs_spacer) and, with want_proteins, the proteins live in
+ *     it too: they are valid until prodigal_genes_free() and are not freed
+ *     on their own.
  *   - AOS (prodigal_genes_t): Array-of-Structures layout for convenient
  *     per-gene iteration.  Also backed by a single allocation.
  *
@@ -306,6 +307,11 @@ typedef struct {
 
     /** User data pointer passed to progress_callback. */
     void   *progress_user_data;
+
+    /** Nonzero: prodigal_find_genes() also returns each gene's protein
+     *  (prodigal_genes_soa_t's protein_offsets and protein_data;
+     *  prodigal_gene_t's protein).  Default: 0 (no proteins). */
+    int    want_proteins;
 } prodigal_config_t;
 
 /*******************************************************************************
@@ -332,15 +338,18 @@ typedef struct {
  * arrays are carved from a single 16-byte-aligned backing allocation pointed
  * to by _base.  Call prodigal_genes_free() to release.
  *
+ * Gene i is the CLI's gene i+1 for the sequence (GFF ID <seqnum>_<i+1>).
+ *
  * Every value is the one the CLI prints in its GFF attributes (partial=,
  * start_type=, rbs_motif=, ..., tscore=): the values that chose the gene.
  * In metagenomic mode the CLI's GFF column 6 differs from cscore + sscore
  * (an upstream quirk, docs/upstream-behavior.md).
  *
- * The strings (rbs_motif, rbs_spacer) are stored in the same allocation:
- * they are valid until prodigal_genes_free() and are not freed on their own.
+ * The strings (rbs_motif, rbs_spacer) and the proteins are stored in the
+ * same allocation: they are valid until prodigal_genes_free() and are not
+ * freed on their own.
  *
- * If n_genes == 0, all array pointers may be NULL and _base is NULL.
+ * If n_genes == 0, every array pointer and _base are NULL.
  */
 typedef struct {
     int32_t  n_genes;           /**< Number of predicted genes */
@@ -363,6 +372,21 @@ typedef struct {
 
     const char **rbs_motif;     /**< RBS motif, as the CLI prints it (e.g. "AGGAG", "TAA", "None"), length n_genes */
     const char **rbs_spacer;    /**< RBS spacer, as the CLI prints it (e.g. "5-10bp", "8bp", "None"), length n_genes */
+
+    /** Proteins, when the config set want_proteins; otherwise NULL.
+     *  Arrow-style: gene i's protein is the protein_offsets[i+1] -
+     *  protein_offsets[i] letters at protein_data + protein_offsets[i];
+     *  there are n_genes + 1 offsets, the first 0, and protein_data has no
+     *  NUL bytes.  A protein is the CLI's -a record
+     *  without its line breaks: one letter per codon of the gene, from its
+     *  start, with X for a codon holding an ambiguous base, M for the start
+     *  codon (unless the gene runs off the edge there), * for the stop codon
+     *  (none when the gene runs off the edge at its stop end), and between
+     *  them the amino acids of the model's translation table.  Upstream's
+     *  tables 10, 16 and 24 differ from NCBI's, and a table-22 stop holding
+     *  an ambiguous base reads X (docs/upstream-behavior.md, quirk 13). */
+    int32_t *protein_offsets;
+    char    *protein_data;
 
     void    *_base;             /**< Single backing allocation (16-byte aligned).  Internal. */
 } prodigal_genes_soa_t;
@@ -388,6 +412,10 @@ typedef struct {
     double  gc_cont;
     const char *rbs_motif;      /**< Valid until prodigal_genes_aos_free() */
     const char *rbs_spacer;     /**< Valid until prodigal_genes_aos_free() */
+    /** The protein, NUL-terminated (see prodigal_genes_soa_t), or NULL
+     *  unless the config set want_proteins.  Valid until
+     *  prodigal_genes_aos_free(). */
+    const char *protein;
 } prodigal_gene_t;
 
 /**

@@ -1,5 +1,16 @@
 VERSION 2.6.5 (unreleased)
 
+* Library: proteins. With the new config field want_proteins (default 0),
+prodigal_find_genes also returns each gene's protein: the CLI's -a record
+without its line breaks. The SOA holds them Arrow-style, n_genes + 1
+offsets from 0 (protein_offsets) into protein_data, with no NUL bytes; the
+AOS gene, NUL-terminated (protein). The CLI's -a file and the library
+translate with the same code, so they agree; the -a file is unchanged.
+prodigal_config_t, prodigal_genes_soa_t and prodigal_gene_t gain these
+fields, so consumers must be rebuilt. prodigal_create rejects an old
+config's struct_size on 64-bit targets only: where pointers are 4 bytes
+(wasm32, 32-bit ARM, Win32) the new field fills padding and the size
+doesn't change.
 * Library: new prodigal_config_validate says why a config is rejected.
 * Library: prodigal_create also rejects a start weight that is not finite
 and > 0, and a free_fn without an alloc_fn.

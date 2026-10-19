@@ -339,39 +339,45 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
 
 }
 
-/* Print the gene translations */
-void write_translations(FILE *fh, struct _gene *genes, int ng, struct 
-                        _node *nod, unsigned char *seq, unsigned char *rseq, 
+/* The number of letters in gene g's protein, one per codon (upstream's
+   loop count; genes are whole codons). */
+int pdg_protein_length(const struct _gene *g) {
+  return (g->end - g->begin + 2) / 3;
+}
+
+/* Letter k of gene g's protein, counting codons from its start, under model
+   tinf. The CLI's -a file and the library's proteins are both made of these
+   letters; the rules are in docs/internals.md ("Translation"). */
+char pdg_protein_letter(const struct _gene *g, int k, unsigned char *seq,
+                        unsigned char *rseq, unsigned char *useq, int slen,
+                        struct _training *tinf) {
+  /* The codon at p on its strand, whose first base on the forward strand,
+     where useq marks ambiguous bases, is f */
+  int p = (g->strand == 1) ? g->begin-1 + 3*k : slen-g->end + 3*k;
+  int f = (g->strand == 1) ? p : slen-3-p;
+
+  if(is_n(useq, f) == 1 || is_n(useq, f+1) == 1 || is_n(useq, f+2) == 1)
+    return 'X';
+  return amino(g->strand == 1 ? seq : rseq, p, tinf,
+               k == 0 && g->start_type != 3);
+}
+
+/* Print the gene translations, 60 letters to a line */
+void write_translations(FILE *fh, struct _gene *genes, int ng,
+                        unsigned char *seq, unsigned char *rseq,
                         unsigned char *useq, int slen, struct _training *tinf,
-                        int sctr, char *short_hdr) {
-  int i, j;
+                        char *short_hdr) {
+  int i, k, n;
 
   for(i = 0; i < ng; i++) {
-    if(nod[genes[i].start_ndx].strand == 1) {
-      fprintf(fh, ">%s_%d # %d # %d # 1 # %s\n", short_hdr, i+1,
-              genes[i].begin, genes[i].end, genes[i].gene_data);
-      for(j = genes[i].begin; j < genes[i].end; j+=3) {
-        if(is_n(useq, j-1) == 1 || is_n(useq, j) == 1 || is_n(useq, j+1) == 1) 
-          fprintf(fh, "X");
-        else fprintf(fh, "%c", amino(seq, j-1, tinf, (j==genes[i].begin?1:0) &&
-                     (1-nod[genes[i].start_ndx].edge)));
-        if((j-genes[i].begin)%180 == 177) fprintf(fh, "\n");
-      }
-      if((j-genes[i].begin)%180 != 0) fprintf(fh, "\n");
+    fprintf(fh, ">%s_%d # %d # %d # %d # %s\n", short_hdr, i+1,
+            genes[i].begin, genes[i].end, genes[i].strand, genes[i].gene_data);
+    n = pdg_protein_length(&genes[i]);
+    for(k = 0; k < n; k++) {
+      fputc(pdg_protein_letter(&genes[i], k, seq, rseq, useq, slen, tinf), fh);
+      if(k%60 == 59) fputc('\n', fh);
     }
-    else {
-      fprintf(fh, ">%s_%d # %d # %d # -1 # %s\n", short_hdr, i+1,
-              genes[i].begin, genes[i].end, genes[i].gene_data);
-      for(j = slen+1-genes[i].end; j < slen+1-genes[i].begin; j+=3) {
-        if(is_n(useq, slen-j) == 1 || is_n(useq, slen-1-j) == 1 ||
-           is_n(useq, slen-2-j) == 1)
-          fprintf(fh, "X");
-        else fprintf(fh, "%c", amino(rseq, j-1, tinf, (j==slen+1-genes[i].end?1:0)
-                     && (1-nod[genes[i].start_ndx].edge)));
-        if((j-slen-1+genes[i].end)%180 == 177) fprintf(fh, "\n");
-      }
-      if((j-slen-1+genes[i].end)%180 != 0) fprintf(fh, "\n");
-    }
+    if(n%60 != 0) fputc('\n', fh);
   }
 }
 

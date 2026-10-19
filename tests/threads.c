@@ -3,10 +3,10 @@
     each with its own context and a 2 MiB stack (what callers such as Rust
     threads give the library), run metagenomic mode, single mode from a
     loaded model, and single mode trained on the input, several rounds each
-    on the same context. Every round must give what the same run gave on the
-    main thread (the first differing line is printed). Built with
-    -fsanitize=thread, it also catches data races (the sanitizers CI job;
-    docs/testing.md).
+    on the same context. Every round must give the genes and proteins the
+    same run gave on the main thread (the first differing line is printed).
+    Built with -fsanitize=thread, it also catches data races (the sanitizers
+    CI job; docs/testing.md).
 
     usage: tests/threads   (from the repository root)
 *******************************************************************************/
@@ -55,6 +55,7 @@ static prodigal_ctx_t *make(int k) {
     prodigal_config_t cfg;
     prodigal_config_init(&cfg);
     cfg.meta_mode = k == META;
+    cfg.want_proteins = 1;
     return prodigal_create(&cfg);
 }
 

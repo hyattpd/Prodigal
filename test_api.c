@@ -66,11 +66,14 @@ static void *load_ref_model(size_t *len) {
     return blob;
 }
 
+/* The tests' contexts return proteins, so every test that compares genes
+   compares their proteins too; test_proteins_off checks the default. */
 static prodigal_ctx_t *make_ctx(int meta) {
     prodigal_config_t config;
     prodigal_ctx_t *ctx;
     prodigal_config_init(&config);
     config.meta_mode = meta;
+    config.want_proteins = 1;
     if ((ctx = prodigal_create(&config)) == NULL) printf("[FAIL] prodigal_create\n");
     return ctx;
 }
@@ -158,6 +161,7 @@ static void test_config_init_defaults(void) {
     ASSERT_TRUE(config.log_user_data == NULL);
     ASSERT_TRUE(config.progress_callback == NULL);
     ASSERT_TRUE(config.progress_user_data == NULL);
+    ASSERT_EQ_INT(config.want_proteins, 0);
     TEST_PASS();
 }
 
@@ -732,8 +736,9 @@ static void test_aos_matches_soa(void) {
     ASSERT_EQ_INT(soa->n_genes, aos->n_genes);
 
     if (soa->n_genes > 0) {
-        int i;
+        int32_t i, len;
         for (i = 0; i < soa->n_genes; i++) {
+            const char *p = api_protein(soa, i, &len);
             ASSERT_EQ_INT(soa->begin[i], aos->genes[i].begin);
             ASSERT_EQ_INT(soa->end[i], aos->genes[i].end);
             ASSERT_EQ_INT(soa->strand[i], aos->genes[i].strand);
@@ -742,6 +747,9 @@ static void test_aos_matches_soa(void) {
             /* The AOS owns its strings: its SOA is freed by now */
             ASSERT_TRUE(strcmp(soa->rbs_motif[i], aos->genes[i].rbs_motif) == 0);
             ASSERT_TRUE(strcmp(soa->rbs_spacer[i], aos->genes[i].rbs_spacer) == 0);
+            ASSERT_TRUE(aos->genes[i].protein != NULL);
+            ASSERT_TRUE(strlen(aos->genes[i].protein) == (size_t)len);
+            ASSERT_TRUE(memcmp(aos->genes[i].protein, p, (size_t)len) == 0);
         }
     }
 
@@ -901,6 +909,7 @@ static prodigal_ctx_t *make_counted_ctx(int meta) {
     prodigal_config_t config;
     prodigal_config_init(&config);
     config.meta_mode = meta;
+    config.want_proteins = 1;
     config.alloc_fn = test_alloc;
     config.free_fn = test_free_fn;
     alloc_count = free_count = 0;
@@ -1231,13 +1240,16 @@ static void test_training_setters(void) {
     CLI's ground truth line for line.
 *******************************************************************************/
 
-/* Run all of fa on ctx and compare with the CLI's output in ref. */
+/* Run all of fa on ctx and compare with the CLI's output: the GFF ref and
+   the -a file faa. */
 static int golden_run(prodigal_ctx_t *ctx, const fasta_t *fa, const char *ref,
-                      int meta) {
+                      const char *faa, int meta) {
     lines_t want = {0}, got = {0};
-    int ok = 0;
-    if (api_emit_cli_file(ref, meta, lines_emit, &want) != 0)
-        missing_fixture(ref);
+    int ok = 0, rc = api_emit_cli_file(ref, faa, meta, lines_emit, &want);
+    if (rc == API_CLI_UNREADABLE)
+        printf("[FAIL] cannot read %s or %s (run from the repo root)\n", ref, faa);
+    else if (rc == API_CLI_MISMATCH)
+        printf("[FAIL] %s and %s hold different numbers of genes\n", ref, faa);
     else if (api_emit_records(ctx, fa, 0, fa->n, meta, lines_emit, &got) != PRODIGAL_OK)
         printf("[FAIL] find_genes: %s\n", prodigal_last_error(ctx));
     else
@@ -1292,8 +1304,9 @@ enum { META, SINGLE, REF_MODEL, OTHER_MODEL };
 
 /* One golden test on anthus_aco.fas: make a context from src, train it
    `trainings` times on all of anthus (then its model must be
-   ref_train.bin), and compare the genes it finds with the CLI's in ref. */
-static void golden(int src, int trainings, const char *ref) {
+   ref_train.bin), and compare the genes it finds and their proteins with
+   the CLI's in ref and faa. */
+static void golden(int src, int trainings, const char *ref, const char *faa) {
     fasta_t fa;
     prodigal_ctx_t *ctx = NULL;
     void *blob = NULL;
@@ -1318,7 +1331,7 @@ static void golden(int src, int trainings, const char *ref) {
             ctx = NULL;
         }
     if (ctx != NULL && (trainings == 0 || model_is_ref(ctx)) &&
-        golden_run(ctx, &fa, ref, src == META))
+        golden_run(ctx, &fa, ref, faa, src == META))
         TEST_PASS();
     prodigal_destroy(ctx);
     free(blob);
@@ -1326,24 +1339,28 @@ static void golden(int src, int trainings, const char *ref) {
 }
 
 static void test_golden(void) {
+    /* ref_trained.gff equals ref_single.gff (the trained model is
+       ref_train.bin), so its proteins are ref_single.proteins */
     static const struct {
-        const char *name; int src, trainings; const char *ref;
+        const char *name; int src, trainings; const char *ref, *faa;
     } t[] = {
-        { "meta mode = ref_meta.gff, every field", META, 0, REF_DIR "ref_meta.gff" },
-        { "API training = ref_train.bin, genes = ref_single.gff", SINGLE, 1,
-          REF_DIR "ref_single.gff" },
-        { "training twice: the same", SINGLE, 2, REF_DIR "ref_single.gff" },
+        { "meta mode = ref_meta.gff + .proteins, every field", META, 0,
+          REF_DIR "ref_meta.gff", REF_DIR "ref_meta.proteins" },
+        { "API training = ref_train.bin, genes = ref_single.*", SINGLE, 1,
+          REF_DIR "ref_single.gff", REF_DIR "ref_single.proteins" },
+        { "training twice: the same", SINGLE, 2, REF_DIR "ref_single.gff",
+          REF_DIR "ref_single.proteins" },
         { "other model loaded, then training: the same", OTHER_MODEL, 1,
-          REF_DIR "ref_single.gff" },
+          REF_DIR "ref_single.gff", REF_DIR "ref_single.proteins" },
         { "single mode from ref_train.bin = ref_trained.gff", REF_MODEL, 0,
-          REF_DIR "ref_trained.gff" },
+          REF_DIR "ref_trained.gff", REF_DIR "ref_single.proteins" },
     };
     char name[128];
     size_t i;
     for (i = 0; i < sizeof(t) / sizeof(t[0]); i++) {
         snprintf(name, sizeof(name), "golden: %s", t[i].name);
         TEST_START(name);
-        golden(t[i].src, t[i].trainings, t[i].ref);
+        golden(t[i].src, t[i].trainings, t[i].ref, t[i].faa);
     }
 }
 
@@ -1496,7 +1513,8 @@ static void test_low_complexity_grow_fails(void) {
     ASSERT_TRUE(node_tail_zero(ctx));
 
     /* No stale node reaches the next sequence */
-    if (!golden_run(ctx, &fa, REF_DIR "ref_meta.gff", 1)) return;
+    if (!golden_run(ctx, &fa, REF_DIR "ref_meta.gff", REF_DIR "ref_meta.proteins", 1))
+        return;
     ASSERT_TRUE(node_tail_zero(ctx));
 
     prodigal_destroy(ctx);
@@ -1654,6 +1672,85 @@ static void test_length_limits(void) {
     Test runner
 *******************************************************************************/
 
+/*******************************************************************************
+    Phase 17: Proteins
+
+    The golden and compare tests check the letters against the CLI's -a
+    file, and api_emit_found checks every protein's layout
+    (api_proteins_ok, which the fuzz target checks too); these check what
+    the letters mean on genes made by hand, and the default.
+*******************************************************************************/
+
+/* The letters of a gene of seq (white-box: pdg_protein_letter on a gene
+   made by hand) under translation table table. */
+static void letters_of(prodigal_ctx_t *ctx, const char *seq, int strand,
+                       int start_type, int table, char *out) {
+    static struct _training tinf;   /* amino reads only the table */
+    struct _gene g;
+    int k, n;
+    memset(&g, 0, sizeof(g));
+    tinf.trans_table = table;
+    prodigal_set_sequence(ctx, seq, (int32_t)strlen(seq), NULL);
+    g.begin = 1;
+    g.end = ctx->slen;
+    g.strand = strand;
+    g.start_type = start_type;
+    n = pdg_protein_length(&g);
+    for (k = 0; k < n; k++)
+        out[k] = pdg_protein_letter(&g, k, ctx->seq, ctx->rseq, ctx->useq,
+                                    ctx->slen, &tinf);
+    out[n] = '\0';
+}
+
+static void test_protein_letters(void) {
+    TEST_START("proteins: M only at a real start, X, *, the table");
+    char got[16];
+    prodigal_ctx_t *ctx = make_ctx(1);
+    ASSERT_TRUE(ctx != NULL);
+    /* GTG AAA NNN TAA, then its reverse complement on the other strand */
+    letters_of(ctx, "GTGAAANNNTAA", 1, 1, 11, got);
+    ASSERT_TRUE(strcmp(got, "MKX*") == 0);
+    letters_of(ctx, "GTGAAANNNTAA", 1, 3, 11, got);    /* Edge: no M */
+    ASSERT_TRUE(strcmp(got, "VKX*") == 0);
+    letters_of(ctx, "TTANNNTTTCAC", -1, 1, 11, got);
+    ASSERT_TRUE(strcmp(got, "MKX*") == 0);
+    letters_of(ctx, "TTANNNTTTCAC", -1, 3, 11, got);
+    ASSERT_TRUE(strcmp(got, "VKX*") == 0);
+    /* TGA is a stop in table 11 and W in table 4 */
+    letters_of(ctx, "ATGTGATAA", 1, 0, 11, got);
+    ASSERT_TRUE(strcmp(got, "M**") == 0);
+    letters_of(ctx, "ATGTGATAA", 1, 0, 4, got);
+    ASSERT_TRUE(strcmp(got, "MW*") == 0);
+    prodigal_destroy(ctx);
+    TEST_PASS();
+}
+
+/* Without want_proteins (the default) there are none. */
+static void test_proteins_off(void) {
+    TEST_START("proteins: none unless want_proteins is set");
+    prodigal_config_t config;
+    prodigal_genes_soa_t *soa = NULL;
+    prodigal_genes_t *aos = NULL;
+    fasta_t fa;
+    prodigal_ctx_t *ctx;
+    if (!load_anthus(&fa)) return;
+    prodigal_config_init(&config);
+    config.meta_mode = 1;
+    ctx = prodigal_create(&config);
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_EQ_INT(prodigal_set_sequence(ctx, fa.seqs[0], fa.lens[0], fa.headers[0]), PRODIGAL_OK);
+    ASSERT_EQ_INT(prodigal_find_genes(ctx, &soa, NULL), PRODIGAL_OK);
+    ASSERT_TRUE(soa->n_genes > 0);
+    ASSERT_TRUE(soa->protein_offsets == NULL && soa->protein_data == NULL);
+    ASSERT_EQ_INT(prodigal_find_genes_aos(ctx, &aos, NULL), PRODIGAL_OK);
+    ASSERT_TRUE(aos->n_genes > 0 && aos->genes[0].protein == NULL);
+    prodigal_genes_free(soa);
+    prodigal_genes_aos_free(aos);
+    prodigal_destroy(ctx);
+    fasta_free(&fa);
+    TEST_PASS();
+}
+
 int main(void) {
     printf("=== Prodigal Library API Test Suite ===\n\n");
 
@@ -1750,6 +1847,10 @@ int main(void) {
     test_gene_array_grows();
     test_masks_past_max();
     test_length_limits();
+
+    printf("\nPhase 17: Proteins\n");
+    test_protein_letters();
+    test_proteins_off();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

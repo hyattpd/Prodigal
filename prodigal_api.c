@@ -728,14 +728,29 @@ int pdg_meta(prodigal_ctx_t *ctx, int seqnum, pdg_meta_result_t *res) {
 
 #define ALIGN16(x) (((x) + 15) & ~(size_t)15)
 
-/* The output for genes[0, ng), as record_gene_data captured them. */
-static prodigal_genes_soa_t *extract_soa(const struct _gene *genes, int ng) {
+/* The output for ctx->genes[0, ng), as record_gene_data captured them,
+   with their proteins under model tinf if the config wants them. Sets
+   *out, or the error. */
+static int extract_soa(prodigal_ctx_t *ctx, int ng, struct _training *tinf,
+                       prodigal_genes_soa_t **out) {
+    const struct _gene *genes = ctx->genes;
     prodigal_genes_soa_t *soa;
     size_t n = (size_t)(ng > 0 ? ng : 1);  /* at least 1 to avoid zero alloc */
-    size_t offset = 0;
+    size_t offset = 0, letters = 0;
+    int proteins = ctx->config.want_proteins != 0;
     char *base;
     struct _rbs_text *text;
-    int i;
+    int i, k;
+
+    /* Unreachable (about MAX_BASES / 3 letters; genes overlap little): it
+       guards the int32 offsets */
+    for (i = 0; proteins && i < ng; i++)
+        letters += (size_t)pdg_protein_length(&genes[i]);
+    if (letters > INT32_MAX) {
+        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INTERNAL,
+                      "%zu protein letters overflow 32-bit offsets", letters);
+        return PRODIGAL_ERR_INTERNAL;
+    }
 
     /* Calculate total size with 16-byte alignment */
     size_t sz_begin    = ALIGN16(n * sizeof(int32_t));
@@ -754,20 +769,23 @@ static prodigal_genes_soa_t *extract_soa(const struct _gene *genes, int ng) {
     size_t sz_motif    = ALIGN16(n * sizeof(const char *));
     size_t sz_spacer   = ALIGN16(n * sizeof(const char *));
     size_t sz_text     = ALIGN16(n * sizeof(struct _rbs_text));
+    size_t sz_offsets  = proteins ? ALIGN16((n + 1) * sizeof(int32_t)) : 0;
+    size_t sz_letters  = ALIGN16(letters);  /* aligned_alloc: whole blocks */
 
     size_t total = sz_begin + sz_end + sz_strand + sz_pleft + sz_pright +
                    sz_stype + sz_cscore + sz_sscore + sz_rscore + sz_uscore +
                    sz_tscore + sz_conf + sz_gc + sz_motif + sz_spacer +
-                   sz_text;
+                   sz_text + sz_offsets + sz_letters;
 
     soa = (prodigal_genes_soa_t *)malloc(sizeof(prodigal_genes_soa_t));
-    if (soa == NULL) return NULL;
+    if (soa == NULL) goto nomem;
     memset(soa, 0, sizeof(*soa));
     soa->n_genes = ng;
 
     if (ng == 0) {
         soa->_base = NULL;
-        return soa;
+        *out = soa;
+        return PRODIGAL_OK;
     }
 
     /* Single aligned allocation — portable across POSIX, Windows, WASM */
@@ -783,7 +801,7 @@ static prodigal_genes_soa_t *extract_soa(const struct _gene *genes, int ng) {
 #endif
     if (base == NULL) {
         free(soa);
-        return NULL;
+        goto nomem;
     }
     soa->_base = base;   /* every element below ng is written */
 
@@ -804,7 +822,12 @@ static prodigal_genes_soa_t *extract_soa(const struct _gene *genes, int ng) {
     soa->gc_cont      = (double *)(base + offset);  offset += sz_gc;
     soa->rbs_motif    = (const char **)(base + offset); offset += sz_motif;
     soa->rbs_spacer   = (const char **)(base + offset); offset += sz_spacer;
-    text              = (struct _rbs_text *)(base + offset);
+    text              = (struct _rbs_text *)(base + offset); offset += sz_text;
+    if (proteins) {
+        soa->protein_offsets = (int32_t *)(base + offset); offset += sz_offsets;
+        soa->protein_data    = base + offset;
+        soa->protein_offsets[0] = 0;
+    }
 
     for (i = 0; i < ng; i++) {
         const struct _gene *g = &genes[i];
@@ -824,19 +847,32 @@ static prodigal_genes_soa_t *extract_soa(const struct _gene *genes, int ng) {
         text[i] = g->rbs;
         soa->rbs_motif[i] = text[i].motif;
         soa->rbs_spacer[i] = text[i].spacer;
+        if (proteins) {
+            char *p = soa->protein_data + soa->protein_offsets[i];
+            int len = pdg_protein_length(g);
+            for (k = 0; k < len; k++)
+                p[k] = pdg_protein_letter(g, k, ctx->seq, ctx->rseq, ctx->useq,
+                                          ctx->slen, tinf);
+            soa->protein_offsets[i + 1] = soa->protein_offsets[i] + len;
+        }
     }
 
-    return soa;
+    *out = soa;
+    return PRODIGAL_OK;
+
+nomem:
+    PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM, "Failed to allocate SOA output");
+    return PRODIGAL_ERR_NOMEM;
 }
 
 /*******************************************************************************
     Gene finding — public API
 *******************************************************************************/
 
-/* bin is the metagenomic bin that called the genes, -1 in single mode. */
+/* tinf is the model that called the genes: bin's in metagenomic mode, the
+   context's in single mode (bin -1). */
 static void fill_stats(const prodigal_ctx_t *ctx, int ng, int nn, int bin,
-                       prodigal_stats_t *stats) {
-    const struct _training *tinf = (bin >= 0) ? ctx->meta[bin].tinf : &ctx->tinf;
+                       const struct _training *tinf, prodigal_stats_t *stats) {
     if (stats == NULL) return;
     memset(stats, 0, sizeof(*stats));
     stats->n_genes = ng;
@@ -852,6 +888,7 @@ static void fill_stats(const prodigal_ctx_t *ctx, int ng, int nn, int bin,
 
 int prodigal_find_genes(prodigal_ctx_t *ctx, prodigal_genes_soa_t **genes_out,
                         prodigal_stats_t *stats_out) {
+    struct _training *tinf;
     int rc, ng, nn, bin = -1;
 
     if (ctx == NULL || genes_out == NULL) return PRODIGAL_ERR_INVALID_INPUT;
@@ -882,13 +919,10 @@ int prodigal_find_genes(prodigal_ctx_t *ctx, prodigal_genes_soa_t **genes_out,
         nn = ctx->nn;
     }
 
-    *genes_out = extract_soa(ctx->genes, ng);
-    if (*genes_out == NULL) {
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_NOMEM,
-                      "Failed to allocate SOA output");
-        return PRODIGAL_ERR_NOMEM;
-    }
-    fill_stats(ctx, ng, nn, bin, stats_out);
+    tinf = (bin >= 0) ? ctx->meta[bin].tinf : &ctx->tinf;
+    rc = extract_soa(ctx, ng, tinf, genes_out);
+    if (rc != PRODIGAL_OK) return rc;
+    fill_stats(ctx, ng, nn, bin, tinf, stats_out);
     return PRODIGAL_OK;
 }
 
@@ -915,9 +949,13 @@ int prodigal_find_genes_aos(prodigal_ctx_t *ctx, prodigal_genes_t **genes_out,
 
     if (soa->n_genes > 0) {
         struct _rbs_text *text;
-        /* The genes, then their motif and spacer text */
-        aos->_base = malloc(soa->n_genes * (sizeof(prodigal_gene_t) +
-                                            sizeof(struct _rbs_text)));
+        char *prot;
+        size_t n = (size_t)soa->n_genes, letters = 0;
+        if (soa->protein_offsets != NULL)
+            letters = (size_t)soa->protein_offsets[n] + n;   /* with NULs */
+        /* The genes, their motif and spacer text, then their proteins */
+        aos->_base = malloc(n * (sizeof(prodigal_gene_t) +
+                                 sizeof(struct _rbs_text)) + letters);
         if (aos->_base == NULL) {
             free(aos);
             prodigal_genes_free(soa);
@@ -926,7 +964,8 @@ int prodigal_find_genes_aos(prodigal_ctx_t *ctx, prodigal_genes_t **genes_out,
             return PRODIGAL_ERR_NOMEM;
         }
         aos->genes = (prodigal_gene_t *)aos->_base;
-        text = (struct _rbs_text *)(aos->genes + soa->n_genes);
+        text = (struct _rbs_text *)(aos->genes + n);
+        prot = letters ? (char *)(text + n) : NULL;
 
         for (i = 0; i < soa->n_genes; i++) {
             aos->genes[i].begin = soa->begin[i];
@@ -945,6 +984,14 @@ int prodigal_find_genes_aos(prodigal_ctx_t *ctx, prodigal_genes_t **genes_out,
             /* The SOA's strings came from a struct _rbs_text, so they fit */
             aos->genes[i].rbs_motif = strcpy(text[i].motif, soa->rbs_motif[i]);
             aos->genes[i].rbs_spacer = strcpy(text[i].spacer, soa->rbs_spacer[i]);
+            aos->genes[i].protein = prot;
+            if (prot != NULL) {
+                size_t len = (size_t)(soa->protein_offsets[i + 1] -
+                                      soa->protein_offsets[i]);
+                memcpy(prot, soa->protein_data + soa->protein_offsets[i], len);
+                prot[len] = '\0';
+                prot += len + 1;
+            }
         }
     }
 

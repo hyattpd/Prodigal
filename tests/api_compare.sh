@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Library API ≡ CLI on the same build.
 #
-# For each case, runs the CLI (GFF output) and tests/api_dump (the public
-# API) with the same options and compares their output in the form of
-# tests/api_gff.h. Single mode is checked both training on the input, as the
-# CLI does (the model the API trains must also equal the CLI's -t file), and
-# (the "model" cases) predicting from a CLI-written training file.
+# For each case, runs the CLI (GFF and -a output) and tests/api_dump (the
+# public API, with proteins) with the same options and compares their output
+# in the form of tests/api_gff.h: every gene's fields and its protein. Single
+# mode is checked both training on the input, as the CLI does (the model the
+# API trains must also equal the CLI's -t file), and (the "model" cases)
+# predicting from a CLI-written training file.
 #
 # Usage: tests/api_compare.sh
 # Environment:
@@ -37,11 +38,11 @@ if [ "${1:-}" = --case ]; then
       api_opts="--write-model api.bin"
     fi
   fi
-  if ! "$P" -i "$in" -p "$mode" "$@" -f gff -q -o cli.gff 2>cli.err; then
+  if ! "$P" -i "$in" -p "$mode" "$@" -f gff -q -o cli.gff -a cli.faa 2>cli.err; then
     echo "FAIL $name: CLI failed: $(head -1 cli.err)" >RESULT
-  elif ! "$D" -p "$mode" "$@" $api_opts "$in" >api.txt 2>api.err; then
+  elif ! "$D" -p "$mode" "$@" $api_opts --proteins "$in" >api.txt 2>api.err; then
     echo "FAIL $name: API failed: $(head -1 api.err)" >RESULT
-  elif ! "$D" --from-cli -p "$mode" cli.gff >cli.txt 2>>api.err; then
+  elif ! "$D" --from-cli -p "$mode" --faa cli.faa cli.gff >cli.txt 2>>api.err; then
     echo "FAIL $name: cannot translate the CLI's GFF: $(tail -1 api.err)" >RESULT
   elif ! grep -q '^#' cli.txt; then
     echo "FAIL $name: no contigs in the CLI's GFF" >RESULT

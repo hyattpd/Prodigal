@@ -110,6 +110,14 @@ oracle. Change one only by explicit decision: record it here and in
     what it has read (`read_seq_training`). The library returns an error
     instead. (Upstream's other caps, 30,000 genes per contig and 5,000
     masks, are gone: see "Fork deviations".)
+13. **Three translation tables differ from NCBI's** (`amino`, `is_stop`
+    in `sequence.c`). Table 10: TGA translates as W (NCBI: C). Table 16:
+    TAG, a sense codon there, translates as X (NCBI: L). Table 24: TGA is
+    a stop (NCBI: W), which also changes gene calls, and AGA and AGG
+    translate as R (NCBI: S and K). The other tables match NCBI. Separately,
+    an ambiguous base reads as C (quirk 3), so in table 22, where TCA is a
+    stop, a TNA codon ends a gene, and its translation is X, not `*`.
+    These affect the CLI's `-a` output and the library's proteins alike.
 
 ## Upstream bugs present in the CLI too (fix, but preserve output)
 

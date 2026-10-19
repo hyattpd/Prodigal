@@ -412,9 +412,8 @@ int main(int argc, char *argv[]) {
                 short_header, VERSION);
     fflush(output_ptr);
     if(trans_ptr != stdout)
-      write_translations(trans_ptr, ctx->genes, ng, ctx->nodes, ctx->seq,
-                         ctx->rseq, ctx->useq, ctx->slen, tinf, num_seq,
-                         short_header);
+      write_translations(trans_ptr, ctx->genes, ng, ctx->seq, ctx->rseq,
+                         ctx->useq, ctx->slen, tinf, short_header);
     if(nuc_ptr != stdout)
       write_nucleotide_seqs(nuc_ptr, ctx->genes, ng, ctx->nodes, ctx->seq,
                             ctx->rseq, ctx->useq, ctx->slen, tinf, num_seq,
