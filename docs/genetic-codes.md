@@ -33,6 +33,12 @@ Decided on 2026-10-19:
   changed, and table 26, which needs three clauses. The clauses apply only
   to the new tables, so no table upstream accepted changes.
 
+Decided on 2026-10-22:
+- Metagenomic mode refuses any table but 11, rather than ignore it as
+  upstream did (below).
+- Prodigal's three start codons are a documented limit of its model, in
+  table 11 too ("What every table lacks", below).
+
 ## Supported tables
 
 | `-g` | NCBI name | Stops | Starts Prodigal uses |
@@ -53,18 +59,32 @@ Tables 15 and 26 are nuclear codes of eukaryotes, a ciliate and a yeast.
 Prodigal still finds genes as in a prokaryote: it does not model introns,
 so a gene with one is called wrongly or missed.
 
-> **Metagenomic mode ignores a supported `-g`.** Metagenomic mode
-> (`-p meta`, `meta_mode`) uses its 50 pretrained bins' tables, 11 (47
-> bins) and 4 (3 bins), so its results are unaffected by this fork. It
-> rejects an unsupported `-g` (`-p meta -g 1` is an error; upstream
-> ignored it). But, as upstream did, it ignores a supported one without a
-> warning: `-p meta -g 5` runs exactly as `-p meta` (quirk 9 in
-> `docs/upstream-behavior.md`). For a genome that uses any supported table
-> other than 11 and 4, use single mode, which needs at least 20,000 bases
-> of training input. Many mitochondrial genomes are smaller than that, and
-> so are the plastid genomes of *Balanophora* (about 16 kb), the genus
-> table 32 is for. For those, train on several genomes together, or load a
-> model trained on such a set with `-t`.
+> **Metagenomic mode takes table 11 only.** Metagenomic mode (`-p meta`,
+> `meta_mode`) has no model of the genome. It scores each sequence with 50
+> pretrained bins and keeps the best one, and each bin brings the table it
+> was trained under: 11 (47 bins) or 4 (3 *Mycoplasma* bins). So it
+> chooses table 11 or 4 for each sequence, and reports the one it used
+> (`transl_table=` in the GFF header; `translation_table` in the library's
+> `prodigal_stats_t`).
+>
+> It cannot use another table faithfully. The bins are models of genomes
+> that use tables 11 and 4: their coding statistics, start codons and
+> stops are those genomes'. The clearest case: all 50 give every hexamer
+> that starts with an in-frame TAG Prodigal's lowest coding score, and the
+> 47 table-11 bins do the same for TGA. Run under a table where TAG or TGA
+> is an amino acid, a bin would read through the codon but score it as
+> non-coding.
+>
+> Upstream ignored `-g` in metagenomic mode without a warning (quirk 9 in
+> `docs/upstream-behavior.md`). The fork refuses any table but 11 there,
+> and a model loaded into a metagenomic context ("Where it is enforced",
+> below). `-g 11` is accepted and changes nothing.
+>
+> For a genome that uses another table, use single mode, which needs at
+> least 20,000 bases of training input. Many mitochondrial genomes are
+> smaller than that, and so are the plastid genomes of *Balanophora*
+> (about 16 kb), the genus table 32 is for. For those, train on several
+> genomes together, or load a model trained on such a set with `-t`.
 
 ## The rules
 
@@ -133,6 +153,18 @@ start codons NCBI lists that Prodigal never uses, per supported table:
 
 Tables 9, 15, 21 and 25 have none.
 
+**Table 11, the default, is one of them.** NCBI lists seven start codons
+for it (ATG, GTG, TTG, CTG, ATT, ATC, ATA), and Prodigal uses the first
+three. In E. coli K-12 MG1655 (NCBI's annotation of `NC_000913.3`, checked
+on 2026-10-19), 6 of the 4,300 annotated genes start at one of the others:
+4 at ATT, among them infC (IF-3) and pcnB, and 2 at CTG. Prodigal calls 4
+of those 6 from another start codon (3 shorter, 1 longer) and misses 2.
+For scale, it agrees with the annotation's start on 3,889 of the 4,300
+genes and picks a different start on 239. This is a limit of Prodigal, as
+published and as upstream ships it; the fork documents it rather than
+change Prodigal's start model, which would mean new start types, a new
+training file format and retraining the 50 metagenomic bins.
+
 ## Rejected tables
 
 "Effect upstream" says what upstream Prodigal gets wrong with the table.
@@ -173,20 +205,24 @@ below).
 
 `pdg_trans_table_unsupported` (`sequence.c`, next to the codon logic) is the
 one list. It returns NULL for a supported table, and otherwise the reason.
-Everything that sets a table goes through it:
+`prodigal_config_validate` and `prodigal_set_translation_table` add
+metagenomic mode's rule, any table but 11 refused, and the CLI asks
+`prodigal_config_validate` once it has read all its options. Everything
+that sets a table goes through them:
 
 | Entry point | Behaviour on a rejected table |
 |---|---|
-| CLI `-g` | prints the reason and the usage; exit 15, the code upstream used for an invalid table. `-g` is also checked in meta mode, and with `-t`, where upstream warned and used the file's table. |
+| CLI `-g` | prints the reason and the usage; exit 15, the code upstream used for an invalid table. In metagenomic mode any table but 11 is refused, whether `-g` comes before or after `-p`. `-g` is also checked with `-t`, where upstream warned and used the file's table. |
 | CLI `-t`, reading a training file | prints the reason; exit 4. The file is checked as `prodigal_training_info` checks a model, which also covers GC, start weight and SD flag. Training files that upstream wrote with a rejected table are refused. |
-| `prodigal_config_validate` / `prodigal_create` | `PRODIGAL_ERR_INVALID_CONFIG` / NULL, in either mode |
-| `prodigal_set_translation_table` | `PRODIGAL_ERR_INVALID_INPUT`; the table is unchanged |
-| `prodigal_training_info` / `prodigal_load_training` | `PRODIGAL_ERR_INVALID_INPUT`; the context is unchanged |
+| `prodigal_config_validate` / `prodigal_create` | `PRODIGAL_ERR_INVALID_CONFIG` / NULL; with `meta_mode`, also any table but 11 |
+| `prodigal_set_translation_table` | `PRODIGAL_ERR_INVALID_INPUT`, the table unchanged; in a metagenomic context, also any table but 11 |
+| `prodigal_training_info` / `prodigal_load_training` | `PRODIGAL_ERR_INVALID_INPUT`; the context is unchanged. A metagenomic context refuses any model, as the CLI refuses `-p meta -t` (exit 2). |
 
 The messages give the table, the reason and this page, and fit in 256 bytes:
 
 ```
 Translation table 10 is not supported: Prodigal translates TGA as W (NCBI: C) (the-miint/Prodigal docs/genetic-codes.md).
+Translation table 4 is not supported: metagenomic mode takes table 11 only, as its bins choose table 11 or 4 for each sequence; use single mode (the-miint/Prodigal docs/genetic-codes.md).
 Training data has translation table 24, which is not supported: Prodigal reads TGA as a stop (NCBI: W) ...
 ```
 
@@ -202,7 +238,11 @@ Training data has translation table 24, which is not supported: Prodigal reads T
   the test until those lists are updated.
 - **The entry points.** `test_genetic_code_entry_points` checks that every
   entry point rejects the same tables with the same message.
-- **The CLI.** `tests/cli_regress.sh` checks the CLI's rejections, that
+  `test_genetic_code_meta_mode` checks that in metagenomic mode the config
+  and the setter take table 11 only, with the reason, and that a
+  metagenomic context refuses a model.
+- **The CLI.** `tests/cli_regress.sh` checks the CLI's rejections (in
+  metagenomic mode too, and that `-p meta -g 11` changes nothing), that
   `-g 26` and `-g 32` call genes with those tables, and that a training
   file written with either carries its table. `make compare` checks that
   the library and the CLI give the same genes and proteins with `-g 26`

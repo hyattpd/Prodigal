@@ -85,8 +85,8 @@ oracle. Change one only by explicit decision: record it here and in
 9. **Meta mode ignores `-g`, `-n` and the start weight.** Each of the 50
    bins brings its own translation table (11 or 4), SD usage and start
    weight. The best bin's model is the one that applies to the contig's
-   output and translations. (The fork rejects an unsupported `-g` in meta
-   mode and ignores a supported one: `docs/genetic-codes.md`.)
+   output and translations. (The fork refuses any `-g` but 11 in meta mode,
+   "Fork deviations" below; it still ignores `-n` and the start weight.)
 10. **`dprog`'s giant-ORF exception scans from the first node.** `dprog`
     scores each node's connections to the 500 nodes before it
     (`MAX_NODE_DIST`), except for a reverse-strand start, or a
@@ -175,6 +175,11 @@ Each changes output only on input upstream mishandled or rejected (tests:
   training file that uses one exits 4. That code is unchanged, so the
   eight tables still accepted from upstream give upstream's output. The
   rules and the reasons per table are in `docs/genetic-codes.md`.
+- **Metagenomic mode refuses any table but 11.** Upstream ignored `-g` in
+  meta mode (quirk 9); the fork exits 15 for `-p meta -g X` with X other
+  than 11, before or after `-p`, since the bins choose table 11 or 4
+  themselves (`docs/genetic-codes.md`). `-p meta -g 11` gives upstream's
+  output.
 - **Tables 26 and 32 are supported.** Upstream rejects `-g 26` and
   `-g 32` (exit 15); the fork calls genes with them, with clauses of its
   own marked "the fork's" (`docs/genetic-codes.md`, Provenance).

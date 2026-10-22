@@ -18,6 +18,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
 
+#include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 #include <sys/stat.h>
@@ -171,6 +172,14 @@ int main(int argc, char *argv[]) {
       i++;
     }
     else usage("Unknown option.");
+  }
+
+  /* Refuse any config prodigal_create would: -g took only supported
+     tables, but meta mode, which may come after it, takes 11 only */
+  if(prodigal_config_validate(&config, msg, sizeof(msg) - 1) != PRODIGAL_OK) {
+    msg[0] = (char)toupper((unsigned char)msg[0]);
+    strcat(msg, ".");
+    usage(msg);
   }
 
   /* Create the library context */
@@ -487,6 +496,7 @@ void usage(char *msg) {
 }
 
 void help(void) {
+  prodigal_config_t meta;
   int t;
   fprintf(stderr, "\nUsage:  prodigal [-a trans_file] [-c] [-d nuc_file]");
   fprintf(stderr, " [-f output_type]\n");
@@ -508,6 +518,15 @@ void help(void) {
     if(pdg_trans_table_unsupported(t) == NULL) fprintf(stderr, " %d", t);
   fprintf(stderr, "\n              (the-miint/Prodigal");
   fprintf(stderr, " docs/genetic-codes.md).\n");
+  fprintf(stderr, "              Metagenomic mode (-p meta) supports:");
+  prodigal_config_init(&meta);
+  meta.meta_mode = 1;
+  for(t = 1; t < 100; t++) {
+    meta.trans_table = t;
+    if(prodigal_config_validate(&meta, NULL, 0) == PRODIGAL_OK)
+      fprintf(stderr, " %d", t);
+  }
+  fprintf(stderr, ".\n");
   fprintf(stderr, "         -h:  Print help menu and exit.\n");
   fprintf(stderr, "         -i:  Specify FASTA/Genbank input file (default ");
   fprintf(stderr, "reads from stdin).\n");

@@ -110,13 +110,17 @@ add() {  # add <case> <input> <args...>
 expect_error=("trained.*.n")   # -n with a training file is a usage error
 outs="-o out -a faa -d fna -s starts"
 flagsets=("" "-c" "-m" "-n" "-g 4" "-g 25")
+# No -g in meta mode: the fork refuses all but 11 there, which changes
+# nothing (a deviation cli_regress checks)
+metasets=("" "-c" "-m" "-n")
 trainsets=("" "-c" "-m" "-n" "-g 4")
 
 phase=1 quiet=-q
 for entry in "${corpus[@]}"; do
   label=${entry%%:*} in=${entry#*:}
   for mode in single meta; do
-    for f in "${flagsets[@]}"; do
+    if [ $mode = meta ]; then sets=("${metasets[@]}"); else sets=("${flagsets[@]}"); fi
+    for f in "${sets[@]}"; do
       add "$label.$mode.$(fname "$f")" "$in" -p $mode $f -f gff $outs
     done
     add "$label.$mode.gbk" "$in" -p $mode -f gbk -o out

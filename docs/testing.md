@@ -47,7 +47,11 @@ CLI's deviations from upstream (`upstream-behavior.md`, "Fork deviations"):
 empty records (FASTA and EMBL), a closed standard input, and the rejected
 translation tables. Each of these (`expect_exit`) checks an exit code and
 a message:
-- `-g` with a sample of rejected tables, also in meta mode: exit 15;
+- `-g` with a sample of rejected tables: exit 15;
+- `-p meta` with `-g 1` (unsupported), `-g 4` and `-g 25` (any table but 11,
+  `-g` before or after `-p`): exit 15; `-p meta -g 11` must equal
+  `ref_meta.gff`;
+- `-g 7` before `-h` or another `-g`: exit 15, as upstream;
 - `-g` with a table that is not a number, and a final `-G` or `-d`: exit
   15;
 - `-t` with a copy of `ref_train.bin` patched to table 24: exit 4.
@@ -101,6 +105,8 @@ with ASan + UBSan. Build `./prodigal` with the same `CC` you pass to
   `ORACLE_PATCH=` builds it unpatched, for checking that rule on Linux.
 - Every case must succeed on the oracle, except the deliberate usage errors;
   agreeing on an error is not agreement on output.
+- Metagenomic cases run no `-g`: the fork refuses any table but 11 there,
+  which changes nothing, a deviation `cli_regress` checks.
 - Almost every case runs with `-q`. A few anthus cases run without it, with
   the banner normalised, and their stderr (training progress included) must
   match too.
@@ -117,7 +123,8 @@ with ASan + UBSan. Build `./prodigal` with the same `CC` you pass to
 
 On 2026-10-16: 150/150 cases identical with `ECOLI` set (about 50 s at
 `JOBS=24`, including the oracle build), 98/98 without, against both the
-patched and the unpatched oracle.
+patched and the unpatched oracle. Since metagenomic mode's matrix dropped
+`-g 4` and `-g 25` (2026-10-22): 140/140 with `ECOLI`, 92/92 without.
 
 ## Library tests (`make test`)
 
@@ -162,12 +169,15 @@ table if and only if Prodigal's own code meets the rules of
 - `is_stop` and `is_start` on the 61 codons that hold an N.
 
 A codon that is a stop or sense by context rules a table out. The outcome
-is pinned too, as lists of supported and rejected NCBI tables, and every
-metagenomic bin's table must be supported. `test_genetic_code_entry_points`
-checks that `config_validate`, `create`, `set_translation_table`,
-`training_info` and `load_training` reject the same tables with the same
-whole message, and change nothing when they do. `genetic-codes.md` has the
-rules and the tables.
+is pinned too, as lists of supported and rejected NCBI tables, and the
+metagenomic bins must use tables 11 (47 bins) and 4 (3), both supported.
+`test_genetic_code_entry_points` checks that `config_validate`, `create`,
+`set_translation_table`, `training_info` and `load_training` reject the
+same tables with the same whole message, and change nothing when they do.
+`test_genetic_code_meta_mode` checks that a metagenomic config and context
+take table 11 only, with the same reason from `config_validate` and
+`set_translation_table`, and that a metagenomic context refuses a model
+(`load_training`). `genetic-codes.md` has the rules and the tables.
 
 **ABI.** A struct field missing from the ABI table is a compile error
 (`abi_complete_*` in `prodigal_api.c`). `test_abi_layout` checks the field

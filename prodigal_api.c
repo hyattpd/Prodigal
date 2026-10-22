@@ -84,6 +84,17 @@ static void reset_model(prodigal_ctx_t *ctx) {
     ctx->tinf.st_wt = ctx->config.start_weight;
 }
 
+/* As pdg_trans_table_unsupported, in metagenomic mode too (meta != 0).
+   Its bins choose table 11 or 4 for each sequence, so it refuses any table
+   but 11 rather than ignore it, as upstream did (docs/genetic-codes.md). */
+static const char *mode_trans_table_unsupported(int tt, int meta) {
+    const char *why = pdg_trans_table_unsupported(tt);
+    if (why == NULL && meta != 0 && tt != 11)
+        why = "metagenomic mode takes table 11 only, as its bins choose "
+              "table 11 or 4 for each sequence; use single mode";
+    return why;
+}
+
 int prodigal_config_validate(const prodigal_config_t *config, char *msg,
                              size_t msg_len) {
     char buf[256] = "";
@@ -94,7 +105,8 @@ int prodigal_config_validate(const prodigal_config_t *config, char *msg,
         snprintf(buf, sizeof(buf), "struct_size is %zu, this library's is %zu "
                  "(header and library differ)", config->struct_size,
                  sizeof(prodigal_config_t));
-    else if ((why = pdg_trans_table_unsupported(config->trans_table)) != NULL)
+    else if ((why = mode_trans_table_unsupported(config->trans_table,
+                                                 config->meta_mode)) != NULL)
         snprintf(buf, sizeof(buf), "translation table %d"
                  PDG_TABLE_UNSUPPORTED, config->trans_table, why);
     else if (!is_valid_start_weight(config->start_weight))
@@ -547,6 +559,12 @@ int prodigal_load_training(prodigal_ctx_t *ctx, const void *data, size_t len) {
     char why[256];
     int rc;
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
+    if (ctx->config.meta_mode) {
+        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT, "A metagenomic context "
+                      "takes no training model: its bins are its models (the "
+                      "CLI refuses -p meta with -t)");
+        return PRODIGAL_ERR_INVALID_INPUT;
+    }
     /* Checked before copying, so a rejected blob changes nothing */
     rc = prodigal_training_info(data, len, &info, why, sizeof(why));
     if (rc != PRODIGAL_OK) {
@@ -580,7 +598,8 @@ int prodigal_export_training(const prodigal_ctx_t *ctx, void **data_out,
 int prodigal_set_translation_table(prodigal_ctx_t *ctx, int table) {
     const char *why;
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
-    if ((why = pdg_trans_table_unsupported(table)) != NULL) {
+    if ((why = mode_trans_table_unsupported(table,
+                                            ctx->config.meta_mode)) != NULL) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
                       "Translation table %d" PDG_TABLE_UNSUPPORTED, table, why);
         return PRODIGAL_ERR_INVALID_INPUT;

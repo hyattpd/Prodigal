@@ -257,9 +257,9 @@ typedef struct {
      *  (Bacterial, Archaeal and Plant Plastid).  Supported: 4, 5, 9, 11,
      *  13, 15, 21, 25, 26, 32, the NCBI codes Prodigal uses exactly as NCBI
      *  defines them (docs/genetic-codes.md).  An unsupported table
-     *  makes prodigal_create() return NULL, in either mode;
-     *  prodigal_config_validate() says why.  Metagenomic mode otherwise
-     *  ignores it: its bins use tables 11 and 4, so a genome that uses
+     *  makes prodigal_create() return NULL; prodigal_config_validate()
+     *  says why.  With meta_mode, any table but 11 is refused: the bins
+     *  choose table 11 or 4 for each sequence, so a genome that uses
      *  another table needs single mode. */
     int    trans_table;
 
@@ -534,7 +534,7 @@ PRODIGAL_API prodigal_ctx_t *prodigal_create(const prodigal_config_t *config);
  *
  * Rejected: NULL, a struct_size other than this library's
  * sizeof(prodigal_config_t), an unsupported translation table
- * (docs/genetic-codes.md), a start weight
+ * (docs/genetic-codes.md; with meta_mode, any but 11), a start weight
  * that is not finite and > 0, and free_fn without alloc_fn.
  *
  * @param config   Config to check.  May be NULL (rejected).
@@ -662,7 +662,8 @@ PRODIGAL_API int prodigal_train(prodigal_ctx_t *ctx);
  * ARM64 and wasm32 builds, all little-endian, but not to a big-endian
  * machine or to 32-bit x86 Linux, which aligns doubles to 4 bytes.  It
  * need not be aligned.
- * Rejected, leaving the context unchanged: a wrong size, an unsupported
+ * Rejected, leaving the context unchanged: any model in a metagenomic
+ * context, whose bins are its models; a wrong size, an unsupported
  * translation table (docs/genetic-codes.md), a GC outside [0, 1], a start
  * weight that is not finite and > 0, and an SD flag other than 0 or 1.
  * Other values are not checked: they can be NaN
@@ -726,8 +727,8 @@ PRODIGAL_API int prodigal_training_info(const void *data, size_t len,
 /**
  * Set the NCBI translation table.
  * @param table  Supported: those listed at prodigal_config_t.trans_table
- *               (docs/genetic-codes.md); the error message says why another
- *               is not.
+ *               (docs/genetic-codes.md), and in a metagenomic context 11
+ *               only; the error message says why another is not.
  * @return PRODIGAL_OK or PRODIGAL_ERR_INVALID_INPUT.
  */
 PRODIGAL_API int prodigal_set_translation_table(prodigal_ctx_t *ctx, int table);

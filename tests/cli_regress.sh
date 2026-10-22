@@ -140,12 +140,21 @@ fi
 
 # Translation tables Prodigal does not use as NCBI defines them are
 # rejected (docs/genetic-codes.md), with the reason; upstream used 1, 2, 3,
-# 6, 10, 12, 14, 16, 22, 23 and 24. Meta mode, which ignores -g, checks it
-# too.
+# 6, 10, 12, 14, 16, 22, 23 and 24.
 for t in 1 2 3 6 10 12 14 16 22 23 24 27 29 7; do
   expect_exit 15 "^Translation table $t is not supported: " -g $t
 done
-expect_exit 15 "^Translation table 1 is not supported: " -p meta -g 1
+# Meta mode chooses table 11 or 4 for each sequence, so it refuses any -g
+# but 11, before or after -p (upstream ignored -g there); -g 11 changes
+# nothing
+expect_exit 15 "^Translation table 1 is not supported: Prodigal" -p meta -g 1
+expect_exit 15 "^Translation table 4 is not supported: metagenomic mode" -p meta -g 4
+expect_exit 15 "^Translation table 25 is not supported: metagenomic mode" -g 25 -p meta
+# A table upstream rejects still fails at -g, before a later -h or -g
+expect_exit 15 "^Translation table 7 is not supported: NCBI" -g 7 -h
+expect_exit 15 "^Translation table 7 is not supported: NCBI" -g 7 -g 11
+run -i $IN -p meta -g 11 -f gff -q -o "$O/meta.g11.gff"
+check meta.g11.gff ref_meta.gff
 # A table that is not a number, and a missing parameter at the end
 # (upstream read argv[argc] after a final -G or -d)
 expect_exit 15 "^Translation table 'abc' is not a number" -g abc

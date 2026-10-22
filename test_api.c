@@ -2086,7 +2086,7 @@ static void test_genetic_codes_ncbi(void) {
     char text[3 * (64 + N_CODONS)], why[128], msg[256], fails[FAILS_LEN] = "";
     unsigned char seq[(3 * (64 + N_CODONS) * 2 + 7) / 8];
     prodigal_ctx_t *ctx;
-    int t, r, k, n;
+    int t, r, k, n, n11, n4;
     if (!load_gc_prt(&g)) return;
     for (k = 0; k < 64; k++)
         for (r = 0; r < 3; r++) text[3 * k + r] = g.base[r][k];
@@ -2128,15 +2128,21 @@ static void test_genetic_codes_ncbi(void) {
         if (g.id[r] < -1 || g.id[r] > GC_PROBE_MAX)
             add_fail(fails, "\n       NCBI table %d is past those checked", g.id[r]);
 
-    /* Metagenomic mode uses its bins' tables, whatever the config says */
+    /* The metagenomic bins use tables 11 (47) and 4 (3), as metagenomic
+       mode's refusal of the others says; both are supported */
     ASSERT_EQ_INT(pdg_meta_init(ctx), PRODIGAL_OK);
-    for (k = 0; k < NUM_META; k++) {
+    for (k = 0, n11 = n4 = 0; k < NUM_META; k++) {
         prodigal_config_t c;
         prodigal_config_init(&c);
         c.trans_table = ctx->meta[k].tinf->trans_table;
+        n11 += c.trans_table == 11;
+        n4 += c.trans_table == 4;
         if (prodigal_config_validate(&c, msg, sizeof(msg)) != PRODIGAL_OK)
             add_fail(fails, "\n       metagenomic bin %d: %s", k, msg);
     }
+    if (n11 != 47 || n4 != 3)
+        add_fail(fails, "\n       metagenomic bins: %d use table 11, %d table 4, "
+                 "of %d", n11, n4, NUM_META);
     prodigal_destroy(ctx);
     if (fails[0] != '\0') {
         printf("[FAIL]%s\n", fails);
@@ -2235,6 +2241,63 @@ static void test_genetic_code_entry_points(void) {
     }
     free(blob);
     free(tdata);
+    prodigal_destroy(ctx);
+    TEST_PASS();
+}
+
+/* Metagenomic mode chooses table 11 or 4 for each sequence from its bins,
+   so it refuses any table but 11, through the config and the setter (a
+   table refused in single mode gets single mode's reason), and any model. */
+static void test_genetic_code_meta_mode(void) {
+    TEST_START("genetic codes: metagenomic mode takes table 11 only");
+    static const char meta_why[] = "metagenomic mode takes table 11 only, "
+        "as its bins choose table 11 or 4 for each sequence; use single mode "
+        "(the-miint/Prodigal docs/genetic-codes.md)";
+    static const char no_model[] = "A metagenomic context takes no training "
+        "model: its bins are its models (the CLI refuses -p meta with -t)";
+    char msg[256], expect[256], want[256];
+    prodigal_ctx_t *ctx = make_ctx(1);
+    prodigal_config_t c;
+    size_t tlen;
+    void *tdata = load_ref_model(&tlen);
+    int t, ok;
+    if (tdata == NULL) return;
+    ASSERT_TRUE(ctx != NULL);
+    /* Nor a model, whose table it would ignore with the rest of it */
+    ASSERT_EQ_INT(prodigal_load_training(ctx, tdata, tlen),
+                  PRODIGAL_ERR_INVALID_INPUT);
+    ASSERT_TRUE(strcmp(prodigal_last_error(ctx), no_model) == 0);
+    ASSERT_TRUE(!ctx->trained);
+    free(tdata);
+    for (t = -1; t <= GC_PROBE_MAX; t++) {
+        prodigal_config_init(&c);
+        c.trans_table = t;
+        /* Single mode's reason if it refuses t, else meta mode's */
+        if (prodigal_config_validate(&c, expect, sizeof(expect)) == PRODIGAL_OK)
+            snprintf(expect, sizeof(expect), "translation table %d is not "
+                     "supported: %s", t, meta_why);
+        c.meta_mode = 1;
+        ok = prodigal_config_validate(&c, msg, sizeof(msg)) == PRODIGAL_OK;
+        if (ok != (t == 11) || (!ok && strcmp(msg, expect) != 0)) {
+            printf("[FAIL] meta table %d: \"%s\", want \"%s\"\n", t,
+                   ok ? "accepted" : msg, t == 11 ? "accepted" : expect);
+            return;
+        }
+        /* The setter says the same, and a refused table changes nothing */
+        snprintf(want, sizeof(want), "T%s", expect + 1);
+        if ((prodigal_set_translation_table(ctx, t) == PRODIGAL_OK) != ok ||
+            ctx->config.trans_table != 11 || ctx->tinf.trans_table != 11 ||
+            (!ok && strcmp(prodigal_last_error(ctx), want) != 0)) {
+            printf("[FAIL] meta set_translation_table(%d): \"%s\"\n", t,
+                   prodigal_last_error(ctx));
+            return;
+        }
+    }
+    /* create refuses one (make_ctx made one with 11) */
+    prodigal_config_init(&c);
+    c.meta_mode = 1;
+    c.trans_table = 4;
+    ASSERT_TRUE(prodigal_create(&c) == NULL);
     prodigal_destroy(ctx);
     TEST_PASS();
 }
@@ -2344,6 +2407,7 @@ int main(void) {
     printf("\nPhase 18: Genetic codes (NCBI)\n");
     test_genetic_codes_ncbi();
     test_genetic_code_entry_points();
+    test_genetic_code_meta_mode();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

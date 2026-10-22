@@ -13,8 +13,8 @@ prodigal -h
   Upstream Prodigal 2.6.3 accepts 19 translation tables (`-g`). In 11 of them, Prodigal's handling disagrees with NCBI's genetic code table, and it uses them without a warning: **1, 2, 3, 6, 10, 12, 14, 16, 22, 23 and 24**. With them it starts or ends genes at the wrong codons, scores open reading frames against the wrong stop codons, or prints wrong amino acids. **This fork refuses those tables with an error.** It accepts a table only if Prodigal's stops, amino acids, ATG/GTG/TTG starts and stop statistics all match NCBI's:
 
   * The accepted tables are 4, 5, 9, 11 (the default), 13, 15, 21 and 25, with results unchanged from upstream, and 26 (Pachysolen tannophilus nuclear) and 32 (Balanophoraceae plastid), which NCBI added after Prodigal 2.6.
-  * Metagenomic mode (`-p meta`) uses tables 11 and 4, so its results are unaffected. It rejects an unsupported `-g`, but, as upstream did, it silently ignores a supported one: for a genome that uses another table (most mitochondria, say), use single mode.
-  * Prodigal never starts a gene at a codon other than ATG, GTG or TTG, whatever the table. NCBI lists other start codons, such as CTG, ATT and ATA, for some tables, and Prodigal never uses them.
+  * Metagenomic mode (`-p meta`) chooses table 11 or 4 for each sequence from its pretrained models, so its results are unaffected. Upstream silently ignored `-g` there; this fork refuses any `-g` but 11 in metagenomic mode. For a genome that uses another table (most mitochondria, say), use single mode.
+  * Prodigal never starts a gene at a codon other than ATG, GTG or TTG, whatever the table, including the default, table 11. NCBI lists other start codons, such as CTG, ATT and ATA, for some tables, and Prodigal never uses them. In E. coli K-12, 6 of 4,300 annotated genes start at one (infC among them); Prodigal calls 4 of them from another start and misses 2. This is a limit of Prodigal itself, which the fork documents rather than changes.
 
   The reasons for each table, the start codons Prodigal never uses, and how this is tested against NCBI's own file are in [docs/genetic-codes.md](docs/genetic-codes.md).
 
