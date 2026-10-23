@@ -110,9 +110,9 @@ add() {  # add <case> <input> <args...>
 expect_error=("trained.*.n")   # -n with a training file is a usage error
 outs="-o out -a faa -d fna -s starts"
 flagsets=("" "-c" "-m" "-n" "-g 4" "-g 25")
-# No -g in meta mode: the fork refuses all but 11 there, which changes
-# nothing (a deviation cli_regress checks)
-metasets=("" "-c" "-m" "-n")
+# No -g or -n in meta mode: the fork refuses -n and any table but 11 there
+# (deviations cli_regress checks), and -g 11 changes nothing
+metasets=("" "-c" "-m")
 trainsets=("" "-c" "-m" "-n" "-g 4")
 
 phase=1 quiet=-q

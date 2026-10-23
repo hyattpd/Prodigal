@@ -239,8 +239,9 @@ Training data has translation table 24, which is not supported: Prodigal reads T
 - **The entry points.** `test_genetic_code_entry_points` checks that every
   entry point rejects the same tables with the same message.
   `test_genetic_code_meta_mode` checks that in metagenomic mode the config
-  and the setter take table 11 only, with the reason, and that a
-  metagenomic context refuses a model.
+  and the setter take table 11 only, with the reason, and
+  `test_meta_mode_refuses_model_settings` that a metagenomic context
+  refuses a model.
 - **The CLI.** `tests/cli_regress.sh` checks the CLI's rejections (in
   metagenomic mode too, and that `-p meta -g 11` changes nothing), that
   `-g 26` and `-g 32` call genes with those tables, and that a training

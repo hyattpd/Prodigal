@@ -534,6 +534,7 @@ void help(void) {
   fprintf(stderr, " build genes across them.\n");
   fprintf(stderr, "         -n:  Bypass Shine-Dalgarno trainer and force");
   fprintf(stderr, " a full motif scan.\n");
+  fprintf(stderr, "              Not with -p meta.\n");
   fprintf(stderr, "         -o:  Specify output file (default writes to ");
   fprintf(stderr, "stdout).\n");
   fprintf(stderr, "         -p:  Select procedure (single or meta).  Default");

@@ -150,6 +150,14 @@ done
 expect_exit 15 "^Translation table 1 is not supported: Prodigal" -p meta -g 1
 expect_exit 15 "^Translation table 4 is not supported: metagenomic mode" -p meta -g 4
 expect_exit 15 "^Translation table 25 is not supported: metagenomic mode" -g 25 -p meta
+# Meta mode refuses -n too, which it would ignore (each bin has its own SD
+# setting), in either order
+expect_exit 15 "^Metagenomic mode takes no force_nonsd (-n)" -p meta -n
+expect_exit 15 "^Metagenomic mode takes no force_nonsd (-n)" -n -p meta
+# With -t too, which meta mode refuses (exit 2), the -n or -g error comes
+# first: exit 15 (a deviation)
+expect_exit 15 "^Metagenomic mode takes no force_nonsd (-n)" -p meta -n -t "$O/never.bin"
+expect_exit 15 "^Translation table 4 is not supported: metagenomic" -p meta -g 4 -t "$O/never.bin"
 # A table upstream rejects still fails at -g, before a later -h or -g
 expect_exit 15 "^Translation table 7 is not supported: NCBI" -g 7 -h
 expect_exit 15 "^Translation table 7 is not supported: NCBI" -g 7 -g 11

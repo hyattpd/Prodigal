@@ -206,10 +206,11 @@ add_nodes → qsort → score_nodes(is_meta=0) → record_overlapping_starts(1)
    `-a`/`-d`. Their `sscore` **lacks** the `intergenic_mod` adjustment. The
    library reads everything from `struct _gene` and skips this pass.
 
-Meta mode ignores `start_weight` and `force_nonsd`; every bin carries its
-own model. That is true of both the CLI and the API. It refuses a
-`trans_table` other than 11 and a training model, in the CLI and the API
-(`docs/genetic-codes.md`).
+Every metagenomic bin carries its own model, so meta mode refuses what
+would set the single-genome model, which upstream ignored: a `trans_table`
+other than 11 (`docs/genetic-codes.md`), `force_nonsd` (`-n`), a start
+weight other than the default, and the library calls that train, load or
+adjust a model. That is true of both the CLI and the API.
 
 ### Output coordinates
 

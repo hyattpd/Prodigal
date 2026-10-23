@@ -85,8 +85,9 @@ oracle. Change one only by explicit decision: record it here and in
 9. **Meta mode ignores `-g`, `-n` and the start weight.** Each of the 50
    bins brings its own translation table (11 or 4), SD usage and start
    weight. The best bin's model is the one that applies to the contig's
-   output and translations. (The fork refuses any `-g` but 11 in meta mode,
-   "Fork deviations" below; it still ignores `-n` and the start weight.)
+   output and translations. (The fork refuses them instead: any `-g` but 11
+   and `-n` ("Fork deviations" below), and in the library a start weight
+   other than the default (`prodigal.h`, `start_weight`).)
 10. **`dprog`'s giant-ORF exception scans from the first node.** `dprog`
     scores each node's connections to the 500 nodes before it
     (`MAX_NODE_DIST`), except for a reverse-strand start, or a
@@ -162,8 +163,8 @@ defect.
 
 ## Fork deviations (CLI)
 
-Each changes output only on input upstream mishandled or rejected (tests:
-`docs/testing.md`).
+Each changes output only on input upstream mishandled, rejected, or ran
+while ignoring one of its options (tests: `docs/testing.md`).
 
 - **Translation tables Prodigal gets wrong are rejected.** In 11 of the
   19 tables upstream accepts (1, 2, 3, 6, 10, 12, 14, 16, 22, 23, 24),
@@ -180,6 +181,10 @@ Each changes output only on input upstream mishandled or rejected (tests:
   than 11, before or after `-p`, since the bins choose table 11 or 4
   themselves (`docs/genetic-codes.md`). `-p meta -g 11` gives upstream's
   output.
+- **Metagenomic mode refuses `-n`.** Upstream ignored it there (quirk 9),
+  since each bin has its own SD setting; the fork exits 15 for `-p meta -n`,
+  in either order. With `-t` as well, which meta mode refuses with exit 2,
+  the fork reports the `-g` or `-n` error first, with exit 15.
 - **Tables 26 and 32 are supported.** Upstream rejects `-g 26` and
   `-g 32` (exit 15); the fork calls genes with them, with clauses of its
   own marked "the fork's" (`docs/genetic-codes.md`, Provenance).

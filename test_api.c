@@ -337,7 +337,7 @@ static void test_config_validate(void) {
 
     for (i = 0; i < sizeof(bad_wt) / sizeof(bad_wt[0]); i++) {
         prodigal_config_init(&c);
-        c.meta_mode = (int)(i % 2);   /* either mode: a meta context trains too */
+        c.meta_mode = (int)(i % 2);   /* either mode */
         c.start_weight = bad_wt[i];
         ASSERT_EQ_INT(prodigal_config_validate(&c, msg, sizeof(msg)),
                       PRODIGAL_ERR_INVALID_CONFIG);
@@ -2245,30 +2245,104 @@ static void test_genetic_code_entry_points(void) {
     TEST_PASS();
 }
 
+/* Whether a call (rc) refused the single-genome model's "what" on
+   metagenomic context ctx, with the reason, and changed nothing: its model
+   and config are still model and config. */
+static int refused_in_meta(prodigal_ctx_t *ctx, int rc, const char *what,
+                           const struct _training *model,
+                           const prodigal_config_t *config) {
+    char want[256];
+    snprintf(want, sizeof(want), "A metagenomic context takes no %s: its bins "
+             "are its models; use a single-genome context (meta_mode = 0)",
+             what);
+    if (rc == PRODIGAL_ERR_INVALID_INPUT &&
+        strcmp(prodigal_last_error(ctx), want) == 0 && !ctx->trained &&
+        memcmp(model, &ctx->tinf, sizeof(*model)) == 0 &&
+        memcmp(config, &ctx->config, sizeof(*config)) == 0)
+        return 1;
+    printf("[FAIL] a metagenomic context took a %s: %d, \"%s\"\n", what, rc,
+           prodigal_last_error(ctx));
+    return 0;
+}
+
+/* A metagenomic context's bins are its models, so it refuses the settings
+   of the single-genome model, which its gene finding would ignore:
+   force_nonsd and a start weight other than the default in the config, and
+   the calls that train, load or adjust a model.  Refused, they change
+   nothing.  A sequence it still takes, from either setter. */
+static void test_meta_mode_refuses_model_settings(void) {
+    TEST_START("metagenomic mode refuses the single-genome model's settings");
+    static const char *one[1] = { "ACGTACGT" };
+    static const int32_t len1[1] = { 8 };
+    static struct _training before;     /* 558 KB: not on the stack */
+    prodigal_config_t c, cbefore;
+    char msg[256];
+    prodigal_ctx_t *ctx;
+    size_t tlen;
+    void *tdata = load_ref_model(&tlen);
+    if (tdata == NULL) return;
+
+    /* The config: refused in meta mode, accepted in single mode */
+    prodigal_config_init(&c);
+    c.meta_mode = 1;
+    c.force_nonsd = 1;
+    ASSERT_EQ_INT(prodigal_config_validate(&c, msg, sizeof(msg)),
+                  PRODIGAL_ERR_INVALID_CONFIG);
+    ASSERT_TRUE(strcmp(msg, "metagenomic mode takes no force_nonsd (-n), as "
+                       "each bin has its own SD setting; use single mode") == 0);
+    ASSERT_TRUE(prodigal_create(&c) == NULL);
+    c.force_nonsd = 0;
+    c.start_weight = 2.0;
+    ASSERT_EQ_INT(prodigal_config_validate(&c, msg, sizeof(msg)),
+                  PRODIGAL_ERR_INVALID_CONFIG);
+    ASSERT_TRUE(strcmp(msg, "metagenomic mode takes only the default start "
+                       "weight, 4.35, as each bin has its own (got 2); use "
+                       "single mode") == 0);
+    c.start_weight = 4.35;      /* the default, which changes nothing */
+    ASSERT_EQ_INT(prodigal_config_validate(&c, NULL, 0), PRODIGAL_OK);
+    c.meta_mode = 0;
+    c.force_nonsd = 1;
+    c.start_weight = 2.0;
+    ASSERT_EQ_INT(prodigal_config_validate(&c, NULL, 0), PRODIGAL_OK);
+
+    /* The calls, on a metagenomic context */
+    ctx = make_ctx(1);
+    ASSERT_TRUE(ctx != NULL);
+    memcpy(&before, &ctx->tinf, sizeof(before));
+    memcpy(&cbefore, &ctx->config, sizeof(cbefore));
+    if (!refused_in_meta(ctx, prodigal_load_training(ctx, tdata, tlen),
+                         "training model", &before, &cbefore) ||
+        !refused_in_meta(ctx, prodigal_train(ctx), "training", &before,
+                         &cbefore) ||
+        !refused_in_meta(ctx, prodigal_set_start_weight(ctx, 2.0),
+                         "start weight", &before, &cbefore) ||
+        !refused_in_meta(ctx, prodigal_set_gc(ctx, 0.5), "model GC", &before,
+                         &cbefore) ||
+        !refused_in_meta(ctx, prodigal_set_uses_sd(ctx, 0), "SD setting",
+                         &before, &cbefore))
+        return;
+    /* Still a sequence to search, from set_training_sequences too */
+    ASSERT_EQ_INT(prodigal_set_training_sequences(ctx, one, NULL, len1, 1),
+                  PRODIGAL_OK);
+    ASSERT_EQ_INT(ctx->slen, 8);
+    free(tdata);
+    prodigal_destroy(ctx);
+    TEST_PASS();
+}
+
 /* Metagenomic mode chooses table 11 or 4 for each sequence from its bins,
    so it refuses any table but 11, through the config and the setter (a
-   table refused in single mode gets single mode's reason), and any model. */
+   table refused in single mode gets single mode's reason). */
 static void test_genetic_code_meta_mode(void) {
     TEST_START("genetic codes: metagenomic mode takes table 11 only");
     static const char meta_why[] = "metagenomic mode takes table 11 only, "
         "as its bins choose table 11 or 4 for each sequence; use single mode "
         "(the-miint/Prodigal docs/genetic-codes.md)";
-    static const char no_model[] = "A metagenomic context takes no training "
-        "model: its bins are its models (the CLI refuses -p meta with -t)";
     char msg[256], expect[256], want[256];
     prodigal_ctx_t *ctx = make_ctx(1);
     prodigal_config_t c;
-    size_t tlen;
-    void *tdata = load_ref_model(&tlen);
     int t, ok;
-    if (tdata == NULL) return;
     ASSERT_TRUE(ctx != NULL);
-    /* Nor a model, whose table it would ignore with the rest of it */
-    ASSERT_EQ_INT(prodigal_load_training(ctx, tdata, tlen),
-                  PRODIGAL_ERR_INVALID_INPUT);
-    ASSERT_TRUE(strcmp(prodigal_last_error(ctx), no_model) == 0);
-    ASSERT_TRUE(!ctx->trained);
-    free(tdata);
     for (t = -1; t <= GC_PROBE_MAX; t++) {
         prodigal_config_init(&c);
         c.trans_table = t;
@@ -2408,6 +2482,7 @@ int main(void) {
     test_genetic_codes_ncbi();
     test_genetic_code_entry_points();
     test_genetic_code_meta_mode();
+    test_meta_mode_refuses_model_settings();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

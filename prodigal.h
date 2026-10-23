@@ -272,15 +272,21 @@ typedef struct {
     int    mask_regions;
 
     /** Nonzero: bypass Shine-Dalgarno trainer and force a full upstream
-     *  motif scan.  Default: 0 (auto-detect SD usage). */
+     *  motif scan.  Default: 0 (auto-detect SD usage).  Metagenomic mode
+     *  refuses it: each bin has its own SD setting. */
     int    force_nonsd;
 
     /** Nonzero: metagenomic mode (use 50 pre-trained models).
-     *  Zero: single-genome mode (requires training).  Default: 0. */
+     *  Zero: single-genome mode (requires training).  Default: 0.
+     *  Metagenomic mode refuses the single-genome model's settings, which
+     *  it would ignore: a trans_table other than 11, force_nonsd, a
+     *  start_weight other than the default, and the calls that train, load
+     *  or adjust a model. */
     int    meta_mode;
 
     /** Start score weight.  Affects the balance between coding potential and
-     *  start signal strength.  Default: 4.35.  Rarely needs changing. */
+     *  start signal strength.  Default: 4.35.  Rarely needs changing.
+     *  Metagenomic mode takes only the default: each bin has its own. */
     double start_weight;
 
     /** Custom allocator for internal working buffers.  If NULL, system
@@ -535,7 +541,8 @@ PRODIGAL_API prodigal_ctx_t *prodigal_create(const prodigal_config_t *config);
  * Rejected: NULL, a struct_size other than this library's
  * sizeof(prodigal_config_t), an unsupported translation table
  * (docs/genetic-codes.md; with meta_mode, any but 11), a start weight
- * that is not finite and > 0, and free_fn without alloc_fn.
+ * that is not finite and > 0, with meta_mode force_nonsd or a start
+ * weight other than the default, and free_fn without alloc_fn.
  *
  * @param config   Config to check.  May be NULL (rejected).
  * @param msg      Receives the reason, or "" if the config is valid; may be
@@ -645,7 +652,7 @@ PRODIGAL_API int prodigal_get_seq_info(const prodigal_ctx_t *ctx,
  * for each contig.  Alternatively, export the model with
  * prodigal_export_training() for later reuse.
  *
- * Not needed in metagenomic mode (training is built-in).
+ * Refused in a metagenomic context, whose bins are its models.
  *
  * @param ctx  Context with training sequences loaded.
  * @return PRODIGAL_OK, PRODIGAL_ERR_SEQ_TOO_SHORT, or other error code.
@@ -720,7 +727,8 @@ PRODIGAL_API int prodigal_training_info(const void *data, size_t len,
  *  the current model directly.  Useful for experimentation or for tweaking
  *  a loaded model.  The translation table and start weight also apply to
  *  later training; prodigal_train() replaces the GC and SD usage, so set
- *  those after training or loading.
+ *  those after training or loading.  A metagenomic context, whose bins are
+ *  its models, refuses them all, but for translation table 11.
  */
 /**@{*/
 

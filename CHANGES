@@ -32,6 +32,13 @@ without a warning. -p meta -g 11 is accepted and changes nothing. For the
 same reason prodigal_load_training refuses a model in a metagenomic
 context, as the CLI refuses -p meta with -t. -h lists the tables
 metagenomic mode takes.
+* Metagenomic mode refuses the settings of the single-genome model, which
+its gene finding ignored without a warning, as each bin has its own model:
+CLI -p meta -n (exit 15, either order; also with -t, where upstream exited
+2 for the -t); in the library, force_nonsd or a start weight other than the
+default with meta_mode, and train, set_start_weight, set_gc and set_uses_sd
+on a metagenomic context. A metagenomic context therefore no longer trains
+a model for prodigal_export_training: train in a single-genome context.
 * CLI: -t refuses a training file that the library would refuse (see
 above; also a GC outside [0, 1], a start weight that is not finite and
 > 0, or an SD flag other than 0 or 1), with exit 4.

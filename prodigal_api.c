@@ -18,8 +18,23 @@
     Validation helpers
 *******************************************************************************/
 
+/* The config's default start weight.  A const double, not a literal, so
+   that comparing a config's (a double) with it is exact even where literals
+   are evaluated in long double (FLT_EVAL_METHOD 2). */
+static const double pdg_start_weight = 4.35;
+
 static int is_valid_start_weight(double w) { return w > 0.0 && isfinite(w); }
 static int is_valid_gc(double gc) { return gc >= 0.0 && gc <= 1.0; } /* not NaN */
+
+/* A metagenomic context's bins are its models: it refuses what would train,
+   load or adjust the single-genome model, which its gene finding would
+   ignore (docs/upstream-behavior.md, quirk 9). */
+static int refuse_in_meta(prodigal_ctx_t *ctx, const char *what) {
+    PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT, "A metagenomic context "
+                  "takes no %s: its bins are its models; use a single-genome "
+                  "context (meta_mode = 0)", what);
+    return PRODIGAL_ERR_INVALID_INPUT;
+}
 
 /*******************************************************************************
     Error reporting
@@ -60,7 +75,7 @@ int prodigal_config_init_v(prodigal_config_t *config, int abi_version,
     memset(config, 0, sizeof(*config));
     config->struct_size = sizeof(prodigal_config_t);
     config->trans_table = 11;
-    config->start_weight = 4.35;
+    config->start_weight = pdg_start_weight;
     return PRODIGAL_OK;
 }
 
@@ -112,6 +127,13 @@ int prodigal_config_validate(const prodigal_config_t *config, char *msg,
     else if (!is_valid_start_weight(config->start_weight))
         snprintf(buf, sizeof(buf), "start weight must be finite and > 0 "
                  "(got %g)", config->start_weight);
+    else if (config->meta_mode && config->force_nonsd)
+        snprintf(buf, sizeof(buf), "metagenomic mode takes no force_nonsd "
+                 "(-n), as each bin has its own SD setting; use single mode");
+    else if (config->meta_mode && config->start_weight != pdg_start_weight)
+        snprintf(buf, sizeof(buf), "metagenomic mode takes only the default "
+                 "start weight, %g, as each bin has its own (got %.17g); use "
+                 "single mode", pdg_start_weight, config->start_weight);
     else if (config->free_fn != NULL && config->alloc_fn == NULL)
         snprintf(buf, sizeof(buf), "free_fn without alloc_fn");
     if (msg != NULL && msg_len > 0) snprintf(msg, msg_len, "%s", buf);
@@ -504,6 +526,8 @@ static void log_training(const prodigal_ctx_t *ctx, int stage, int done) {
 }
 
 int prodigal_train(prodigal_ctx_t *ctx) {
+    if (ctx != NULL && ctx->config.meta_mode)
+        return refuse_in_meta(ctx, "training");
     return pdg_train(ctx, log_training);
 }
 
@@ -559,12 +583,7 @@ int prodigal_load_training(prodigal_ctx_t *ctx, const void *data, size_t len) {
     char why[256];
     int rc;
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
-    if (ctx->config.meta_mode) {
-        PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT, "A metagenomic context "
-                      "takes no training model: its bins are its models (the "
-                      "CLI refuses -p meta with -t)");
-        return PRODIGAL_ERR_INVALID_INPUT;
-    }
+    if (ctx->config.meta_mode) return refuse_in_meta(ctx, "training model");
     /* Checked before copying, so a rejected blob changes nothing */
     rc = prodigal_training_info(data, len, &info, why, sizeof(why));
     if (rc != PRODIGAL_OK) {
@@ -610,6 +629,7 @@ int prodigal_set_translation_table(prodigal_ctx_t *ctx, int table) {
 
 int prodigal_set_start_weight(prodigal_ctx_t *ctx, double weight) {
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
+    if (ctx->config.meta_mode) return refuse_in_meta(ctx, "start weight");
     if (!is_valid_start_weight(weight)) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
                       "Start weight must be finite and > 0 (got %g)", weight);
@@ -621,6 +641,7 @@ int prodigal_set_start_weight(prodigal_ctx_t *ctx, double weight) {
 
 int prodigal_set_gc(prodigal_ctx_t *ctx, double gc) {
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
+    if (ctx->config.meta_mode) return refuse_in_meta(ctx, "model GC");
     if (!is_valid_gc(gc)) {
         PDG_SET_ERROR(ctx, PRODIGAL_ERR_INVALID_INPUT,
                       "GC must be in [0, 1] (got %g)", gc);
@@ -632,6 +653,7 @@ int prodigal_set_gc(prodigal_ctx_t *ctx, double gc) {
 
 int prodigal_set_uses_sd(prodigal_ctx_t *ctx, int uses_sd) {
     if (ctx == NULL) return PRODIGAL_ERR_INVALID_INPUT;
+    if (ctx->config.meta_mode) return refuse_in_meta(ctx, "SD setting");
     ctx->tinf.uses_sd = (uses_sd != 0) ? 1 : 0;
     return PRODIGAL_OK;
 }
