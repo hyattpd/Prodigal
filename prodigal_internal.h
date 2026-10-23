@@ -36,6 +36,7 @@ struct prodigal_ctx {
     /* Training data */
     struct _training tinf;            /* ~558KB training model */
     int trained;                      /* Nonzero if training is loaded/complete */
+    struct _codon_letters codons;     /* Protein letters, of the last table used */
 
     /* Sequence buffers */
     unsigned char *seq;               /* 2-bit encoded forward sequence */

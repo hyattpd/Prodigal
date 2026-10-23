@@ -889,6 +889,7 @@ static int extract_soa(prodigal_ctx_t *ctx, int ng, struct _training *tinf,
         soa->protein_offsets = (int32_t *)(base + offset); offset += sz_offsets;
         soa->protein_data    = base + offset;
         soa->protein_offsets[0] = 0;
+        pdg_codon_letters(tinf, &ctx->codons);
     }
 
     for (i = 0; i < ng; i++) {
@@ -914,7 +915,7 @@ static int extract_soa(prodigal_ctx_t *ctx, int ng, struct _training *tinf,
             int len = pdg_protein_length(g);
             for (k = 0; k < len; k++)
                 p[k] = pdg_protein_letter(g, k, ctx->seq, ctx->rseq, ctx->useq,
-                                          ctx->slen, tinf);
+                                          ctx->slen, &ctx->codons);
             soa->protein_offsets[i + 1] = soa->protein_offsets[i] + len;
         }
     }

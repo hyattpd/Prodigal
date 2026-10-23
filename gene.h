@@ -58,13 +58,22 @@ void tweak_final_starts(struct _gene *, int, struct _node *, int, struct
 
 void print_genes(FILE *, struct _gene *, int, struct _node *, int, int, int,
                  int, char *, struct _training *, char *, char *, char *);
+/* Each codon's protein letter under one translation table, by the codon's
+   mer_ndx(3, ...) index: aa[0] inside a gene, aa[1] as the first codon of a
+   gene that is not edge-started (M at a start). */
+struct _codon_letters {
+  int table;                  /* the trans_table aa holds; 0: none yet */
+  char aa[2][64];
+};
+
 int pdg_protein_length(const struct _gene *);
+void pdg_codon_letters(struct _training *, struct _codon_letters *);
 char pdg_protein_letter(const struct _gene *, int, unsigned char *,
                         unsigned char *, unsigned char *, int,
-                        struct _training *);
+                        const struct _codon_letters *);
 void write_translations(FILE *, struct _gene *, int, unsigned char *,
                         unsigned char *, unsigned char *, int,
-                        struct _training *, char *);
+                        struct _training *, struct _codon_letters *, char *);
 void write_nucleotide_seqs(FILE *, struct _gene *, int, struct _node *, 
                            unsigned char *, unsigned char *, unsigned char *,
                            int, struct _training *, int, char *);

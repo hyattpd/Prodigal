@@ -397,7 +397,10 @@ double gc_content(unsigned char *seq, int a, int b) {
   return gc/sum;
 }
 
-/* Returns a single amino acid for this position */
+/* Returns a single amino acid for this position.  Its answers are kept per
+   translation table (pdg_codon_letters), as pdg_meta keeps the nodes that
+   is_stop and is_start make, so these must read nothing of tinf but
+   trans_table. */
 char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
   if(is_stop(seq, n, tinf) == 1) return '*';
   if(is_start(seq, n, tinf) == 1 && is_init == 1) return 'M';

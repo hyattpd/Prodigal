@@ -250,6 +250,16 @@ same letters without line breaks, so the two can't disagree. The letters:
   don't (`genetic-codes.md`).
 - In the CLI's `-a` file, lines wrap at 60 residues.
 
+The letters come from a table, not from `amino` per codon.
+`pdg_codon_letters` fills a `struct _codon_letters` (`gene.h`) with
+`amino`'s answer for every codon, and `pdg_protein_letter` looks the codon
+up after the `X` check. A context
+keeps one table and rebuilds it only when the translation table changes
+(`amino` reads nothing else of the model), so the CLI and the library build
+it once per table, not per record. The output is unchanged; the table saves
+`amino`'s chain of about 60 bitmap tests per codon, about 8% of a
+single-mode run from a model with proteins on E. coli.
+
 `write_nucleotide_seqs` prints A/C/G/T, with `N` for any ambiguous base
 (IUPAC codes are not preserved). Lines wrap at 70.
 

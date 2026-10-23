@@ -345,12 +345,28 @@ int pdg_protein_length(const struct _gene *g) {
   return (g->end - g->begin + 2) / 3;
 }
 
-/* Letter k of gene g's protein, counting codons from its start, under model
-   tinf. The CLI's -a file and the library's proteins are both made of these
-   letters; the rules are in docs/internals.md ("Translation"). */
+/* Fills cl with tinf's letters, amino()'s own answers, unless it already
+   holds them: amino() reads nothing of the model but its trans_table.  A
+   protein then reads cl instead of running amino()'s if-chain per codon. */
+void pdg_codon_letters(struct _training *tinf, struct _codon_letters *cl) {
+  unsigned char codon[1];   /* its 3 bases in bits 0-5, as mer_ndx reads them */
+  int c;
+  if(cl->table == tinf->trans_table) return;
+  for(c = 0; c < 64; c++) {
+    codon[0] = (unsigned char)c;
+    cl->aa[0][c] = amino(codon, 0, tinf, 0);
+    cl->aa[1][c] = amino(codon, 0, tinf, 1);
+  }
+  cl->table = tinf->trans_table;
+}
+
+/* Letter k of gene g's protein, counting codons from its start, from the
+   letters cl (pdg_codon_letters, for the gene's model).  The CLI's -a file
+   and the library's proteins are both made of these letters; the rules are
+   in docs/internals.md ("Translation"). */
 char pdg_protein_letter(const struct _gene *g, int k, unsigned char *seq,
                         unsigned char *rseq, unsigned char *useq, int slen,
-                        struct _training *tinf) {
+                        const struct _codon_letters *cl) {
   /* The codon at p on its strand, whose first base on the forward strand,
      where useq marks ambiguous bases, is f */
   int p = (g->strand == 1) ? g->begin-1 + 3*k : slen-g->end + 3*k;
@@ -358,23 +374,25 @@ char pdg_protein_letter(const struct _gene *g, int k, unsigned char *seq,
 
   if(is_n(useq, f) == 1 || is_n(useq, f+1) == 1 || is_n(useq, f+2) == 1)
     return 'X';
-  return amino(g->strand == 1 ? seq : rseq, p, tinf,
-               k == 0 && g->start_type != 3);
+  return cl->aa[k == 0 && g->start_type != 3][mer_ndx(3, g->strand == 1 ?
+                                                      seq : rseq, p)];
 }
 
-/* Print the gene translations, 60 letters to a line */
+/* Print the gene translations, 60 letters to a line, under model tinf; cl
+   is the caller's letter table, kept across calls */
 void write_translations(FILE *fh, struct _gene *genes, int ng,
                         unsigned char *seq, unsigned char *rseq,
                         unsigned char *useq, int slen, struct _training *tinf,
-                        char *short_hdr) {
+                        struct _codon_letters *cl, char *short_hdr) {
   int i, k, n;
 
+  pdg_codon_letters(tinf, cl);
   for(i = 0; i < ng; i++) {
     fprintf(fh, ">%s_%d # %d # %d # %d # %s\n", short_hdr, i+1,
             genes[i].begin, genes[i].end, genes[i].strand, genes[i].gene_data);
     n = pdg_protein_length(&genes[i]);
     for(k = 0; k < n; k++) {
-      fputc(pdg_protein_letter(&genes[i], k, seq, rseq, useq, slen, tinf), fh);
+      fputc(pdg_protein_letter(&genes[i], k, seq, rseq, useq, slen, cl), fh);
       if(k%60 == 59) fputc('\n', fh);
     }
     if(n%60 != 0) fputc('\n', fh);

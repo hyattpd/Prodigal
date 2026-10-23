@@ -1821,9 +1821,10 @@ static struct _training *table_model(int table, double gc) {
    made by hand) under translation table table. */
 static void letters_of(prodigal_ctx_t *ctx, const char *seq, int strand,
                        int start_type, int table, char *out) {
-    struct _training *tinf = table_model(table, 0.5);
     struct _gene g;
     int k, n;
+    /* The context's own table; the tests switch tables (11, 4, 32, 26) */
+    pdg_codon_letters(table_model(table, 0.5), &ctx->codons);
     memset(&g, 0, sizeof(g));
     prodigal_set_sequence(ctx, seq, (int32_t)strlen(seq), NULL);
     g.begin = 1;
@@ -1833,7 +1834,7 @@ static void letters_of(prodigal_ctx_t *ctx, const char *seq, int strand,
     n = pdg_protein_length(&g);
     for (k = 0; k < n; k++)
         out[k] = pdg_protein_letter(&g, k, ctx->seq, ctx->rseq, ctx->useq,
-                                    ctx->slen, tinf);
+                                    ctx->slen, &ctx->codons);
     out[n] = '\0';
 }
 
@@ -2013,10 +2014,13 @@ static int ncbi_differs(const gc_prt_t *g, int r, const char *text,
     static const int off[2] = { 1, 0 };
     struct _training *tinf = table_model(g->id[r], 0.5);
     unsigned char *strand[2] = { spacer->seq, spacer->rseq };
+    struct _codon_letters cl = {0};
     int k, j, f;
+    pdg_codon_letters(tinf, &cl);
     for (k = 0; k < 64; k++) {
         const char c[4] = { text[3 * k], text[3 * k + 1], text[3 * k + 2], '\0' };
         char want = g->aa[r][k], got = amino(seq, 3 * k, tinf, 0);
+        int ndx = mer_ndx(3, seq, 3 * k);   /* its index in cl.aa[] */
         int stop = is_stop(seq, 3 * k, tinf), start = is_start(seq, 3 * k, tinf);
         int ncbi_start = g->start[r][k] == 'M';
         int modeled = strcmp(c, "ATG") == 0 || strcmp(c, "GTG") == 0 ||
@@ -2033,6 +2037,12 @@ static int ncbi_differs(const gc_prt_t *g, int r, const char *text,
                      start ? "" : "not ", ncbi_start ? "" : "not ");
         else if (start && amino(seq, 3 * k, tinf, 1) != 'M')
             snprintf(why, len, "start %s reads %c", c, amino(seq, 3 * k, tinf, 1));
+        /* The proteins read the codon from pdg_codon_letters' table */
+        else if (cl.aa[0][ndx] != want ||
+                 cl.aa[1][ndx] != (start ? 'M' : want))
+            snprintf(why, len, "the protein table reads %s as %c (NCBI %c), "
+                     "and as %c first in a gene (want %c)", c, cl.aa[0][ndx],
+                     want, cl.aa[1][ndx], start ? 'M' : want);
         else
             continue;
         return 1;
@@ -2143,6 +2153,23 @@ static void test_genetic_codes_ncbi(void) {
     if (n11 != 47 || n4 != 3)
         add_fail(fails, "\n       metagenomic bins: %d use table 11, %d table 4, "
                  "of %d", n11, n4, NUM_META);
+    /* A context's protein letters are kept per table, so the letters built
+       for one bin must be amino()'s under every bin with its table */
+    {
+        struct _codon_letters cl = {0};
+        unsigned char codon[1];
+        int c, init;
+        for (k = 0; k < NUM_META; k++) {
+            pdg_codon_letters(ctx->meta[k].tinf, &cl);
+            for (c = 0; c < 64; c++)
+                for (init = 0; init < 2; init++) {
+                    codon[0] = (unsigned char)c;
+                    if (cl.aa[init][c] != amino(codon, 0, ctx->meta[k].tinf, init))
+                        add_fail(fails, "\n       metagenomic bin %d: kept "
+                                 "letters differ from amino()'s", k);
+                }
+        }
+    }
     prodigal_destroy(ctx);
     if (fails[0] != '\0') {
         printf("[FAIL]%s\n", fails);

@@ -164,8 +164,9 @@ that there are no proteins without `want_proteins`.
 rows. For each table number from -1 to 99, the library must support the
 table if and only if Prodigal's own code meets the rules of
 `genetic-codes.md`:
-- `is_stop`, `is_start` and `amino` on all 64 codons. Of the start codons,
-  only ATG, GTG and TTG count, the three Prodigal models.
+- `is_stop`, `is_start` and `amino` on all 64 codons, and the proteins'
+  letter table (`pdg_codon_letters`) too. Of the start codons, only ATG,
+  GTG and TTG count, the three Prodigal models.
 - `pdg_no_stop`, the ORF-length score's stop probability, at three GC
   contents.
 - `is_stop` on the spacer that `prodigal_set_training_sequences` writes

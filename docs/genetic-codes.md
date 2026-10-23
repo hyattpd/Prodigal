@@ -98,7 +98,8 @@ all seven rules:
    in-frame stop codon, so it can't model such a codon.
 3. **Stops and amino acids.** For all 64 codons, Prodigal agrees with NCBI
    on which are stops (`is_stop`, used for gene calls) and on the amino
-   acid (`amino`, used for `-a` and the library's proteins).
+   acid (`amino`, used for `-a` and the library's proteins through
+   `pdg_codon_letters`, a table of its answers).
 4. **Starts.** Prodigal starts genes only at ATG, GTG and TTG, its three
    start types. Of those three, it must start genes at exactly the ones
    NCBI lists as start codons for the table (`is_start`), and translate a
