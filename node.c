@@ -23,11 +23,15 @@
 /*******************************************************************************
   Adds nodes to the node list.  Genes must be >=90bp in length, unless they
   run off the edge, in which case they only have to be 50bp.
+
+  The list holds cap nodes.  Returns the number of nodes, or -1 if they don't
+  fit; the list then holds a partial set.  Each pass of the loops below adds
+  at most one node, so they check the capacity once per pass.
 *******************************************************************************/
 
 int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
-              *nodes, int closed, mask *mlist, int nm, struct _training
-              *tinf) {
+              *nodes, int cap, int closed, mask *mlist, int nm,
+              struct _training *tinf) {
   int i, nn = 0, last[3], saw_start[3], min_dist[3];
   int slmod = 0;
 
@@ -40,6 +44,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     if(closed == 0) while(last[(i+slmod)%3]+2 > slen-1) last[(i+slmod)%3]-=3;
   }
   for(i = slen-3; i >= 0; i--) {
+    if(nn == cap) return -1;
     if(is_stop(seq, i, tinf)==1) {
       if(saw_start[i%3] == 1) {
         if(is_stop(seq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
@@ -90,6 +95,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     }
   }
   for(i = 0; i < 3; i++) {
+    if(nn == cap) return -1;
     if(saw_start[i%3] == 1) {
       if(is_stop(seq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
       nodes[nn].ndx = last[i%3]; 
@@ -107,6 +113,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     if(closed == 0) while(last[(i+slmod)%3]+2 > slen-1) last[(i+slmod)%3]-=3;
   }
   for(i = slen-3; i >= 0; i--) {
+    if(nn == cap) return -1;
     if(is_stop(rseq, i, tinf)==1) {
       if(saw_start[i%3] == 1) {
         if(is_stop(rseq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
@@ -160,6 +167,7 @@ int add_nodes(unsigned char *seq, unsigned char *rseq, int slen, struct _node
     }
   }
   for(i = 0; i < 3; i++) {
+    if(nn == cap) return -1;
     if(saw_start[i%3] == 1) {
       if(is_stop(rseq, last[i%3], tinf) == 0) nodes[nn].edge = 1;
       nodes[nn].ndx = slen - last[i%3] - 1; 
@@ -567,12 +575,16 @@ void calc_orf_gc(unsigned char *seq, unsigned char *rseq, int slen, struct
   upstream.
 *******************************************************************************/
 
-void raw_coding_score(unsigned char *seq, unsigned char *rseq, int slen, struct
-                      _node *nod, int nn, struct _training *tinf) {
-  int i, j, last[3], fr;
-  double score[3], lfac, no_stop, gsize = 0.0;
-
-  if(tinf->trans_table != 11) { /* TGA or TAG is not a stop */
+/* The probability that a codon is not a stop, for raw_coding_score's
+   ORF-length score, with bases independent at the training GC.  Upstream
+   counts TAA, TAG and TGA in table 11 and TAA and one of TAG and TGA in
+   every other table, which is right only for some of them: the tables
+   where it isn't are rejected (docs/genetic-codes.md).  The fork counts
+   all three in table 26 too. */
+double pdg_no_stop(struct _training *tinf) {
+  double no_stop;
+  if(tinf->trans_table != 11 && /* TGA or TAG is not a stop */
+     tinf->trans_table != 26) {   /* 26: the fork's */
     no_stop = ((1-tinf->gc)*(1-tinf->gc)*tinf->gc)/8.0;
     no_stop += ((1-tinf->gc)*(1-tinf->gc)*(1-tinf->gc))/8.0;
     no_stop = (1 - no_stop);
@@ -582,6 +594,15 @@ void raw_coding_score(unsigned char *seq, unsigned char *rseq, int slen, struct
     no_stop += ((1-tinf->gc)*(1-tinf->gc)*(1-tinf->gc))/8.0;
     no_stop = (1 - no_stop);
   }
+  return no_stop;
+}
+
+void raw_coding_score(unsigned char *seq, unsigned char *rseq, int slen, struct
+                      _node *nod, int nn, struct _training *tinf) {
+  int i, j, last[3], fr;
+  double score[3], lfac, no_stop, gsize = 0.0;
+
+  no_stop = pdg_no_stop(tinf);
 
   /* Initial Pass: Score coding potential (start->stop) */
   for(i = 0; i < 3; i++) score[i] = 0.0;
@@ -936,11 +957,13 @@ exit(0); */
   algorithm, it allows for any popular motif to be discovered.
 *******************************************************************************/
 void train_starts_nonsd(unsigned char *seq, unsigned char *rseq, int slen,
-                  struct _node *nod, int nn, struct _training *tinf) {
-  int i, j, k, l, fr, bndx[3], mgood[4][4][4096], stage;
+                  struct _node *nod, int nn, struct _training *tinf,
+                  struct _motif_counts *mc) {
+  int i, j, k, l, fr, bndx[3], stage;
+  int (*mgood)[4][4096] = mc->good;
   double sum, ngenes, wt = tinf->st_wt, best[3], sthresh = 35.0;
   double tbg[3], treal[3];
-  double mbg[4][4][4096], mreal[4][4][4096], zbg, zreal;
+  double (*mbg)[4][4096] = mc->bg, (*mreal)[4][4096] = mc->real, zbg, zreal;
 
   for(i = 0; i < 32; i++) for(j = 0; j < 4; j++) tinf->ups_comp[i][j] = 0.0;
 
@@ -1401,6 +1424,50 @@ double intergenic_mod(struct _node *n1, struct _node *n2, struct _training
 }
 
 /*******************************************************************************
+  The RBS motif and spacer reported for a start node (GFF attributes, -s).
+*******************************************************************************/
+
+/* The text for each SD motif (node.rbs[]) */
+static const struct { const char *motif, *spacer; } sd_text[28] = {
+  { "None", "None" }, { "GGA/GAG/AGG", "3-4bp" }, { "3Base/5BMM", "13-15bp" },
+  { "4Base/6BMM", "13-15bp" }, { "AGxAG", "11-12bp" }, { "AGxAG", "3-4bp" },
+  { "GGA/GAG/AGG", "11-12bp" }, { "GGxGG", "11-12bp" }, { "GGxGG", "3-4bp" },
+  { "AGxAG", "5-10bp" }, { "AGGAG(G)/GGAGG", "13-15bp" },
+  { "AGGA/GGAG/GAGG", "3-4bp" }, { "AGGA/GGAG/GAGG", "11-12bp" },
+  { "GGA/GAG/AGG", "5-10bp" }, { "GGxGG", "5-10bp" }, { "AGGA", "5-10bp" },
+  { "GGAG/GAGG", "5-10bp" }, { "AGxAGG/AGGxGG", "11-12bp" },
+  { "AGxAGG/AGGxGG", "3-4bp" }, { "AGxAGG/AGGxGG", "5-10bp" },
+  { "AGGAG/GGAGG", "11-12bp" }, { "AGGAG", "3-4bp" }, { "AGGAG", "5-10bp" },
+  { "GGAGG", "3-4bp" }, { "GGAGG", "5-10bp" }, { "AGGAGG", "11-12bp" },
+  { "AGGAGG", "3-4bp" }, { "AGGAGG", "5-10bp" }
+};
+
+/* The better SD motif in SD mode; otherwise an SD motif that outscores the
+   node's upstream motif, that motif, or none (SD entry 0). */
+void pdg_rbs_text(struct _rbs_text *out, const struct _node *n,
+                  const struct _training *tinf) {
+  double rbs1 = tinf->rbs_wt[n->rbs[0]]*tinf->st_wt;
+  double rbs2 = tinf->rbs_wt[n->rbs[1]]*tinf->st_wt;
+  int sd = -1;
+
+  if(tinf->uses_sd == 1) sd = (rbs1 > rbs2) ? n->rbs[0] : n->rbs[1];
+  else if(tinf->no_mot > -0.5 && rbs1 > rbs2 && rbs1 > n->mot.score *
+          tinf->st_wt) sd = n->rbs[0];
+  else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && rbs2 > n->mot.score *
+          tinf->st_wt) sd = n->rbs[1];
+  else if(n->mot.len == 0) sd = 0;
+
+  if(sd >= 0) {
+    strcpy(out->motif, sd_text[sd].motif);
+    strcpy(out->spacer, sd_text[sd].spacer);
+  }
+  else {
+    mer_text(out->motif, n->mot.len, n->mot.ndx);
+    snprintf(out->spacer, sizeof(out->spacer), "%dbp", n->mot.spacer);
+  }
+}
+
+/*******************************************************************************
   Write detailed scoring information about every single possible gene.  Only
   done at the user's request.
 *******************************************************************************/
@@ -1408,8 +1475,7 @@ void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
                       *tinf, int sctr, int slen, int is_meta, char *mdesc, 
                       char *version, char *header) {
   int i, prev_stop = -1, prev_strand = 0, st_type;
-  double rbs1, rbs2;
-  char sd_string[28][100], sd_spacer[28][20], qt[10];
+  struct _rbs_text rbs;
   char type_string[4][5] = { "ATG", "GTG", "TTG" , "Edge" };
   char seq_data[MAX_LINE*2], run_data[MAX_LINE];
   char buffer[MAX_LINE] = {0};
@@ -1431,62 +1497,6 @@ void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
           tinf->gc*100.0, tinf->trans_table, tinf->uses_sd);
   strcat(run_data, buffer);
  
-  strcpy(sd_string[0], "None");
-  strcpy(sd_spacer[0], "None");
-  strcpy(sd_string[1], "GGA/GAG/AGG");
-  strcpy(sd_spacer[1], "3-4bp");
-  strcpy(sd_string[2], "3Base/5BMM");
-  strcpy(sd_spacer[2], "13-15bp");
-  strcpy(sd_string[3], "4Base/6BMM");
-  strcpy(sd_spacer[3], "13-15bp");
-  strcpy(sd_string[4], "AGxAG");
-  strcpy(sd_spacer[4], "11-12bp");
-  strcpy(sd_string[5], "AGxAG");
-  strcpy(sd_spacer[5], "3-4bp");
-  strcpy(sd_string[6], "GGA/GAG/AGG");
-  strcpy(sd_spacer[6], "11-12bp");
-  strcpy(sd_string[7], "GGxGG");
-  strcpy(sd_spacer[7], "11-12bp");
-  strcpy(sd_string[8], "GGxGG");
-  strcpy(sd_spacer[8], "3-4bp");
-  strcpy(sd_string[9], "AGxAG");
-  strcpy(sd_spacer[9], "5-10bp");
-  strcpy(sd_string[10], "AGGAG(G)/GGAGG");
-  strcpy(sd_spacer[10], "13-15bp");
-  strcpy(sd_string[11], "AGGA/GGAG/GAGG");
-  strcpy(sd_spacer[11], "3-4bp");
-  strcpy(sd_string[12], "AGGA/GGAG/GAGG");
-  strcpy(sd_spacer[12], "11-12bp");
-  strcpy(sd_string[13], "GGA/GAG/AGG");
-  strcpy(sd_spacer[13], "5-10bp");
-  strcpy(sd_string[14], "GGxGG");
-  strcpy(sd_spacer[14], "5-10bp");
-  strcpy(sd_string[15], "AGGA");
-  strcpy(sd_spacer[15], "5-10bp");
-  strcpy(sd_string[16], "GGAG/GAGG");
-  strcpy(sd_spacer[16], "5-10bp");
-  strcpy(sd_string[17], "AGxAGG/AGGxGG");
-  strcpy(sd_spacer[17], "11-12bp");
-  strcpy(sd_string[18], "AGxAGG/AGGxGG");
-  strcpy(sd_spacer[18], "3-4bp");
-  strcpy(sd_string[19], "AGxAGG/AGGxGG");
-  strcpy(sd_spacer[19], "5-10bp");
-  strcpy(sd_string[20], "AGGAG/GGAGG");
-  strcpy(sd_spacer[20], "11-12bp");
-  strcpy(sd_string[21], "AGGAG");
-  strcpy(sd_spacer[21], "3-4bp");
-  strcpy(sd_string[22], "AGGAG");
-  strcpy(sd_spacer[22], "5-10bp");
-  strcpy(sd_string[23], "GGAGG");
-  strcpy(sd_spacer[23], "3-4bp");
-  strcpy(sd_string[24], "GGAGG");
-  strcpy(sd_spacer[24], "5-10bp");
-  strcpy(sd_string[25], "AGGAGG");
-  strcpy(sd_spacer[25], "11-12bp");
-  strcpy(sd_string[26], "AGGAGG");
-  strcpy(sd_spacer[26], "3-4bp");
-  strcpy(sd_string[27], "AGGAGG");
-  strcpy(sd_spacer[27], "5-10bp");
 
   qsort(nod, nn, sizeof(struct _node), &stopcmp_nodes);
 
@@ -1512,37 +1522,8 @@ void write_start_file(FILE *fh, struct _node *nod, int nn, struct _training
       fprintf(fh, "%d\t%d\t-\t%.2f\t%.2f\t%.2f\t%s\t", nod[i].stop_val-1,
               nod[i].ndx+1, nod[i].cscore+nod[i].sscore, nod[i].cscore,
               nod[i].sscore, type_string[st_type]);
-    rbs1 = tinf->rbs_wt[nod[i].rbs[0]]*tinf->st_wt;
-    rbs2 = tinf->rbs_wt[nod[i].rbs[1]]*tinf->st_wt;
-    if(tinf->uses_sd == 1) {
-      if(rbs1 > rbs2) {
-        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[0]], 
-                sd_spacer[nod[i].rbs[0]], nod[i].rscore);
-      }
-      else {
-        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[1]], 
-                sd_spacer[nod[i].rbs[1]], nod[i].rscore);
-      }
-    }
-    else {
-      mer_text(qt, nod[i].mot.len, nod[i].mot.ndx);
-      if(tinf->no_mot > -0.5 && rbs1 > rbs2 && rbs1 > nod[i].mot.score *
-         tinf->st_wt) {
-        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[0]], 
-                sd_spacer[nod[i].rbs[0]], nod[i].rscore);
-      }
-      else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && rbs2 > nod[i].mot.score *
-              tinf->st_wt) {
-        fprintf(fh, "%s\t%s\t%.2f\t", sd_string[nod[i].rbs[1]], 
-                sd_spacer[nod[i].rbs[1]], nod[i].rscore);
-      }
-      else {
-        if(nod[i].mot.len == 0) fprintf(fh, "None\tNone\t%.2f\t", 
-                                      nod[i].rscore);
-        else fprintf(fh, "%s\t%dbp\t%.2f\t", qt, nod[i].mot.spacer, 
-                     nod[i].rscore);
-      }
-    }
+    pdg_rbs_text(&rbs, &nod[i], tinf);
+    fprintf(fh, "%s\t%s\t%.2f\t", rbs.motif, rbs.spacer, nod[i].rscore);
     fprintf(fh, "%.2f\t%.2f\t%.3f\n", nod[i].uscore, nod[i].tscore, nod[i].gc_cont);
   }
   fprintf(fh, "\n");

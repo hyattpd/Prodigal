@@ -1,3 +1,179 @@
+VERSION 2.6.5 (unreleased)
+
+* Genetic codes: a translation table is accepted only if Prodigal uses
+it exactly as NCBI defines it (NCBI gc.prt 4.6; docs/genetic-codes.md has
+the rules and the reasons per table). Of the 19 tables upstream accepts,
+11 differ from NCBI's, and upstream used them without a warning: 1, 2, 3,
+6, 10, 12, 14, 16, 22, 23 and 24. Between them they show wrong start
+codons (1, 3, 12, 24), a sense codon read as a stop (24), wrong amino
+acids (10, 16, 24), an ORF-length score that counts the wrong stops (1, 2,
+6, 12, 14, 22, 23), a training spacer that does not stop genes (6, 14) and
+an ambiguous base read as a stop (22). These tables are now rejected, with
+the reason: by the CLI's -g (exit 15, in either mode), by -t when the
+training file uses one (exit 4), and by the library (prodigal_create,
+config_validate, set_translation_table, load_training, training_info).
+Prodigal's code for the tables still accepted (4, 5, 9, 11, 13, 15, 21,
+25) is unchanged, so they give upstream's output, and metagenomic mode
+(tables 11 and 4) is unaffected. A test checks Prodigal's handling of
+every table against NCBI's file (testdata/ncbi/gc.prt).
+* Genetic codes: tables 26 (Pachysolen tannophilus nuclear: CTG is A, and
+ATG the only start Prodigal uses; NCBI also lists CTG) and 32
+(Balanophoraceae plastid: TAG is W), which NCBI added after Prodigal 2.6,
+are supported (-g 26, -g 32). NCBI's other new
+tables, 27 to 31 and 33, are still rejected: 29, 30 and 33 would need
+changes to how Prodigal scores open reading frames and separates training
+contigs, and in 27, 28 and 31 a codon's meaning depends on context
+(docs/genetic-codes.md).
+* Genetic codes: metagenomic mode refuses any translation table but 11
+(CLI -p meta -g, exit 15, whatever the option order; prodigal_create,
+config_validate and set_translation_table with meta_mode). Its 50 bins
+choose table 11 or 4 for each sequence, and upstream ignored -g there
+without a warning. -p meta -g 11 is accepted and changes nothing. For the
+same reason prodigal_load_training refuses a model in a metagenomic
+context, as the CLI refuses -p meta with -t. -h lists the tables
+metagenomic mode takes.
+* Metagenomic mode refuses the settings of the single-genome model, which
+its gene finding ignored without a warning, as each bin has its own model:
+CLI -p meta -n (exit 15, either order; also with -t, where upstream exited
+2 for the -t); in the library, force_nonsd or a start weight other than the
+default with meta_mode, and train, set_start_weight, set_gc and set_uses_sd
+on a metagenomic context. A metagenomic context therefore no longer trains
+a model for prodigal_export_training: train in a single-genome context.
+* CLI: -t refuses a training file that the library would refuse (see
+above; also a GC outside [0, 1], a start weight that is not finite and
+> 0, or an SD flag other than 0 or 1), with exit 4.
+* CLI: -g takes only a whole number (upstream read "-g 11x" as 11). A
+final -G or -d without its parameter is an error; upstream read
+past the end of the arguments, and a final -G crashed. -h lists the
+supported translation tables.
+* Library: ABI checks. PRODIGAL_ABI_VERSION / prodigal_abi_version() (1)
+is bumped on any change to a public struct, a function signature or a
+public constant. prodigal_config_init is now a macro over the new
+prodigal_config_init_v(config, abi_version, struct_size), which refuses a
+caller built for another ABI version or config size and then writes
+nothing (it used to write the library's sizeof into the caller's struct,
+so struct_size could never catch a mismatch); bindings in other languages
+call prodigal_config_init_v with their own values. prodigal_abi_layout()
+lists the offset and size of every field of every public struct, so
+bindings can check their mirrors field by field (struct_size misses
+reordering, and any addition that fits in padding).
+* Library: new prodigal_training_info reads a model's settings (translation
+table, SD usage, GC, start weight) from a blob without loading it, and
+accepts exactly the blobs prodigal_load_training accepts, with the same
+reasons for the others. docs/internals.md describes the model file.
+* Library: proteins. With the new config field want_proteins (default 0),
+prodigal_find_genes also returns each gene's protein: the CLI's -a record
+without its line breaks. The SOA holds them Arrow-style, n_genes + 1
+offsets from 0 (protein_offsets) into protein_data, with no NUL bytes; the
+AOS gene, NUL-terminated (protein). The CLI's -a file and the library
+translate with the same code, so they agree; the -a file is unchanged.
+prodigal_config_t, prodigal_genes_soa_t and prodigal_gene_t gain these
+fields, so consumers must be rebuilt. prodigal_create rejects an old
+config's struct_size on 64-bit targets only: where pointers are 4 bytes
+(wasm32, 32-bit ARM, Win32) the new field fills padding and the size
+doesn't change; prodigal_config_init (above) now catches it everywhere.
+* Library: new prodigal_config_validate says why a config is rejected.
+* Library: prodigal_create also rejects a start weight that is not finite
+and > 0, and a free_fn without an alloc_fn.
+* Library: prodigal_set_start_weight and prodigal_set_gc reject NaN, and
+prodigal_set_start_weight an infinite weight.
+* Library: prodigal_export_training returns an error when the context has
+no model.
+* Library: prodigal_load_training also rejects a model whose GC is outside
+[0, 1], whose start weight is not finite and > 0, or whose SD flag is not
+0 or 1, and leaves the context unchanged.
+* Library: non-SD start training (a genome without Shine-Dalgarno motifs,
+or force_nonsd) no longer puts 1.25 MB of motif counts on the stack: they
+are allocated, through the custom allocator, so training fits a 2 MiB
+thread with room to spare. Output is unchanged.
+* Training no longer leaks when the GC frame plot's allocation fails (now
+one block, through the custom allocator), and the hexamer background
+behind the coding model no longer allocates (upstream did not check that
+malloc).
+* Contigs with 30,000 or more genes are no longer truncated at 30,000 (the
+CLI warned "max # of genes exceeded, truncating"; the library dropped them
+silently): the gene array grows. Output is unchanged on smaller contigs.
+* With -m, more than 5,000 masked regions (runs of at least 50 Ns) no longer
+stop the CLI (exit 52 in training, 55 otherwise), and the library no longer
+drops the masks past 5,000: the list grows.
+* CLI: a record with no sequence (a header followed by another header) is
+skipped with a warning, and the records after it are read: the genes are
+those of the file without it. Upstream stopped reading there, silently
+dropping the rest of the file. An empty last record is still ignored
+without a warning, as upstream did. Training on the input still adds the
+12-base spacer upstream added for it, so there the model can differ
+slightly from that of the file without it.
+* CLI: when standard input can't be opened, the error names /dev/stdin
+(upstream printed "(null)").
+* CLI: training input cut at the length limit no longer gets its last
+spacer written past the end of the sequence buffers (up to 3 bytes); the
+buffers have room for it.
+* Library: the length limits are the CLI's, on the bases kept (characters in
+A-z): at most 31,989,999. prodigal_set_sequence checked the raw length
+against 32,000,000 instead, and prodigal_set_training_sequences truncated
+longer training input silently; both now return an error. The CLI still
+trains on the start of such input, with a warning.
+* Fixed heap corruption (a crash, in the CLI and the library) on
+low-complexity input such as a 330 kbp ATG repeat: add_nodes wrote past the
+node array, which is sized for slen/8 nodes (at least 100,000), upstream's
+budget, while such input has up to about 2 per base. The array now grows
+when the nodes don't fit. Output is unchanged on all other input. Such input
+can still be slow: see the dprog note in docs/upstream-behavior.md.
+* Fixed a crash (segmentation fault on macOS) in metagenomic mode: when a
+bin produced no gene path, the CLI read the score of nodes[-1], before the
+start of the node array. Such a bin now scores 0.0, the score of the empty
+path, which is also what that read returned on Linux, so output is unchanged
+(checked against upstream c1e2d36 on the test corpus and E. coli K-12).
+* Library, metagenomic mode: a contig on which no bin finds a gene path now
+reports the same bin as the CLI (the first whose GC window contains the
+contig) instead of bin 0.
+* Library: prodigal_find_genes no longer clears its 30 MB gene array on
+every call (the CLI never did, and every field read is written first). Output
+is unchanged; metagenomic mode runs about twice as fast.
+* Builds with -ffp-contract=off, so ARM64 computes exactly what x86-64 does.
+Without it a default ARM64 build fused multiply-adds and printed some start
+scores differently in the last digit (e.g. in the -s output).
+* The CLI and the library now share one gene-finding pipeline
+(prodigal_internal.h). With the library fixes below, the library's genes and
+every value it reports equal the CLI's GFF in both modes (make compare, in
+CI). Without -q, training again prints upstream's progress lines on stderr
+(missing since 2.6.4).
+* Library, single genome mode: calling prodigal_find_genes twice on the same
+sequence could change the second result, because the nodes of the first
+call were not cleared (a gene could turn into an edge gene).
+* Library: prodigal_find_genes without a sequence set is now an error in
+metagenomic mode too (it returned no genes).
+* Library, single genome mode: prodigal_train now sets the model's GC from the
+training sequence, as the CLI does; it trained with GC 0 and called 4,871
+genes on E. coli K-12 where the CLI calls 4,319. prodigal_train also starts
+from a fresh model, as the CLI does: training a context twice, or after
+loading a model, built on the old model. Its translation table and start
+weight are the config's or the last ones set with
+prodigal_set_translation_table / prodigal_set_start_weight, never a loaded
+model's. For input within the documented limits, the model now equals the
+CLI's -t file byte for byte. A failed training leaves the context without a
+model (find_genes fails), not with a damaged one, and prodigal_load_training
+checks a blob before replacing the model, so a rejected one changes nothing.
+* Library, metagenomic mode: the scores and confidence are now those of the
+bin that called each gene, as in the CLI's GFF attributes. They came from
+the recovery pass, without the intergenic adjustment (sscore differed for
+2,802 of the 4,319 genes of E. coli K-12, conf for 468).
+* Library: an upstream (non-SD) RBS motif is reported as the motif, as the
+CLI prints it (e.g. "TAA"), instead of "Upstream". The motif and spacer
+strings now live in the output and are valid until prodigal_genes_free or
+prodigal_genes_aos_free (they were static strings).
+* Library, metagenomic mode: prodigal_find_genes no longer copies the best
+bin's model (558 KB) into the context for every contig, so
+prodigal_export_training after it no longer returns that bin's model.
+* CI now covers v2.6.4-miint: every CLI output type in both modes against
+the upstream ground truth on Linux (x86-64, ARM64), macOS and Windows, and
+the CLI against an upstream c1e2d36 build across a flag matrix and corpus.
+
+VERSION 2.6.4
+
+* Added a reentrant embeddable API
+* Added basic CI testing (Linux, macOS, Windows, WASM)
+
 VERSION 2.6.3
 
 * Fixed a bug in protein translation output of partial genes where TTG/GTG

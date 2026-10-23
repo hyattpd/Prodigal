@@ -1,0 +1,26 @@
+Score a no-path meta bin 0.0 instead of reading nodes[-1]; see docs/upstream-behavior.md.
+
+--- a/main.c
++++ b/main.c
+@@ -45,7 +45,7 @@
+   int rv, slen, nn, ng, i, ipath, *gc_frame, do_training, output, max_phase;
+   int closed, do_mask, nmask, force_nonsd, user_tt, is_meta, num_seq, quiet;
+   int piped, max_slen, fnum;
+-  double max_score, gc, low, high;
++  double max_score, path_score, gc, low, high;
+   unsigned char *seq, *rseq, *useq;
+   char *train_file, *start_file, *trans_file, *nuc_file; 
+   char *input_file, *output_file, input_copy[MAX_LINE];
+@@ -556,9 +556,10 @@
+         score_nodes(seq, rseq, slen, nodes, nn, meta[i].tinf, closed, is_meta);
+         record_overlapping_starts(nodes, nn, meta[i].tinf, 1);
+         ipath = dprog(nodes, nn, meta[i].tinf, 1);
+-        if(nodes[ipath].score > max_score) {
++        path_score = (ipath >= 0) ? nodes[ipath].score : 0.0;
++        if(path_score > max_score) {
+           max_phase = i;
+-          max_score = nodes[ipath].score;
++          max_score = path_score;
+           eliminate_bad_genes(nodes, ipath, meta[i].tinf);
+           ng = add_genes(genes, nodes, ipath);
+           tweak_final_starts(genes, ng, nodes, nn, meta[i].tinf);

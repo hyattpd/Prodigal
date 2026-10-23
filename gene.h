@@ -33,11 +33,24 @@ struct _gene {
   int end;                 /* Right end of the gene */
   int start_ndx;           /* Index to the start node in the nodes file */
   int stop_ndx;            /* Index to the stop node in the nodes file */
+
+  /* The gene as record_gene_data reports it, from the nodes that chose it.
+     The library returns these; the CLI prints the two strings below, which
+     are formatted from them. */
+  int strand;              /* 1 = forward, -1 = reverse */
+  int partial_left;        /* Runs off the left edge */
+  int partial_right;       /* Runs off the right edge */
+  int start_type;          /* 0 = ATG, 1 = GTG, 2 = TTG, 3 = Edge */
+  double cscore, sscore, rscore, uscore, tscore;
+  double confidence;
+  double gc_cont;
+  struct _rbs_text rbs;
+
   char gene_data[500];     /* String containing gene information */
   char score_data[500];    /* String containing scoring information */
 };
 
-int add_genes(struct _gene *, struct _node *, int);
+int add_genes(struct _gene *, int, struct _node *, int);
 void record_gene_data(struct _gene *, int, struct _node *, struct _training *,
                       int);
 void tweak_final_starts(struct _gene *, int, struct _node *, int, struct
@@ -45,9 +58,22 @@ void tweak_final_starts(struct _gene *, int, struct _node *, int, struct
 
 void print_genes(FILE *, struct _gene *, int, struct _node *, int, int, int,
                  int, char *, struct _training *, char *, char *, char *);
-void write_translations(FILE *, struct _gene *, int, struct _node *, 
-                        unsigned char *, unsigned char *, unsigned char *, int,
-                        struct _training *, int, char *);
+/* Each codon's protein letter under one translation table, by the codon's
+   mer_ndx(3, ...) index: aa[0] inside a gene, aa[1] as the first codon of a
+   gene that is not edge-started (M at a start). */
+struct _codon_letters {
+  int table;                  /* the trans_table aa holds; 0: none yet */
+  char aa[2][64];
+};
+
+int pdg_protein_length(const struct _gene *);
+void pdg_codon_letters(struct _training *, struct _codon_letters *);
+char pdg_protein_letter(const struct _gene *, int, unsigned char *,
+                        unsigned char *, unsigned char *, int,
+                        const struct _codon_letters *);
+void write_translations(FILE *, struct _gene *, int, unsigned char *,
+                        unsigned char *, unsigned char *, int,
+                        struct _training *, struct _codon_letters *, char *);
 void write_nucleotide_seqs(FILE *, struct _gene *, int, struct _node *, 
                            unsigned char *, unsigned char *, unsigned char *,
                            int, struct _training *, int, char *);

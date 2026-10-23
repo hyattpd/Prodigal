@@ -19,6 +19,16 @@
 *******************************************************************************/
 
 #include "sequence.h"
+#include "prodigal_internal.h"
+
+/* The readers' buffers hold every base they can read, so encoding fails only
+   for want of memory for masks: stop as upstream did when it ran out of
+   room for them. */
+static void encoded_or_exit(int rc, int code) {
+  if(rc == PRODIGAL_OK) return;
+  fprintf(stderr, "Error: out of memory for regions of 'N''s.\n");
+  exit(code);
+}
 
 /*******************************************************************************
   Read the sequence for training purposes.  If we encounter multiple
@@ -29,13 +39,13 @@
   preferred.
 *******************************************************************************/
 
-int read_seq_training(fptr fp, unsigned char *seq, unsigned char *useq,
-                      double *gc, int do_mask, mask *mlist, int *nm) {
+int read_seq_training(fptr fp, prodigal_ctx_t *ctx) {
   char line[MAX_LINE+1];
-  int hdr = 0, fhdr = 0, bctr = 0, len = 0, wrn = 0;
-  int gc_cont = 0, mask_beg = -1;
+  int hdr = 0, fhdr = 0, wrn = 0;
   unsigned int i, gapsize = 0;
+  pdg_encoder_t enc;
 
+  pdg_encode_begin(ctx, &enc, PDG_SEQ_CAP);
   line[MAX_LINE] = '\0';
   while(INPUT_GETS(line, MAX_LINE, fp) != NULL) {
     if(hdr == 0 && line[strlen(line)-1] != '\n' && wrn == 0) {
@@ -47,12 +57,7 @@ int read_seq_training(fptr fp, unsigned char *seq, unsigned char *useq,
     if(line[0] == '>' || (line[0] == 'S' && line[1] == 'Q') ||
        (strlen(line) > 6 && strncmp(line, "ORIGIN", 6) == 0)) {
       hdr = 1;
-      if(fhdr > 0) {
-        for(i = 0; i < 12; i++) {
-          if(i%4 == 0 || i%4 == 1) { set(seq, bctr); set(seq, bctr+1); }
-          bctr+=2; len++;
-        }
-      }
+      if(fhdr > 0) encoded_or_exit(pdg_encode_spacer(ctx, &enc), 52);
       fhdr++;
     }
     else if(hdr == 1 && (line[0] == '/' && line[1] == '/')) hdr = 0;
@@ -67,65 +72,31 @@ int read_seq_training(fptr fp, unsigned char *seq, unsigned char *useq,
         for(i = 0; i < gapsize; i++) line[i] = 'n';
         line[i] = '\0';
       }
-      for(i = 0; i < strlen(line); i++) {
-        if(line[i] < 'A' || line[i] > 'z') continue;
-        if(do_mask == 1 && mask_beg != -1 && line[i] != 'N' && line[i] != 'n') {
-          if(len - mask_beg >= MASK_SIZE) {
-            if(*nm == MAX_MASKS) {
-              fprintf(stderr, "Error: saw too many regions of 'N''s in the ");
-              fprintf(stderr, "sequence.\n");
-              exit(52);
-            }
-            mlist[*nm].begin = mask_beg;
-            mlist[*nm].end = len-1;
-            (*nm)++;
-          }
-          mask_beg = -1;
-        }
-        if(do_mask == 1 && mask_beg == -1 && (line[i] == 'N' || line[i] == 'n'))
-          mask_beg = len;
-        if(line[i] == 'g' || line[i] == 'G') { set(seq, bctr); gc_cont++; }
-        else if(line[i] == 't' || line[i] == 'T') {
-          set(seq, bctr);
-          set(seq, bctr+1);
-        }
-        else if(line[i] == 'c' || line[i] == 'C') {
-          set(seq, bctr+1);
-          gc_cont++;
-        }
-        else if(line[i] != 'a' && line[i] != 'A') {
-          set(seq, bctr+1);
-          set(useq, len);
-        }
-        bctr+=2; len++;
-      }
+      encoded_or_exit(pdg_encode_chars(ctx, &enc, line, strlen(line)), 52);
     }
-    if(len+MAX_LINE >= MAX_SEQ) {
+    if(enc.len+MAX_LINE >= MAX_SEQ) {
       fprintf(stderr, "\n\nWarning:  Sequence is long (max %d for training).\n",
               MAX_SEQ);
       fprintf(stderr, "Training on the first %d bases.\n\n", MAX_SEQ);
       break;
     }
   }
-  if(fhdr > 1) {
-    for(i = 0; i < 12; i++) {
-      if(i%4 == 0 || i%4 == 1) { set(seq, bctr); set(seq, bctr+1); }
-      bctr+=2; len++;
-    }
-  }
-  *gc = ((double)gc_cont / (double)len);
-  return len;
+  if(fhdr > 1) encoded_or_exit(pdg_encode_spacer(ctx, &enc), 52);
+  pdg_encode_end(ctx, &enc);
+  return enc.len;
 }
 
 /* This routine reads in the next sequence in a FASTA/GB/EMBL file */
 
-int next_seq_multi(fptr fp, unsigned char *seq, unsigned char *useq,
-                   int *sctr, double *gc, int do_mask, mask *mlist, int *nm,
-                   char *cur_hdr, char *new_hdr) {
+int next_seq_multi(fptr fp, prodigal_ctx_t *ctx, int *sctr, char *cur_hdr,
+                   char *new_hdr) {
   char line[MAX_LINE+1];
-  int reading_seq = 0, genbank_end = 0, bctr = 0, len = 0, wrn = 0;
-  int gc_cont = 0, mask_beg = -1;
+  int reading_seq = 0, genbank_end = 0, wrn = 0;
+  int named = 0;   /* new_hdr is from the file, not the default name */
   unsigned int i, gapsize = 0;
+  pdg_encoder_t enc;
+
+  pdg_encode_begin(ctx, &enc, PDG_SEQ_CAP);
 
   sprintf(new_hdr, "Prodigal_Seq_%d", *sctr+2);
 
@@ -146,6 +117,7 @@ int next_seq_multi(fptr fp, unsigned char *seq, unsigned char *useq,
       else {
         strcpy(new_hdr, line+12);
         new_hdr[strlen(new_hdr)-1] = '\0';
+        named = 1;
       }
     }
     if(line[0] == '>' || (line[0] == 'S' && line[1] == 'Q') ||
@@ -154,8 +126,20 @@ int next_seq_multi(fptr fp, unsigned char *seq, unsigned char *useq,
         if(line[0] == '>') {
           strcpy(new_hdr, line+1);
           new_hdr[strlen(new_hdr)-1] = '\0';
+          named = 1;
         }
-        break;
+        if(enc.len > 0) break;
+        /* A record without sequence: skip it and read the next one in its
+           place (upstream returned -1 here, ending the input). A default
+           name stays with the place, as if the record weren't there. */
+        fprintf(stderr, "Warning: skipping a record with no sequence: %s\n",
+                cur_hdr);
+        if(named == 1) strcpy(cur_hdr, new_hdr);
+        sprintf(new_hdr, "Prodigal_Seq_%d", *sctr+2);
+        named = 0;
+        reading_seq = 1;
+        genbank_end = 0;
+        continue;
       }
       if(line[0] == '>') {
         strcpy(cur_hdr, line+1);
@@ -178,48 +162,17 @@ int next_seq_multi(fptr fp, unsigned char *seq, unsigned char *useq,
         for(i = 0; i < gapsize; i++) line[i] = 'n';
         line[i] = '\0';
       }
-      for(i = 0; i < strlen(line); i++) {
-        if(line[i] < 'A' || line[i] > 'z') continue;
-        if(do_mask == 1 && mask_beg != -1 && line[i] != 'N' && line[i] != 'n') {
-          if(len - mask_beg >= MASK_SIZE) {
-            if(*nm == MAX_MASKS) {
-              fprintf(stderr, "Error: saw too many regions of 'N''s in the ");
-              fprintf(stderr, "sequence.\n");
-              exit(55);
-            }
-            mlist[*nm].begin = mask_beg;
-            mlist[*nm].end = len-1;
-            (*nm)++;
-          }
-          mask_beg = -1;
-        }
-        if(do_mask == 1 && mask_beg == -1 && (line[i] == 'N' || line[i] == 'n'))
-          mask_beg = len;
-        if(line[i] == 'g' || line[i] == 'G') { set(seq, bctr); gc_cont++; }
-        else if(line[i] == 't' || line[i] == 'T') {
-          set(seq, bctr);
-          set(seq, bctr+1);
-        }
-        else if(line[i] == 'c' || line[i] == 'C') {
-          set(seq, bctr+1);
-          gc_cont++;
-        }
-        else if(line[i] != 'a' && line[i] != 'A') {
-          set(seq, bctr+1);
-          set(useq, len);
-        }
-        bctr+=2; len++;
-      }
+      encoded_or_exit(pdg_encode_chars(ctx, &enc, line, strlen(line)), 55);
     }
-    if(len+MAX_LINE >= MAX_SEQ) {
+    if(enc.len+MAX_LINE >= MAX_SEQ) {
       fprintf(stderr, "Sequence too long (max %d permitted).\n", MAX_SEQ);
       exit(56);
     }
   }
-  if(len == 0) return -1;
-  *gc = ((double)gc_cont / (double)len);
+  if(enc.len == 0) return -1;
+  pdg_encode_end(ctx, &enc);
   *sctr = *sctr + 1;
-  return len;
+  return enc.len;
 }
 
 /* Takes first word of header */
@@ -285,12 +238,70 @@ int is_n(unsigned char *useq, int n) {
   return 1;
 }
 
+/* NULL if Prodigal uses translation table tt exactly as NCBI's gc.prt
+   defines it, otherwise why it doesn't: the rules, the reasons and the
+   tests that hold this list to gc.prt are in docs/genetic-codes.md.  The
+   code that falls short is upstream's, left unchanged; its tables are
+   rejected instead. */
+const char *pdg_trans_table_unsupported(int tt) {
+  switch(tt) {
+  case 4: case 5: case 9: case 11: case 13: case 15: case 21: case 25:
+  case 26: case 32:
+    return NULL;
+  case 1:
+    return "Prodigal never starts genes at TTG (NCBI: a start), and its "
+           "ORF-length score counts two of the three stops";
+  case 2:
+    return "Prodigal's ORF-length score leaves out the AGA and AGG stops";
+  case 3:
+    return "Prodigal never starts genes at GTG (NCBI: a start)";
+  case 6:
+    return "Prodigal's ORF-length score and training spacer take TAA for a "
+           "stop (NCBI: Q)";
+  case 10:
+    return "Prodigal translates TGA as W (NCBI: C)";
+  case 12:
+    return "Prodigal starts genes at TTG (NCBI: not a start), and its "
+           "ORF-length score counts two of the three stops";
+  case 14:
+    return "Prodigal's ORF-length score and training spacer take TAA for a "
+           "stop (NCBI: Y)";
+  case 16:
+    return "Prodigal translates TAG as X (NCBI: L)";
+  case 22:
+    return "Prodigal's ORF-length score leaves out the TCA stop, and an "
+           "ambiguous base makes TNA a stop";
+  case 23:
+    return "Prodigal's ORF-length score counts two of the four stops (TAA, "
+           "TAG, TGA, TTA)";
+  case 24:
+    return "Prodigal reads TGA as a stop (NCBI: W) and AGA and AGG as R "
+           "(NCBI: S and K), and never starts genes at TTG (NCBI: a start)";
+  case 29: case 30: case 33:
+    return "not implemented: it postdates Prodigal 2.6, Prodigal's "
+           "ORF-length score cannot count its stops, and its training "
+           "spacer would stop no gene";
+  case 27:
+    return "TGA is a stop or W depending on context, which Prodigal cannot "
+           "model";
+  case 28:
+    return "TAA and TAG are stops or Q, and TGA a stop or W, depending on "
+           "context, which Prodigal cannot model";
+  case 31:
+    return "TAA and TAG are stops or E depending on context, which Prodigal "
+           "cannot model";
+  default:
+    return "NCBI defines no such genetic code";
+  }
+}
+
 int is_stop(unsigned char *seq, int n, struct _training *tinf) {
 
   /* TAG */
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
     if(tinf->trans_table == 6 || tinf->trans_table == 15 ||
-       tinf->trans_table == 16 || tinf->trans_table == 22) return 0;
+       tinf->trans_table == 16 || tinf->trans_table == 22 ||
+       tinf->trans_table == 32) return 0;   /* 32: the fork's */
     return 1;
   }
 
@@ -334,7 +345,8 @@ int is_start(unsigned char *seq, int n, struct _training *tinf) {
   /* Codes that only use ATG */
   if(tinf->trans_table == 6 || tinf->trans_table == 10 ||
      tinf->trans_table == 14 || tinf->trans_table == 15 ||
-     tinf->trans_table == 16 || tinf->trans_table == 22) return 0;
+     tinf->trans_table == 16 || tinf->trans_table == 22 ||
+     tinf->trans_table == 26) return 0;   /* 26: the fork's */
 
   /* GTG */
   if(is_g(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
@@ -385,7 +397,10 @@ double gc_content(unsigned char *seq, int a, int b) {
   return gc/sum;
 }
 
-/* Returns a single amino acid for this position */
+/* Returns a single amino acid for this position.  Its answers are kept per
+   translation table (pdg_codon_letters), as pdg_meta keeps the nodes that
+   is_stop and is_start make, so these must read nothing of tinf but
+   trans_table. */
 char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
   if(is_stop(seq, n, tinf) == 1) return '*';
   if(is_start(seq, n, tinf) == 1 && is_init == 1) return 'M';
@@ -409,6 +424,7 @@ char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
   if(is_t(seq, n) == 1 && is_a(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
     if(tinf->trans_table == 6 || tinf->trans_table == 15) return 'Q';
     if(tinf->trans_table == 22) return 'L';
+    if(tinf->trans_table == 32) return 'W';   /* the fork's */
   }
   if(is_t(seq, n) == 1 && is_g(seq, n+1) == 1 && is_t(seq, n+2) == 1)
     return 'C';
@@ -435,6 +451,7 @@ char amino(unsigned char *seq, int n, struct _training *tinf, int is_init) {
   if(is_c(seq, n) == 1 && is_t(seq, n+1) == 1 && is_g(seq, n+2) == 1) {
     if(tinf->trans_table == 3) return 'T';
     if(tinf->trans_table == 12) return 'S';
+    if(tinf->trans_table == 26) return 'A';   /* the fork's */
     return 'L';
   }
   if(is_c(seq, n) == 1 && is_c(seq, n+1) == 1) return 'P';
@@ -569,15 +586,15 @@ int max_fr(int n1, int n2, int n3) {
   position in the sequence.
 *******************************************************************************/
 
-int *calc_most_gc_frame(unsigned char *seq, int slen) {
+int *calc_most_gc_frame(prodigal_ctx_t *ctx, unsigned char *seq, int slen) {
   int i, j, *fwd, *bwd, *tot;
   int win, *gp;
 
-  gp = (int *)malloc(slen*sizeof(double));
-  fwd = (int *)malloc(slen*sizeof(int));
-  bwd = (int *)malloc(slen*sizeof(int));
-  tot = (int *)malloc(slen*sizeof(int));
-  if(fwd == NULL || bwd == NULL || gp == NULL || tot == NULL) return NULL;
+  /* One block through the context's allocator: gp, which the caller frees
+     with pdg_free, then the working arrays.  NULL if out of memory. */
+  gp = (int *)pdg_alloc(ctx, 4*(size_t)slen*sizeof(int));
+  if(gp == NULL) return NULL;
+  fwd = gp + slen; bwd = fwd + slen; tot = bwd + slen;
   for(i = 0; i < slen; i++) { fwd[i] = 0; bwd[i] = 0; tot[i] = 0; gp[i] = -1; }
 
   for(i = 0; i < 3; i++) {
@@ -593,12 +610,10 @@ int *calc_most_gc_frame(unsigned char *seq, int slen) {
     if(i - WINDOW/2 >= 0) tot[i] -= fwd[i-WINDOW/2];
     if(i + WINDOW/2 < slen) tot[i] -= bwd[i+WINDOW/2];
   }
-  free(fwd); free(bwd);
   for(i = 0; i < slen-2; i+=3) {
     win = max_fr(tot[i], tot[i+1], tot[i+2]);
     for(j = 0; j < 3; j++) gp[i+j] = win;
   }
-  free(tot);
   return gp;
 }
 
@@ -636,21 +651,20 @@ void mer_text(char *qt, int len, int ndx) {
 }
 
 /* Builds a 'len'-mer background for whole sequence */
+/* Counts in bg itself (doubles hold the counts exactly), so nothing is
+   allocated; same values as upstream's int counts. */
 void calc_mer_bg(int len, unsigned char *seq, unsigned char *rseq, int slen,
                  double *bg) {
   int i, glob = 0, size = 1;
-  int *counts;
 
   for(i = 1; i <= len; i++) size *= 4;
-  counts = (int *)malloc(size * sizeof(int));
-  for(i = 0; i < size; i++) counts[i] = 0;
+  for(i = 0; i < size; i++) bg[i] = 0.0;
   for(i = 0; i < slen-len+1; i++) {
-    counts[mer_ndx(len, seq, i)]++;
-    counts[mer_ndx(len, rseq, i)]++;
+    bg[mer_ndx(len, seq, i)] += 1.0;
+    bg[mer_ndx(len, rseq, i)] += 1.0;
     glob+=2;
   }
-  for(i = 0; i < size; i++) bg[i] = (double)((counts[i]*1.0)/(glob*1.0));
-  free(counts);
+  for(i = 0; i < size; i++) bg[i] /= (glob*1.0);
 }
 
 /*******************************************************************************

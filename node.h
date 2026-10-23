@@ -44,6 +44,19 @@ struct _motif {
   double score;        /* Score for the motif */
 };
 
+/* RBS motif and spacer text, as reported (pdg_rbs_text) */
+struct _rbs_text {
+  char motif[16];      /* Longest: "AGGAG(G)/GGAGG" */
+  char spacer[8];      /* Longest: "13-15bp" */
+};
+
+/* train_starts_nonsd's motif counts, 1.25 MB, from its caller: on the
+   stack they left little of a 2 MiB thread. */
+struct _motif_counts {
+  int good[4][4][4096];
+  double bg[4][4][4096], real[4][4][4096];
+};
+
 struct _node {
   int type;            /* 0=ATG, 1=GTG, 2=TTG/Other, 3=Stop */
   int edge;            /* Runs off the edge; 0 = normal, 1 = edge node */
@@ -73,7 +86,7 @@ struct _node {
 };
 
 int add_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
-              mask *, int, struct _training *);
+              int, mask *, int, struct _training *);
 void reset_node_scores(struct _node *, int);
 int compare_nodes(const void *, const void *);
 int stopcmp_nodes(const void *, const void *);
@@ -88,6 +101,7 @@ void calc_amino_bg(struct _training *, unsigned char *, unsigned char *, int,
 
 void score_nodes(unsigned char *, unsigned char *, int, struct _node *, int,
                  struct _training *, int, int);
+double pdg_no_stop(struct _training *);
 void raw_coding_score(unsigned char *, unsigned char *, int, struct _node *,
                       int, struct _training *);
 void calc_orf_gc(unsigned char *, unsigned char *, int, struct _node *, int, 
@@ -104,7 +118,7 @@ double intergenic_mod(struct _node *, struct _node *, struct _training *);
 void train_starts_sd(unsigned char *, unsigned char *, int, struct _node *,
                         int, struct _training *);
 void train_starts_nonsd(unsigned char *, unsigned char *, int, struct _node *,
-                        int, struct _training *);
+                        int, struct _training *, struct _motif_counts *);
 
 void count_upstream_composition(unsigned char *, int, int, int, 
                                 struct _training *);
@@ -117,6 +131,8 @@ void update_motif_counts(double [4][4][4096], double *, unsigned char *,
 
 void write_start_file(FILE *, struct _node *, int, struct _training *, int,
                       int, int, char *, char *, char *);
+void pdg_rbs_text(struct _rbs_text *, const struct _node *,
+                  const struct _training *);
 
 int cross_mask(int, int, mask *, int);
 

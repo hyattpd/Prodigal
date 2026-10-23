@@ -20,9 +20,11 @@
 
 #include "gene.h"
 
-/* Copies genes from the dynamic programming to a final array */
+/* Copies genes from the dynamic programming to a final array, which holds
+   cap genes.  Returns the number of genes, or -1 if they don't fit (each
+   pass adds at most one gene, so it checks once per pass). */
 
-int add_genes(struct _gene *glist, struct _node *nod, int dbeg) {
+int add_genes(struct _gene *glist, int cap, struct _node *nod, int dbeg) {
   int path, ctr;
 
   if(dbeg == -1) return 0;
@@ -30,6 +32,7 @@ int add_genes(struct _gene *glist, struct _node *nod, int dbeg) {
   while(nod[path].traceb != -1) path = nod[path].traceb;
 
   while(path != -1) {
+    if(ctr == cap) return -1;
     if(nod[path].elim == 1) { path = nod[path].tracef; continue; }
     if(nod[path].strand == 1 && nod[path].type != STOP) {
       glist[ctr].begin = nod[path].ndx+1;
@@ -50,10 +53,6 @@ int add_genes(struct _gene *glist, struct _node *nod, int dbeg) {
       ctr++;
     }
     path = nod[path].tracef;
-    if(ctr == MAX_GENES) {
-      fprintf(stderr, "warning, max # of genes exceeded, truncating...\n");
-      return ctr;
-    }
   }
   return ctr;
 }
@@ -195,144 +194,40 @@ void tweak_final_starts(struct _gene *genes, int ng, struct _node *nod,
 
 void record_gene_data(struct _gene *genes, int ng, struct _node *nod,
                       struct _training *tinf, int sctr) {
-
-  int i, ndx, sndx, partial_left, partial_right, st_type;
-  double rbs1, rbs2, confidence;
-  char sd_string[28][100], sd_spacer[28][20], qt[10];
+  int i;
   char type_string[4][5] = { "ATG", "GTG", "TTG" , "Edge" };
 
-  /* Initialize RBS string information for default SD */
-  strcpy(sd_string[0], "None");
-  strcpy(sd_spacer[0], "None");
-  strcpy(sd_string[1], "GGA/GAG/AGG");
-  strcpy(sd_spacer[1], "3-4bp");
-  strcpy(sd_string[2], "3Base/5BMM");
-  strcpy(sd_spacer[2], "13-15bp");
-  strcpy(sd_string[3], "4Base/6BMM");
-  strcpy(sd_spacer[3], "13-15bp");
-  strcpy(sd_string[4], "AGxAG");
-  strcpy(sd_spacer[4], "11-12bp");
-  strcpy(sd_string[5], "AGxAG");
-  strcpy(sd_spacer[5], "3-4bp");
-  strcpy(sd_string[6], "GGA/GAG/AGG");
-  strcpy(sd_spacer[6], "11-12bp");
-  strcpy(sd_string[7], "GGxGG");
-  strcpy(sd_spacer[7], "11-12bp");
-  strcpy(sd_string[8], "GGxGG");
-  strcpy(sd_spacer[8], "3-4bp");
-  strcpy(sd_string[9], "AGxAG");
-  strcpy(sd_spacer[9], "5-10bp");
-  strcpy(sd_string[10], "AGGAG(G)/GGAGG");
-  strcpy(sd_spacer[10], "13-15bp");
-  strcpy(sd_string[11], "AGGA/GGAG/GAGG");
-  strcpy(sd_spacer[11], "3-4bp");
-  strcpy(sd_string[12], "AGGA/GGAG/GAGG");
-  strcpy(sd_spacer[12], "11-12bp");
-  strcpy(sd_string[13], "GGA/GAG/AGG");
-  strcpy(sd_spacer[13], "5-10bp");
-  strcpy(sd_string[14], "GGxGG");
-  strcpy(sd_spacer[14], "5-10bp");
-  strcpy(sd_string[15], "AGGA");
-  strcpy(sd_spacer[15], "5-10bp");
-  strcpy(sd_string[16], "GGAG/GAGG");
-  strcpy(sd_spacer[16], "5-10bp");
-  strcpy(sd_string[17], "AGxAGG/AGGxGG");
-  strcpy(sd_spacer[17], "11-12bp");
-  strcpy(sd_string[18], "AGxAGG/AGGxGG");
-  strcpy(sd_spacer[18], "3-4bp");
-  strcpy(sd_string[19], "AGxAGG/AGGxGG");
-  strcpy(sd_spacer[19], "5-10bp");
-  strcpy(sd_string[20], "AGGAG/GGAGG");
-  strcpy(sd_spacer[20], "11-12bp");
-  strcpy(sd_string[21], "AGGAG");
-  strcpy(sd_spacer[21], "3-4bp");
-  strcpy(sd_string[22], "AGGAG");
-  strcpy(sd_spacer[22], "5-10bp");
-  strcpy(sd_string[23], "GGAGG");
-  strcpy(sd_spacer[23], "3-4bp");
-  strcpy(sd_string[24], "GGAGG");
-  strcpy(sd_spacer[24], "5-10bp");
-  strcpy(sd_string[25], "AGGAGG");
-  strcpy(sd_spacer[25], "11-12bp");
-  strcpy(sd_string[26], "AGGAGG");
-  strcpy(sd_spacer[26], "3-4bp");
-  strcpy(sd_string[27], "AGGAGG");
-  strcpy(sd_spacer[27], "5-10bp");
-
-  char buffer[500] = {0};
-
   for(i = 0; i < ng; i++) {
-    ndx = genes[i].start_ndx;
-    sndx = genes[i].stop_ndx;
+    struct _gene *g = &genes[i];
+    struct _node *st = &nod[g->start_ndx], *sp = &nod[g->stop_ndx];
 
     /* Record basic gene data */
-    if((nod[ndx].edge == 1 && nod[ndx].strand == 1) ||
-       (nod[sndx].edge == 1 && nod[ndx].strand == -1))
-      partial_left = 1;
-    else partial_left = 0;
-    if((nod[sndx].edge == 1 && nod[ndx].strand == 1) ||
-       (nod[ndx].edge == 1 && nod[ndx].strand == -1))
-      partial_right = 1;
-    else partial_right = 0;
-    if(nod[ndx].edge == 1) st_type = 3;
-    else st_type = nod[ndx].type;
-
-    sprintf(genes[i].gene_data, "ID=%d_%d;partial=%d%d;start_type=%s;", sctr, 
-            i+1, partial_left, partial_right, type_string[st_type]);
-
-    /* Record rbs data */
-    rbs1 = tinf->rbs_wt[nod[ndx].rbs[0]]*tinf->st_wt;
-    rbs2 = tinf->rbs_wt[nod[ndx].rbs[1]]*tinf->st_wt;
-    if(tinf->uses_sd == 1) {
-      if(rbs1 > rbs2) {
-        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%s",
-                sd_string[nod[ndx].rbs[0]],
-                sd_spacer[nod[ndx].rbs[0]]);
-        strcat(genes[i].gene_data, buffer);
-      } else {
-        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%s",
-                sd_string[nod[ndx].rbs[1]],
-                sd_spacer[nod[ndx].rbs[1]]);
-        strcat(genes[i].gene_data, buffer);
-      }
-    }
-    else {
-      mer_text(qt, nod[ndx].mot.len, nod[ndx].mot.ndx);
-      if(tinf->no_mot > -0.5 && rbs1 > rbs2 && rbs1 > nod[ndx].mot.score *
-         tinf->st_wt) {
-        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%s",
-                sd_string[nod[ndx].rbs[0]],
-                sd_spacer[nod[ndx].rbs[0]]);
-        strcat(genes[i].gene_data, buffer);
-      } else if(tinf->no_mot > -0.5 && rbs2 >= rbs1 && rbs2 > nod[ndx].mot.score *
-              tinf->st_wt) {
-        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%s",
-                sd_string[nod[ndx].rbs[1]],
-                sd_spacer[nod[ndx].rbs[1]]);
-        strcat(genes[i].gene_data, buffer);
-      } else if(nod[ndx].mot.len == 0) {
-        strcat(genes[i].gene_data, "rbs_motif=None;rbs_spacer=None");
-      } else {
-        sprintf(buffer, "rbs_motif=%s;rbs_spacer=%dbp",
-                qt, nod[ndx].mot.spacer);
-        strcat(genes[i].gene_data, buffer);
-      }
-    }
-    sprintf(buffer, ";gc_cont=%.3f", nod[ndx].gc_cont);
-    strcat(genes[i].gene_data, buffer);
+    g->strand = st->strand;
+    g->partial_left = (st->edge == 1 && st->strand == 1) ||
+                      (sp->edge == 1 && st->strand == -1);
+    g->partial_right = (sp->edge == 1 && st->strand == 1) ||
+                       (st->edge == 1 && st->strand == -1);
+    g->start_type = (st->edge == 1) ? 3 : st->type;
+    pdg_rbs_text(&g->rbs, st, tinf);
+    g->gc_cont = st->gc_cont;
 
     /* Record score data */
-    confidence = calculate_confidence(nod[ndx].cscore + nod[ndx].sscore, 
-                                      tinf->st_wt);
-    sprintf(genes[i].score_data, 
-     "conf=%.2f;score=%.2f;cscore=%.2f;sscore=%.2f;rscore=%.2f;uscore=%.2f;",
-     confidence, nod[ndx].cscore+nod[ndx].sscore,nod[ndx].cscore, 
-     nod[ndx].sscore, nod[ndx].rscore, nod[ndx].uscore);
+    g->cscore = st->cscore;
+    g->sscore = st->sscore;
+    g->rscore = st->rscore;
+    g->uscore = st->uscore;
+    g->tscore = st->tscore;
+    g->confidence = calculate_confidence(st->cscore + st->sscore, tinf->st_wt);
 
-    sprintf(buffer, "tscore=%.2f;", nod[ndx].tscore);
-    strcat(genes[i].score_data, buffer);
+    sprintf(g->gene_data, "ID=%d_%d;partial=%d%d;start_type=%s;"
+            "rbs_motif=%s;rbs_spacer=%s;gc_cont=%.3f", sctr, i+1,
+            g->partial_left, g->partial_right, type_string[g->start_type],
+            g->rbs.motif, g->rbs.spacer, g->gc_cont);
+    sprintf(g->score_data, "conf=%.2f;score=%.2f;cscore=%.2f;sscore=%.2f;"
+            "rscore=%.2f;uscore=%.2f;tscore=%.2f;", g->confidence,
+            g->cscore + g->sscore, g->cscore, g->sscore, g->rscore,
+            g->uscore, g->tscore);
   }
-
 }
 
 /* Print the genes.  'Flag' indicates which format to use. */
@@ -444,39 +339,63 @@ void print_genes(FILE *fp, struct _gene *genes, int ng, struct _node *nod,
 
 }
 
-/* Print the gene translations */
-void write_translations(FILE *fh, struct _gene *genes, int ng, struct 
-                        _node *nod, unsigned char *seq, unsigned char *rseq, 
-                        unsigned char *useq, int slen, struct _training *tinf,
-                        int sctr, char *short_hdr) {
-  int i, j;
+/* The number of letters in gene g's protein, one per codon (upstream's
+   loop count; genes are whole codons). */
+int pdg_protein_length(const struct _gene *g) {
+  return (g->end - g->begin + 2) / 3;
+}
 
+/* Fills cl with tinf's letters, amino()'s own answers, unless it already
+   holds them: amino() reads nothing of the model but its trans_table.  A
+   protein then reads cl instead of running amino()'s if-chain per codon. */
+void pdg_codon_letters(struct _training *tinf, struct _codon_letters *cl) {
+  unsigned char codon[1];   /* its 3 bases in bits 0-5, as mer_ndx reads them */
+  int c;
+  if(cl->table == tinf->trans_table) return;
+  for(c = 0; c < 64; c++) {
+    codon[0] = (unsigned char)c;
+    cl->aa[0][c] = amino(codon, 0, tinf, 0);
+    cl->aa[1][c] = amino(codon, 0, tinf, 1);
+  }
+  cl->table = tinf->trans_table;
+}
+
+/* Letter k of gene g's protein, counting codons from its start, from the
+   letters cl (pdg_codon_letters, for the gene's model).  The CLI's -a file
+   and the library's proteins are both made of these letters; the rules are
+   in docs/internals.md ("Translation"). */
+char pdg_protein_letter(const struct _gene *g, int k, unsigned char *seq,
+                        unsigned char *rseq, unsigned char *useq, int slen,
+                        const struct _codon_letters *cl) {
+  /* The codon at p on its strand, whose first base on the forward strand,
+     where useq marks ambiguous bases, is f */
+  int p = (g->strand == 1) ? g->begin-1 + 3*k : slen-g->end + 3*k;
+  int f = (g->strand == 1) ? p : slen-3-p;
+
+  if(is_n(useq, f) == 1 || is_n(useq, f+1) == 1 || is_n(useq, f+2) == 1)
+    return 'X';
+  return cl->aa[k == 0 && g->start_type != 3][mer_ndx(3, g->strand == 1 ?
+                                                      seq : rseq, p)];
+}
+
+/* Print the gene translations, 60 letters to a line, under model tinf; cl
+   is the caller's letter table, kept across calls */
+void write_translations(FILE *fh, struct _gene *genes, int ng,
+                        unsigned char *seq, unsigned char *rseq,
+                        unsigned char *useq, int slen, struct _training *tinf,
+                        struct _codon_letters *cl, char *short_hdr) {
+  int i, k, n;
+
+  pdg_codon_letters(tinf, cl);
   for(i = 0; i < ng; i++) {
-    if(nod[genes[i].start_ndx].strand == 1) {
-      fprintf(fh, ">%s_%d # %d # %d # 1 # %s\n", short_hdr, i+1,
-              genes[i].begin, genes[i].end, genes[i].gene_data);
-      for(j = genes[i].begin; j < genes[i].end; j+=3) {
-        if(is_n(useq, j-1) == 1 || is_n(useq, j) == 1 || is_n(useq, j+1) == 1) 
-          fprintf(fh, "X");
-        else fprintf(fh, "%c", amino(seq, j-1, tinf, (j==genes[i].begin?1:0) &&
-                     (1-nod[genes[i].start_ndx].edge)));
-        if((j-genes[i].begin)%180 == 177) fprintf(fh, "\n");
-      }
-      if((j-genes[i].begin)%180 != 0) fprintf(fh, "\n");
+    fprintf(fh, ">%s_%d # %d # %d # %d # %s\n", short_hdr, i+1,
+            genes[i].begin, genes[i].end, genes[i].strand, genes[i].gene_data);
+    n = pdg_protein_length(&genes[i]);
+    for(k = 0; k < n; k++) {
+      fputc(pdg_protein_letter(&genes[i], k, seq, rseq, useq, slen, cl), fh);
+      if(k%60 == 59) fputc('\n', fh);
     }
-    else {
-      fprintf(fh, ">%s_%d # %d # %d # -1 # %s\n", short_hdr, i+1,
-              genes[i].begin, genes[i].end, genes[i].gene_data);
-      for(j = slen+1-genes[i].end; j < slen+1-genes[i].begin; j+=3) {
-        if(is_n(useq, slen-j) == 1 || is_n(useq, slen-1-j) == 1 ||
-           is_n(useq, slen-2-j) == 1)
-          fprintf(fh, "X");
-        else fprintf(fh, "%c", amino(rseq, j-1, tinf, (j==slen+1-genes[i].end?1:0)
-                     && (1-nod[genes[i].start_ndx].edge)));
-        if((j-slen-1+genes[i].end)%180 == 177) fprintf(fh, "\n");
-      }
-      if((j-slen-1+genes[i].end)%180 != 0) fprintf(fh, "\n");
-    }
+    if(n%60 != 0) fputc('\n', fh);
   }
 }
 

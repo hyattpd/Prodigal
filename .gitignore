@@ -1,2 +1,13 @@
 *.o
+*.pic.o
 prodigal
+prodigal_native
+libprodigal.a
+libprodigal.so
+test_api
+tests/out/
+.build-flags
+tests/api_dump
+tests/threads
+tests/fuzz_find_genes
+*.su

@@ -1,0 +1,249 @@
+name: CI
+
+on:
+  push:
+    branches: [ v2.6.4-miint, library-api, GoogleImport, master ]
+  pull_request:
+    branches: [ v2.6.4-miint, library-api, GoogleImport, master ]
+  workflow_dispatch:
+
+jobs:
+
+  # ── Linux ──────────────────────────────────────────────────────────────────
+  linux:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+        cc: [gcc, clang]
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # make oracle builds c1e2d36 with git archive
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      - name: Build CLI + library
+        run: make CC=${{ matrix.cc }}
+
+      - name: Build static library
+        run: make libprodigal.a CC=${{ matrix.cc }}
+
+      - name: Strict C99, no warnings
+        run: make pedantic CC=${{ matrix.cc }}
+
+      - name: Build and run tests
+        run: make test CC=${{ matrix.cc }}
+
+      - name: Contexts on four 2 MiB threads
+        run: make threads CC=${{ matrix.cc }}
+
+      - name: No stack frame over 1 MiB, none unbounded
+        run: make stack CC=${{ matrix.cc }}
+
+      - name: CLI regression (every output type, both modes)
+        run: make regress CC=${{ matrix.cc }}
+
+      # Library API vs the CLI on the same build (tests/api_compare.sh)
+      - name: API vs CLI (flag matrix x corpus)
+        run: make compare CC=${{ matrix.cc }}
+
+      # CLI vs an upstream c1e2d36 built here with the same compiler
+      # (tests/oracle_diff.sh). The cache key is the script's own stamp. The
+      # anchored steps and paths (&) are reused by the jobs below (*).
+      - &oracle_key
+        name: Oracle cache key
+        id: oracle
+        run: echo "key=oracle-${{ runner.os }}-${{ runner.arch }}-$(tests/oracle_diff.sh --stamp-key | cksum | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
+
+      - &oracle_cache
+        uses: actions/cache@v4
+        with:
+          path: tests/out/oracle-c1e2d36
+          key: ${{ steps.oracle.outputs.key }}
+
+      - name: CLI vs upstream (flag matrix x corpus)
+        run: make oracle CC=${{ matrix.cc }}
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: diffs-${{ matrix.os }}-${{ matrix.cc }}
+          path: &diff_paths |
+            tests/out/compare/cases/**/diff
+            tests/out/compare/cases/**/RESULT
+            tests/out/compare/cases/**/*.err
+            tests/out/oracle/cases/**/*.diff
+            tests/out/oracle/cases/**/stderr
+            tests/out/oracle-c1e2d36/build.log
+
+  # ── Sanitizers ─────────────────────────────────────────────────────────────
+  # ASan + UBSan, aborting on any report: the library tests (the AOS strings
+  # test only fails under ASan), the API vs CLI comparison (its corpus
+  # includes low-complexity input that overflowed the node array before the
+  # array could grow), and the CLI over the oracle corpus. The oracle itself
+  # is built without them (oracle_diff.sh would add a CFLAGS given to make),
+  # so it matches its cache key. Then the thread test under ThreadSanitizer
+  # and a minute of libFuzzer (docs/testing.md).
+  sanitizers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CC: clang   # also read by the oracle cache key
+      SAN_CFLAGS: -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g -O1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+
+      - name: Library tests
+        run: make test CC=clang CFLAGS="$SAN_CFLAGS"
+
+      - name: API vs CLI (flag matrix x corpus)
+        run: make compare CC=clang CFLAGS="$SAN_CFLAGS"
+
+      - *oracle_key
+
+      - *oracle_cache
+
+      - name: CLI vs upstream (flag matrix x corpus)
+        run: |
+          make prodigal CC=clang CFLAGS="$SAN_CFLAGS"
+          tests/oracle_diff.sh
+
+      # TSan's runtime can't map its shadow memory with the runner's 32 bits
+      # of mmap randomization
+      - name: Contexts on four threads under ThreadSanitizer
+        run: |
+          sudo sysctl vm.mmap_rnd_bits=28
+          make threads CC=clang CFLAGS="-fsanitize=thread -g -O1"
+
+      # The corpus grows across runs: restored from the latest run's, saved
+      # under this run's id
+      - uses: actions/cache@v4
+        with:
+          path: tests/out/fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+
+      - name: Fuzz the sequence path (libFuzzer, 60 s)
+        run: make fuzz
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: diffs-sanitizers
+          path: *diff_paths
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-failures
+          if-no-files-found: ignore
+          path: tests/out/fuzz/*-*
+
+  # ── macOS ──────────────────────────────────────────────────────────────────
+  # ARM64 macOS: make regress skips the train.bin byte compare (docs/testing.md).
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build CLI + library
+        run: make
+
+      - name: Build and run tests
+        run: make test
+
+      - name: Contexts on four 2 MiB threads
+        run: make threads
+
+      - name: CLI regression (every output type, both modes)
+        run: make regress
+
+      # Library API vs the CLI on the same build (tests/api_compare.sh)
+      - name: API vs CLI (flag matrix x corpus)
+        run: make compare
+
+      # CLI vs an upstream c1e2d36 built here with the same compiler
+      # (tests/oracle_diff.sh). The cache key is the script's own stamp.
+      - *oracle_key
+
+      - *oracle_cache
+
+      - name: CLI vs upstream (flag matrix x corpus)
+        run: make oracle
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: diffs-macos
+          path: *diff_paths
+
+  # ── WASM (library only, via Emscripten) ────────────────────────────────────
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned: the stack limit below depends on its frame layout
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.71
+
+      - name: Build library with emcc
+        run: |
+          CORE="bitmap.c dprog.c gene.c metagenomic.c node.c sequence.c training.c prodigal_api.c"
+          emcc -O3 -Wall -ffp-contract=off -DPRODIGAL_NO_MAIN -c $CORE
+          emar rcs libprodigal.a *.o
+          echo "WASM library build succeeded"
+
+      - name: Build and run test suite in Node.js
+        run: |
+          CORE="bitmap.c dprog.c gene.c metagenomic.c node.c sequence.c training.c prodigal_api.c"
+          # NODERAWFS: the tests read anthus_aco.fas and testdata/ from disk.
+          # STACK_SIZE + STACK_OVERFLOW_CHECK: every call chain the tests run
+          # fits in 1 MiB, checked (docs/testing.md).
+          emcc -O3 -Wall -ffp-contract=off -DPRODIGAL_NO_MAIN $CORE test_api.c -o test_api.js \
+            -s ALLOW_MEMORY_GROWTH=1 \
+            -s INITIAL_MEMORY=134217728 \
+            -s NODERAWFS=1 \
+            -s STACK_SIZE=1MB \
+            -s STACK_OVERFLOW_CHECK=2 \
+            -lm
+          node test_api.js
+
+  # ── Windows (MSYS2/MinGW-w64) ─────────────────────────────────────────────
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: mingw-w64-ucrt-x86_64-gcc make mingw-w64-ucrt-x86_64-zlib diffutils
+
+      - name: Build CLI + library
+        run: make
+
+      - name: Build and run tests
+        run: make test
+
+      - name: CLI regression (every output type, both modes)
+        run: make regress
